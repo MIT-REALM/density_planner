@@ -26,7 +26,17 @@ class ControlAffineSystem(ABC):
 
     @staticmethod
     def controller_wrapper(system: str):
-        # copied from C3M code "get_controller_wrapper" by Dawei Sun
+        """
+        Return neural contration controller
+
+        Parameters
+        ----------
+        system: ControlAffineSystem
+
+        Returns
+        -------
+        controller: function with needs the inputs x, xref and uref and outputs the contracting control input
+        """
 
         _controller = ControlAffineSystem.load_controller(system)
 
@@ -39,6 +49,18 @@ class ControlAffineSystem(ABC):
 
     @staticmethod
     def load_controller(system: str):
+        """
+        load the pretrained neural controller
+
+        Parameters
+        ----------
+        system: ControlAffineSystem
+
+        Returns
+        -------
+        neural contraction controller
+        """
+
         sys.path.append('data/trained_controller')
         controller_path = 'data/trained_controller/controller_' + system + '.pth.tar'
         _controller = torch.load(controller_path, map_location=torch.device('cpu'))
@@ -46,14 +68,70 @@ class ControlAffineSystem(ABC):
         return _controller
 
     def u_func(self, x: torch.Tensor, xref: torch.Tensor, uref: torch.Tensor) -> torch.Tensor:
+        """
+        Return the contracting control input
+
+        Parameters
+        ----------
+        x: torch.Tensor
+            batch_size x self.DIM_X x 1 tensor of state
+        xref: torch.Tensor
+            batch_size (or 1) x self.DIM_X x 1 tensor of reference states
+        uref: torch.Tensor
+            batch_size (or 1) x self.DIM_U x 1 tensor of reference controls
+
+        Returns
+        -------
+        u: torch.Tensor
+            batch_size x self.DIM_U x 1 tensor of contracting control inputs
+        """
+
         u = self.controller(x, xref, uref)
         return u
 
     def f_func(self, x: torch.Tensor, xref: torch.Tensor, uref: torch.Tensor) -> torch.Tensor:
+        """
+        Return the dynamics at the states x
+            \dot{x} = f(x) = a(x) + b(x) * u(x, xref, uref)
+
+        Parameters
+        ----------
+        x: torch.Tensor
+            batch_size x self.DIM_X x 1 tensor of state
+        xref: torch.Tensor
+            batch_size (or 1) x self.DIM_X x 1 tensor of reference states
+        uref: torch.Tensor
+            batch_size (or 1) x self.DIM_U x 1 tensor of reference controls
+
+        Returns
+        -------
+        f: torch.Tensor
+            batch_size x self.DIM_U x 1 tensor of dynamics at x
+        """
+
         f = self.a_func(x) + torch.bmm(self.b_func(x), self.u_func(x, xref, uref))
         return f
 
     def dudx_func(self, x: torch.Tensor, xref: torch.Tensor, uref: torch.Tensor) -> torch.Tensor:
+        """
+        Return the Jacobian of the input at the states x
+            du(x, xref, uref) / dx
+
+        Parameters
+        ----------
+        x: torch.Tensor
+            batch_size x self.DIM_X x 1 tensor of state
+        xref: torch.Tensor
+            batch_size (or 1) x self.DIM_X x 1 tensor of reference states
+        uref: torch.Tensor
+            batch_size (or 1) x self.DIM_U x 1 tensor of reference controls
+
+        Returns
+        -------
+        f: torch.Tensor
+            batch_size x self.DIM_U x self.DIM_X tensor of the Jacobian of u at x
+        """
+
         if x.requires_grad:
             x = x.detach()
         x.requires_grad = True
@@ -109,41 +187,99 @@ class ControlAffineSystem(ABC):
         return rho
 
     def cut_xref_traj(self, xref_traj: torch.Tensor, uref_traj: torch.Tensor):
+        """
+        Cut xref and uref trajectories at the first time step when xref leaves the admissible state space
+
+        Parameters
+        ----------
+        xref: torch.Tensor
+            batch_size (or 1) x self.DIM_X x args.N_sim tensor of reference state trajectories (assumed constant along first dimension)
+        uref: torch.Tensor
+            batch_size (or 1) x self.DIM_U x args.N_sim tensor of reference control trajectories (assumed constant along first dimension)
+
+        Returns
+        -------
+        xref: torch.Tensor
+            batch_size (or 1) x self.DIM_X x N_sim_cut tensor of shortened reference state trajectories
+        uref: torch.Tensor
+            batch_size (or 1) x self.DIM_U x N_sim_cut tensor of shortened reference control trajectories
+        """
+
         limits_exceeded = xref_traj.shape[2] * torch.ones(2 * self.DIM_X + 1)
         for j in range(self.DIM_X):
-            N1 = ((xref_traj[0, j, :] > self.X_MAX[0, j, 0]).nonzero(as_tuple=True)[0])
-            N2 = ((xref_traj[0, j, :] < self.X_MIN[0, j, 0]).nonzero(as_tuple=True)[0])
+            N1 = ((xref_traj[0, j, :] > self.X_MAX[0, j, 0]).nonzero(as_tuple=True)[0]) # indices where xref > xmax for state j
+            N2 = ((xref_traj[0, j, :] < self.X_MIN[0, j, 0]).nonzero(as_tuple=True)[0]) # indices where xref < xmin for state j
+
+            # save first time step where state limits are exceeded
             if N1.shape[0] > 0:
                 limits_exceeded[2 * j] = N1[0]
             if N2.shape[0] > 0:
                 limits_exceeded[2 * j + 1] = N2[0]
 
+        # cut trajectories at minimum time where state limits are exceeded
         N_sim_cut = int(limits_exceeded.min())
         uref_traj = uref_traj[:, :, :N_sim_cut]
         xref_traj = xref_traj[:, :, :N_sim_cut]
         return xref_traj, uref_traj
 
     def cut_x_rho(self, x, rho, pos):
+        """
+        Remove state trajectories which leave the admissible state space at specified time point
+
+        Parameters
+        ----------
+        x: torch.Tensor
+            batch_size x self.DIM_X x args.N_sim tensor of state trajectories
+        rho: torch.Tensor
+            batch_size x 1 x args.N_sim tensor of density trajectories
+        pos: integer
+            index / timestep of trajectories which is tested
+
+        Returns
+        -------
+        x: torch.Tensor
+            cut_batch_size x self.DIM_X x args.N_sim tensor of remaining state trajectories
+        rho: torch.Tensor
+            cut_batch_size x 1 x args.N_sim tensor of remaining density trajectories
+        """
+
         for j in range(self.DIM_X):
-            mask = (x[:, j, pos] <= self.X_MAX[0, j, 0]).squeeze()
+            mask = (x[:, j, pos] <= self.X_MAX[0, j, 0]).squeeze() # indices where xref > xmax for state j
             x = x[mask, :, :]
             rho = rho[mask, :, :]
-            mask = (x[:, j, pos] >= self.X_MIN[0, j, 0]).squeeze()
+            mask = (x[:, j, pos] >= self.X_MIN[0, j, 0]).squeeze() # indices where xref > xmax for state j
             x = x[mask, :, :]
             rho = rho[mask, :, :]
-        mask = (rho[:, 0, pos].isfinite()).squeeze()
+        mask = (rho[:, 0, pos].isfinite()).squeeze() # indices where rho infinite
         x = x[mask, :, :]
         rho = rho[mask, :, :]
         return x, rho
 
-    def exceed_state_limits(self, x, rho=None):
-        for j in range(self.DIM_X):
-            if (torch.any(x[:, [j], [0]] > self.X_MAX[0, j, 0]) or
-                    torch.any(x[:, [j], [0]] < self.X_MIN[0, j, 0])):
-                return True
-            if rho is not None and torch.any(rho.isinf()):
-                return True
-        return False
+    # def exceed_state_limits(self, x, rho=None):
+    #     """
+    #     Remove state trajectories which leave the admissible state space at some time point
+    #
+    #     Parameters
+    #     ----------
+    #     x: torch.Tensor
+    #         batch_size x self.DIM_X x args.N_sim tensor of state trajectories
+    #     rho: torch.Tensor
+    #         batch_size x 1 x args.N_sim tensor of density trajectories
+    #
+    #     Returns
+    #     -------
+    #     x: torch.Tensor
+    #         cut_batch_size x self.DIM_X x args.N_sim tensor of remaining state trajectories
+    #     rho: torch.Tensor
+    #         cut_batch_size x 1 x args.N_sim tensor of remaining density trajectories
+    #     """
+    #     for j in range(self.DIM_X):
+    #         if (torch.any(x[:, [j], [0]] > self.X_MAX[0, j, 0]) or
+    #                 torch.any(x[:, [j], [0]] < self.X_MIN[0, j, 0])):
+    #             return True
+    #         if rho is not None and torch.any(rho.isinf()):
+    #             return True
+    #     return False
 
     def sample_uref_traj(self, N_sim, N_u=None):
         if N_u is None:

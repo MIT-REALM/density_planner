@@ -1,6 +1,4 @@
 import torch
-import os
-import yaml
 
 
 def jacobian(f: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
@@ -60,10 +58,10 @@ def load_controller(task):
 
     return controller
 
-def load_data(task):
-    data_path = 'density_data/data_' + task
-
-    return data
+# def load_data(task):
+#     data_path = 'density_data/data_' + task
+#
+#     return data
 
 
 def get_grid(N):

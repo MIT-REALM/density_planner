@@ -3,11 +3,14 @@ import hyperparams
 from torch.utils.data import DataLoader,Dataset
 import os
 import pickle
-import copy
 from datetime import datetime
-import numpy as np
+
 
 class densityDataset(Dataset):
+    """
+    dataset class for training the neural density estimator
+    """
+
     def __init__(self, args):
         self.load_data(args)
 
@@ -19,13 +22,11 @@ class densityDataset(Dataset):
         return input_tensor, output_tensor
 
     def load_data(self, args):
-        data = []
-        input_map = None
-        output_map = None
 
         if args.load_dataset:
+            # load dataset from specified path args.path_dataset
             for file in os.listdir(args.path_dataset):
-                if file.endswith(args.nameend_dataset):
+                if file.endswith(args.nameend_dataset): # just consider the first file with specified filename
                     with open(os.path.join(args.path_dataset, file), "rb") as f:
                         data_all = pickle.load(f)
                     self.data, self.input_map, self.output_map = data_all
@@ -33,17 +34,23 @@ class densityDataset(Dataset):
             print("filename args.load_data was not found")
             return
 
+        # create new dataset from raw density data
+        data = []
+        input_map = None
+        output_map = None
         for file in os.listdir(args.path_rawdata):
-            if file.endswith(args.nameend_rawdata):
+            if file.endswith(args.nameend_rawdata): # just consider data with specified filename
                 with open(os.path.join(args.path_rawdata, file), "rb") as f:
                     results_all = pickle.load(f)
+
+                # reformat the data
                 for results in results_all:
                     t = results['t']
                     uref_traj = results['uref_traj']
                     xref_traj = results['xref_traj']
                     xe_traj = results['xe_traj']
                     rho_traj = results['rho_traj']
-                    u_in = uref_traj[0, :, ::args.N_u]
+                    u_in = uref_traj[0, :, ::args.N_u] # just save every N_u'th input (assume input stays constant for N_u timesteps)
 
                     if input_map is None:
                         num_inputs = xe_traj.shape[1] + 2 + u_in.shape[0] * u_in.shape[1]
@@ -66,6 +73,7 @@ class densityDataset(Dataset):
                             output_tensor[output_map['rho']] = rho_traj[i_x, 0, i_t]
                             data.append([input_tensor.numpy().copy(), output_tensor.numpy().copy()])
 
+        # save data
         data_name = args.path_dataset + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + args.nameend_dataset
         with open(data_name, "wb") as f:
             pickle.dump([data, input_map, output_map], f)

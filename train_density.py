@@ -3,8 +3,9 @@ import torch
 import hyperparams
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, random_split
-from create_dataset import densityDataset
+from density_estimation.create_dataset import densityDataset
 from datetime import datetime
+from plot_functions import plot_losscurves
 import os
 import pickle
 
@@ -147,20 +148,6 @@ def test(dataloader, model, args):
     return test_loss
 
 
-def plot_losscurves(train_loss, test_loss, name, args):
-    plt.plot(train_loss, label='Train Loss')
-    plt.plot(test_loss, label='Test Loss')
-    plt.legend()
-    plt.title("Loss Curves for Config \n %s" % (name))
-    plt.xlabel("Episodes")
-    plt.ylabel("Loss")
-    bottom, top = plt.ylim()
-    plt.ylim(bottom, min(0.3, top))
-    plt.show()
-    filename = args.path_plot_loss + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_losscurve.jpg"
-    plt.savefig(filename)
-
-
 if __name__ == "__main__":
 
     args = hyperparams.parse_args()
@@ -168,7 +155,7 @@ if __name__ == "__main__":
 
     train_dataloader, validation_dataloader = load_dataloader(args)
     # configs = create_configs(args=args)
-    configs = create_configs(learning_rate=[0.001, 0.01], num_hidden=[3, 4, 5], size_hidden=[32, 64],
+    configs = create_configs(learning_rate=[0.01], num_hidden=[3, 4], size_hidden=[32, 64],
                              weight_decay=[0, 1e-5], args=args)
     results = []
 
@@ -199,8 +186,7 @@ if __name__ == "__main__":
                 break
 
         print(f"Best test loss after epoch {t}: {test_loss_best} \n")
-        #plot_losscurves(train_loss, test_loss, name, args)
-        nn_name = args.path_nn + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_NN_" + args.nameend_data.replace(
+        nn_name = args.path_nn + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_NN_" + args.nameend_dataset.replace(
             '.pickle',
             '.pt')
 
@@ -214,6 +200,7 @@ if __name__ == "__main__":
         }
         results.append(result)
         torch.save([model.state_dict(), args, result], nn_name)
+        plot_losscurves(train_loss, test_loss, name, args)
 
     results_name = args.path_nn + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_results_" + args.nameend_nn.replace(
         '.pickle', '.pt')
