@@ -91,7 +91,7 @@ def load_args(config, args):
 
 
 def load_NN(num_inputs, num_outputs, args):
-    model = NeuralNetwork(num_inputs, num_outputs, args).to(args.device)
+    model = NeuralNetwork(num_inputs-1, num_outputs, args).to(args.device)
     if args.load_pretrained_nn:
         model_params, _, _ = torch.load(args.name_pretrained_nn, map_location=args.device)
         model.load_state_dict(model_params)
@@ -113,9 +113,10 @@ def train(dataloader, model, optimizer, args):
         input, target = input.to(args.device), target.to(args.device)
 
         # Compute prediction error
-        output = model(input)
+        input_nn = torch.cat((input[:, :dataloader.dataset.input_map['rho0']], input[:, dataloader.dataset.input_map['rho0']+1:]), 1)
+        output = model(input_nn)
         x_nn = output[:, dataloader.dataset.output_map['x']]
-        rho_nn = output[:, dataloader.dataset.output_map['rho']]
+        rho_nn = input[:, dataloader.dataset.input_map['rho0']] * torch.exp(output[:, dataloader.dataset.output_map['rho']])
         x_true = target[:, dataloader.dataset.output_map['x']]
         rho_true = target[:, dataloader.dataset.output_map['rho']]
         loss = loss_function(x_nn, x_true, rho_nn, rho_true, args)
@@ -125,6 +126,7 @@ def train(dataloader, model, optimizer, args):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+
     return train_loss / len(dataloader)
 
 
@@ -137,9 +139,11 @@ def test(dataloader, model, args):
             input, target = input.to(args.device), target.to(args.device)
 
             # Compute prediction error
-            output = model(input)
+            input_nn = torch.cat((input[:, :dataloader.dataset.input_map['rho0']], input[:, dataloader.dataset.input_map['rho0']+1:]), 1)
+            output = model(input_nn)
             x_nn = output[:, dataloader.dataset.output_map['x']]
-            rho_nn = output[:, dataloader.dataset.output_map['rho']]
+            rho_nn = input[:, dataloader.dataset.input_map['rho0']] * torch.exp(
+                output[:, dataloader.dataset.output_map['rho']])
             x_true = target[:, dataloader.dataset.output_map['x']]
             rho_true = target[:, dataloader.dataset.output_map['rho']]
             test_loss += loss_function(x_nn, x_true, rho_nn, rho_true, args).item()
@@ -152,18 +156,21 @@ if __name__ == "__main__":
 
     args = hyperparams.parse_args()
     args.device = "cuda" if torch.cuda.is_available() else "cpu"
+    run_name = 'newCost'
 
-    train_dataloader, validation_dataloader = load_dataloader(args)
     # configs = create_configs(args=args)
-    configs = create_configs(learning_rate=[0.01], num_hidden=[3, 4], size_hidden=[32, 64],
+    configs = create_configs(learning_rate=[0.001, 0.0001], num_hidden=[3, 4], size_hidden=[32, 64],
                              weight_decay=[0, 1e-5], args=args)
     results = []
 
     for i, config in enumerate(configs):
 
         print(f"_____Configuration {i}:______")
-        name = f"learning_rate={config['learning_rate']}, num_hidden={config['num_hidden']}, size_hidden={config['size_hidden']}, weight_decay={config['weight_decay']}, optimizer={config['optimizer']}"
+        name = run_name + f", learning_rate={config['learning_rate']}, num_hidden={config['num_hidden']}, size_hidden={config['size_hidden']}, weight_decay={config['weight_decay']}, optimizer={config['optimizer']}"
+        short_name = run_name + f"_lr{config['learning_rate']}_numHidd{config['num_hidden']}_sizeHidd{config['size_hidden']}_reg{config['weight_decay']}_opt{config['optimizer']}"
         print(name)
+
+        train_dataloader, validation_dataloader = load_dataloader(args)
         args = load_args(config, args)
         model, optimizer = load_NN(len(train_dataloader.dataset.data[0][0]), len(train_dataloader.dataset.data[0][1]),
                                    args)
@@ -186,9 +193,7 @@ if __name__ == "__main__":
                 break
 
         print(f"Best test loss after epoch {t}: {test_loss_best} \n")
-        nn_name = args.path_nn + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_NN_" + args.nameend_dataset.replace(
-            '.pickle',
-            '.pt')
+        nn_name = args.path_nn + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_NN_" + short_name + '.pt'
 
         result = {
             'train_loss': train_loss,
@@ -196,13 +201,14 @@ if __name__ == "__main__":
             'test_loss_best': test_loss_best,
             'num_epochs': t,
             'name': nn_name,
+            'cost_function': "rho_nn=rho0*exp(out)",
             'hyperparameters': config
         }
         results.append(result)
         torch.save([model.state_dict(), args, result], nn_name)
-        plot_losscurves(train_loss, test_loss, name, args)
+        plot_losscurves(train_loss, test_loss, short_name, args)
 
-    results_name = args.path_nn + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_results_" + args.nameend_nn.replace(
-        '.pickle', '.pt')
+    results_name = args.path_nn + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_results_" + run_name + '.pt'
     torch.save(results, results_name)
     print("Done!")
+

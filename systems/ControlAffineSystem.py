@@ -244,13 +244,20 @@ class ControlAffineSystem(ABC):
         """
 
         for j in range(self.DIM_X):
-            mask = (x[:, j, pos] <= self.X_MAX[0, j, 0]).squeeze() # indices where xref > xmax for state j
+            mask = (x[:, j, pos] <= self.X_MAX[0, j, 0]) # indices where xref > xmax for state j
+            # if mask.dim() > 1:
+            #     mask = mask.squeeze()
             x = x[mask, :, :]
             rho = rho[mask, :, :]
-            mask = (x[:, j, pos] >= self.X_MIN[0, j, 0]).squeeze() # indices where xref > xmax for state j
+            mask = (x[:, j, pos] >= self.X_MIN[0, j, 0])# indices where xref > xmax for state j
+            # if mask.dim() > 1:
+            #     mask = mask.squeeze()
             x = x[mask, :, :]
             rho = rho[mask, :, :]
-        mask = (rho[:, 0, pos].isfinite()).squeeze() # indices where rho infinite
+        mask = (rho[:, 0, pos].isfinite())# indices where rho infinite
+        # if mask.dim() > 1:
+        #     mask = mask.squeeze()
+
         x = x[mask, :, :]
         rho = rho[mask, :, :]
         return x, rho
@@ -325,7 +332,7 @@ class ControlAffineSystem(ABC):
             xe0 = get_grid(sample_size) * (xe0_max - xe0_min) + xe0_min
         return xe0 + xref0
 
-    def compute_density(self, x0, xref, uref, rho0, N_sim, dt):
+    def compute_density(self, x0, xref, uref, rho0, N_sim, dt, cutting=True):
         """
         Get the density rho(x) starting at x0 with rho(x0)
 
@@ -359,9 +366,10 @@ class ControlAffineSystem(ABC):
             rho_traj[:, 0, i + 1] = self.get_next_rho(x_traj[:, :, [i]], xref[:, :, [i]], uref[:, :, [i]], rho_traj[:, 0, i], dt)
             with torch.no_grad():
                 x_traj[:, :, [i + 1]] = self.get_next_x(x_traj[:, :, [i]], xref[:, :, [i]], uref[:, :, [i]], dt)
-                x_traj, rho_traj = self.cut_x_rho(x_traj[:, :, :], rho_traj[:, [0], :], i+1)
-                if x_traj.shape[0] < 0.1 * x0.shape[0]:
-                    return x_traj[:, :, :i + 2], rho_traj[:, [0], :i + 2]
+                if cutting:
+                    x_traj, rho_traj = self.cut_x_rho(x_traj[:, :, :], rho_traj[:, [0], :], i+1)
+                    # if x_traj.shape[0] < 0.1 * x0.shape[0]:
+                    #     return x_traj[:, :, :i + 2], rho_traj[:, [0], :i + 2]
         return x_traj, rho_traj
 
     @abstractmethod

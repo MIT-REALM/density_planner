@@ -7,22 +7,8 @@ import argparse
 import matplotlib.pyplot as plt
 import numpy as np
 import hyperparams
-
-
-args = hyperparams.parse_args()
-
-torch.manual_seed(args.random_seed)
-dt = args.dt_sim
-bs = args.batch_size
-
-system = Car()
-x = (system.X_MAX - system.X_MIN) * torch.rand(bs, system.DIM_X, 1) + system.X_MIN
-uref = (system.UREF_MAX - system.UREF_MIN) * torch.rand(bs, system.DIM_U, 1) + system.UREF_MIN
-xref = (system.XREF0_MAX - system.XREF0_MIN) * torch.rand(bs, system.DIM_X, 1) + system.XREF0_MIN
-
-uref_traj = system.sample_uref_traj(args.N_sim)
-xref0 = system.sample_xref0()
-xref_traj = system.compute_xref_traj(xref0, uref_traj, args.N_sim, args.dt_sim)
+from plot_functions import plot_density_heatmap, plot_density_heatmap2
+from train_density import NeuralNetwork
 
 
 def test_dimensions(object: ControlAffineSystem, x: torch.Tensor, xref: torch.Tensor, uref: torch.Tensor):
@@ -80,43 +66,78 @@ def test_derivatives(object: ControlAffineSystem, x: torch.Tensor, xref: torch.T
 def test_density(system: ControlAffineSystem, xref_traj, uref_traj, xref0, N_sim, dt):
 
     params_LE = {
-        "sample_size": [15, 15, 5, 5],
-        "getDensity": True,
-        "title": "LE Density Computation",
+        "sample_size": 15 * 15 * 5 * 5, #15, 15, 5, 5],
+        "title": "LE",
     }
     params_MC = {
-        "sample_size": [50, 50, 20, 20],
-        "getDensity": False,
-        "title": "MC Simulation",
+        "sample_size": 60 * 60 * 20 * 20, #[60, 60, 20, 20],
+        "title": "MC",
+    }
+    params_NN = {
+        "sample_size": 15 * 15 * 5 * 5,  # [60, 60, 20, 20],
+        "title": "NN",
+        "filename": "2022-04-21-06-28-01_NN_newCost_CAR_dt10ms_Nsim100_Nu10_iter1000"
     }
 
-    for params in (params_LE, params_MC):
+    for params in (params_NN, params_LE, params_MC):
         x = system.sample_x0(xref0, params["sample_size"])
-
-        if params["getDensity"]:
-            rho0 = torch.ones(x.shape[0])
-            x, rho = system.compute_density(x, xref_traj, uref_traj, rho0, N_sim, dt)
-        else:
-            rho = torch.ones(x.shape[0])
+        rho = torch.ones(x.shape[0], 1, 1)
+        if params["title"] == "LE":
+            x, rho = system.compute_density(x, xref_traj, uref_traj, rho, N_sim, dt, cutting=False)
+            comb = "mean"
+        elif params["title"] == "MC":
             with torch.no_grad():
                 for i in range(N_sim):
                     x = system.get_next_x(x, xref_traj[:, :, [i]], uref_traj[:, :, [i]], dt)
-        xe = x - xref_traj[[0], :, -1:]
+            comb = "sum"
+        elif params["title"] == "NN":
+            model_params, args_NN, result = torch.load(('data/trained_nn/' + params["filename"] + '.pt'), map_location=args.device)
+            num_inputs = 26
+            model = NeuralNetwork(num_inputs-1, 5, args_NN).to(args.device)
+            model.load_state_dict(model_params)
+            model.eval()
+            u_in = uref_traj[0, :, ::args_NN.N_u]
+            input_map = {'rho0': 0,
+                         'x0': torch.arange(1, xref_traj.shape[1] + 1),
+                         't': xref_traj.shape[1] + 1,
+                         'uref': torch.arange(xref_traj.shape[1] + 2, num_inputs)}
+            input_tensor = torch.zeros(x.shape[0], num_inputs)
+            input_tensor[:, input_map['uref']] = (torch.cat((u_in[0, :], u_in[1, :]), 0)).repeat(x.shape[0],1)
+            input_tensor[:, input_map['x0']] = x[:, :, 0]
+            input_tensor[:, input_map['rho0']] = rho[:, 0, 0]
+            input_tensor[:, input_map['t']] = torch.ones(x.shape[0]) * N_sim * args_NN.dt_sim
+            with torch.no_grad():
+                input = input_tensor.to(args.device)
+                output = model(input[:, 1:])
+                x = output[:, 0:4].unsqueeze(-1)
+                rho = input[:, 0] * torch.exp(output[:, 4])
+                rho = rho.unsqueeze(-1).unsqueeze(-1)
+            comb = "mean"
 
-        #scale_rho = 20 / torch.max(rho)
-        #plt.scatter(xe[:, 0, 0].numpy(), xe[:, 1, 0].numpy(), s=scale_rho)
-        heatmap, xedges, yedges = np.histogram2d(xe[:, 0, 0].numpy(), xe[:, 1, 0].numpy(), bins=10, weights=rho.numpy())
-        extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
-        plt.imshow(heatmap.T, extent=extent, origin='lower')
-        plt.title(params["title"] + " after %.2fs \n(%d state simulations, random seed %d)" % (
-            args.dt_sim * args.N_sim, args.N_sim, args.random_seed))
-        plt.xlabel("x-xref")
-        plt.ylabel("y-yref")
-        plt.show()
+        xe = x - xref_traj
 
+        name = params["title"] + "_time%.2fs_numSim%d_numStates%d_randSeed%d" % (
+             args.dt_sim * args.N_sim, args.N_sim, xe.shape[0], args.random_seed)
+        #plot_density_heatmap2(xe[:, 0, -1].numpy(), xe[:, 1, -1].numpy(), rho[:, 0, -1].numpy(), name, args, save=False)
+        plot_density_heatmap(xe[:, 0, -1].numpy(), xe[:, 1, -1].numpy(), rho[:, 0, -1].numpy(), name, args, combine=comb, save=False)
 
-test_density(system, xref_traj, uref_traj, xref0, args.N_sim, dt)
-test_dimensions(system, x, xref, uref)
-test_derivatives(system, x, xref, uref)
-print("end")
+if __name__ == "__main__":
+    args = hyperparams.parse_args()
+    args.device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    torch.manual_seed(args.random_seed)
+    bs = args.batch_size
+    system = Car()
+    x = (system.X_MAX - system.X_MIN) * torch.rand(bs, system.DIM_X, 1) + system.X_MIN
+    uref_traj = system.sample_uref_traj(args.N_sim, args.N_u)
+
+    xref = (system.XREF0_MAX - system.XREF0_MIN) * torch.rand(bs, system.DIM_X, 1) + system.XREF0_MIN
+    xref0 = system.sample_xref0()
+    xref_traj = system.compute_xref_traj(xref0, uref_traj, args.N_sim, args.dt_sim)
+
+    test_density(system, xref_traj, uref_traj, xref0, args.N_sim, args.dt_sim)
+    test_dimensions(system, x, xref, uref)
+    test_derivatives(system, x, xref, uref)
+
+    print("end")
 
