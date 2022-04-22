@@ -368,8 +368,8 @@ class ControlAffineSystem(ABC):
                 x_traj[:, :, [i + 1]] = self.get_next_x(x_traj[:, :, [i]], xref[:, :, [i]], uref[:, :, [i]], dt)
                 if cutting:
                     x_traj, rho_traj = self.cut_x_rho(x_traj[:, :, :], rho_traj[:, [0], :], i+1)
-                    # if x_traj.shape[0] < 0.1 * x0.shape[0]:
-                    #     return x_traj[:, :, :i + 2], rho_traj[:, [0], :i + 2]
+                    if x_traj.shape[0] < 2:
+                        return x_traj[:, :, :i + 2], rho_traj[:, [0], :i + 2]
         return x_traj, rho_traj
 
     @abstractmethod

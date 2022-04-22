@@ -46,8 +46,20 @@ results_all = compute_data(iteration_number, sample_size, system, args, samples_
 data, input_map, output_map = raw2nnData(results_all, args)
 
 for input_tensor, output_tensor in data:
-    #x =
-    x, rho = system.compute_density(x, xref_traj, uref_traj, rho, N_sim, dt, cutting=False)
+
+    model_params, args_NN, result = torch.load(('data/trained_nn/' + "2022-04-21-06-28-01_NN_newCost_CAR_dt10ms_Nsim100_Nu10_iter1000" + '.pt'),
+                                               map_location=args.device)
+    num_inputs = input_tensor.shape[0]
+    model = NeuralNetwork(num_inputs - 1, output_tensor[0], args_NN).to(args.device)
+    model.load_state_dict(model_params)
+    model.eval()
+
+
+
+
+
+
+
 
 
 params_LE = {

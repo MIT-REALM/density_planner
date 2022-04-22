@@ -79,12 +79,12 @@ def test_density(system: ControlAffineSystem, xref_traj, uref_traj, xref0, N_sim
         "filename": "2022-04-21-06-28-01_NN_newCost_CAR_dt10ms_Nsim100_Nu10_iter1000"
     }
 
-    for params in (params_NN, params_LE, params_MC):
+    for params in (params_LE, params_MC, params_NN):
         x = system.sample_x0(xref0, params["sample_size"])
         rho = torch.ones(x.shape[0], 1, 1)
         if params["title"] == "LE":
             x, rho = system.compute_density(x, xref_traj, uref_traj, rho, N_sim, dt, cutting=False)
-            comb = "mean"
+            comb = "sum"
         elif params["title"] == "MC":
             with torch.no_grad():
                 for i in range(N_sim):

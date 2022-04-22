@@ -43,7 +43,7 @@ def loss_function(x_nn, x_true, rho_nn, rho_true, args):
     if not mask.all():
         loss_rho += ((torch.log(rho_nn) - torch.log(rho_true)) ** 2).mean()
 
-    return loss_x + args.rho_loss_weight * loss_rho
+    return loss_x, args.rho_loss_weight * loss_rho
 
 
 def load_dataloader(args):
@@ -56,7 +56,7 @@ def load_dataloader(args):
     return train_dataloader, validation_dataloader
 
 
-def create_configs(learning_rate=None, num_hidden=None, size_hidden=None, weight_decay=None, optimizer=None, args=None):
+def create_configs(learning_rate=None, num_hidden=None, size_hidden=None, weight_decay=None, optimizer=None, rho_loss_weight=None, args=None):
     if learning_rate is None:
         learning_rate = [args.learning_rate]
     if num_hidden is None:
@@ -67,6 +67,8 @@ def create_configs(learning_rate=None, num_hidden=None, size_hidden=None, weight
         weight_decay = [args.weight_decay]
     if optimizer is None:
         optimizer = [args.optimizer]
+    if rho_loss_weight is None:
+        rho_loss_weight = [args.rho_loss_weight]
 
     configs = []
     for lr in learning_rate:
@@ -74,11 +76,13 @@ def create_configs(learning_rate=None, num_hidden=None, size_hidden=None, weight
             for sh in size_hidden:
                 for wd in weight_decay:
                     for opt in optimizer:
-                        configs.append({"learning_rate": lr,
-                                        "num_hidden": nh,
-                                        "size_hidden": sh,
-                                        "weight_decay": wd,
-                                        "optimizer": opt})
+                        for rw in rho_loss_weight:
+                            configs.append({"learning_rate": lr,
+                                            "num_hidden": nh,
+                                            "size_hidden": sh,
+                                            "weight_decay": wd,
+                                            "optimizer": opt,
+                                            "rho_loss_weight": rw})
     return configs
 
 
@@ -87,10 +91,11 @@ def load_args(config, args):
     args.size_hidden = [config["size_hidden"]] * config["num_hidden"]
     args.weight_decay = config["weight_decay"]
     args.optimizer = config["optimizer"]
+    args.rho_loss_weight = config["rho_loss_weight"]
     return args
 
 
-def load_NN(num_inputs, num_outputs, args):
+def load_nn(num_inputs, num_outputs, args):
     model = NeuralNetwork(num_inputs-1, num_outputs, args).to(args.device)
     if args.load_pretrained_nn:
         model_params, _, _ = torch.load(args.name_pretrained_nn, map_location=args.device)
@@ -108,7 +113,7 @@ def load_NN(num_inputs, num_outputs, args):
 def train(dataloader, model, optimizer, args):
     size = len(dataloader.dataset)
     model.train()
-    train_loss = 0
+    train_loss, train_loss_x, train_loss_rho, = 0, 0, 0
     for batch, (input, target) in enumerate(dataloader):
         input, target = input.to(args.device), target.to(args.device)
 
@@ -119,7 +124,10 @@ def train(dataloader, model, optimizer, args):
         rho_nn = input[:, dataloader.dataset.input_map['rho0']] * torch.exp(output[:, dataloader.dataset.output_map['rho']])
         x_true = target[:, dataloader.dataset.output_map['x']]
         rho_true = target[:, dataloader.dataset.output_map['rho']]
-        loss = loss_function(x_nn, x_true, rho_nn, rho_true, args)
+        loss_x, loss_rho_w = loss_function(x_nn, x_true, rho_nn, rho_true, args)
+        loss = loss_x + loss_rho_w
+        train_loss_x += loss_x.item()
+        train_loss_rho += loss_rho_w.item()
         train_loss += loss.item()
 
         # Backpropagation
@@ -127,13 +135,12 @@ def train(dataloader, model, optimizer, args):
         loss.backward()
         optimizer.step()
 
-    return train_loss / len(dataloader)
+    return train_loss / len(dataloader), train_loss_x / len(dataloader), train_loss_rho / len(dataloader)
 
 
 def test(dataloader, model, args):
-    num_batches = len(dataloader)
     model.eval()
-    test_loss, correct = 0, 0
+    test_loss, test_loss_x, test_loss_rho, = 0, 0, 0
     with torch.no_grad():
         for batch, (input, target) in enumerate(dataloader):
             input, target = input.to(args.device), target.to(args.device)
@@ -146,42 +153,51 @@ def test(dataloader, model, args):
                 output[:, dataloader.dataset.output_map['rho']])
             x_true = target[:, dataloader.dataset.output_map['x']]
             rho_true = target[:, dataloader.dataset.output_map['rho']]
-            test_loss += loss_function(x_nn, x_true, rho_nn, rho_true, args).item()
+            loss_x, loss_rho_w = loss_function(x_nn, x_true, rho_nn, rho_true, args)
+            loss = loss_x + loss_rho_w
 
-    test_loss /= num_batches
-    return test_loss
+            test_loss_rho += loss_rho_w.item()
+            test_loss_x += loss_x.item()
+            test_loss += loss.item()
+
+    return test_loss / len(dataloader), test_loss_x / len(dataloader), test_loss_rho / len(dataloader)
 
 
 if __name__ == "__main__":
 
     args = hyperparams.parse_args()
     args.device = "cuda" if torch.cuda.is_available() else "cpu"
-    run_name = 'newCost'
+    run_name = 'bs512'
 
     # configs = create_configs(args=args)
-    configs = create_configs(learning_rate=[0.001, 0.0001], num_hidden=[3, 4], size_hidden=[32, 64],
-                             weight_decay=[0, 1e-5], args=args)
+    configs = create_configs(learning_rate=[0.001], num_hidden=[4], size_hidden=[64],
+                             weight_decay=[0], rho_loss_weight=[0.1], args=args)
     results = []
 
     for i, config in enumerate(configs):
 
         print(f"_____Configuration {i}:______")
-        name = run_name + f", learning_rate={config['learning_rate']}, num_hidden={config['num_hidden']}, size_hidden={config['size_hidden']}, weight_decay={config['weight_decay']}, optimizer={config['optimizer']}"
-        short_name = run_name + f"_lr{config['learning_rate']}_numHidd{config['num_hidden']}_sizeHidd{config['size_hidden']}_reg{config['weight_decay']}_opt{config['optimizer']}"
+        name = run_name + f", learning_rate={config['learning_rate']}, num_hidden={config['num_hidden']}, size_hidden={config['size_hidden']}, weight_decay={config['weight_decay']}, optimizer={config['optimizer']}, rho_loss_weight={config['rho_loss_weight']}"
+        short_name = run_name + f"_lr{config['learning_rate']}_numHidd{config['num_hidden']}_sizeHidd{config['size_hidden']}_rhoLoss{config['rho_loss_weight']}"
+        nn_name = args.path_nn + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_NN_" + short_name + '.pt'
         print(name)
 
         train_dataloader, validation_dataloader = load_dataloader(args)
         args = load_args(config, args)
-        model, optimizer = load_NN(len(train_dataloader.dataset.data[0][0]), len(train_dataloader.dataset.data[0][1]),
+        model, optimizer = load_nn(len(train_dataloader.dataset.data[0][0]), len(train_dataloader.dataset.data[0][1]),
                                    args)
 
         patience = 0
         test_loss_best = float('Inf')
         test_loss = float('Inf') * torch.ones(args.epochs)
+        test_loss_x = float('Inf') * torch.ones(args.epochs)
+        test_loss_rho = float('Inf') * torch.ones(args.epochs)
         train_loss = float('Inf') * torch.ones(args.epochs)
+        train_loss_x = float('Inf') * torch.ones(args.epochs)
+        train_loss_rho = float('Inf') * torch.ones(args.epochs)
         for t in range(args.epochs):
-            train_loss[t] = train(train_dataloader, model, optimizer, args)
-            test_loss[t] = test(validation_dataloader, model, args)
+            train_loss[t], train_loss_x[t], train_loss_rho[t] = train(train_dataloader, model, optimizer, args)
+            test_loss[t], test_loss_x[t], test_loss_rho[t] = test(validation_dataloader, model, args)
 
             if test_loss[t] > test_loss_best:
                 patience += 1
@@ -192,21 +208,27 @@ if __name__ == "__main__":
             if args.patience and patience >= args.patience:
                 break
 
-        print(f"Best test loss after epoch {t}: {test_loss_best} \n")
-        nn_name = args.path_nn + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_NN_" + short_name + '.pt'
+            if t % 20 == 9:
+                result = {
+                    'train_loss': train_loss,
+                    'train_loss_x': train_loss_x,
+                    'train_loss_rho': train_loss_rho,
+                    'test_loss': test_loss,
+                    'test_loss_x': test_loss_x,
+                    'test_loss_rho': test_loss_rho,
+                    'test_loss_best': test_loss_best,
+                    'num_epochs': t,
+                    'name': nn_name,
+                    'cost_function': "rho_nn=rho0*exp(out)",
+                    'hyperparameters': config
+                }
+                results.append(result)
+                torch.save([model.state_dict(), args, result], nn_name)
+                plot_losscurves(result, "t%d_" % (t) + short_name, args)
 
-        result = {
-            'train_loss': train_loss,
-            'test_loss': test_loss,
-            'test_loss_best': test_loss_best,
-            'num_epochs': t,
-            'name': nn_name,
-            'cost_function': "rho_nn=rho0*exp(out)",
-            'hyperparameters': config
-        }
-        results.append(result)
-        torch.save([model.state_dict(), args, result], nn_name)
-        plot_losscurves(train_loss, test_loss, short_name, args)
+        print(f"Best test loss after epoch {t}: {test_loss_best} \n")
+        plot_losscurves(result, "final_t%d_" % (t) + short_name, args)
+
 
     results_name = args.path_nn + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_results_" + run_name + '.pt'
     torch.save(results, results_name)

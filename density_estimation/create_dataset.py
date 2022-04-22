@@ -37,17 +37,19 @@ class densityDataset(Dataset):
         # create new dataset from raw density data
 
         data_allFiles = []
+        i = 0
         for file in os.listdir(args.path_rawdata):
             if file.endswith(args.nameend_rawdata): # just consider data with specified filename
                 with open(os.path.join(args.path_rawdata, file), "rb") as f:
-                    results_all = pickle.load(f)
+                    results_all, _ = pickle.load(f)
 
                 # reformat the data
                 data, input_map, output_map = raw2nnData(results_all, args)
-                data_allFiles.append(data)
+                data_allFiles += data
+                i += 1
 
         # save data
-        data_name = args.path_dataset + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + args.nameend_dataset
+        data_name = args.path_dataset + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + '_dataset_files%d_' % i + args.nameend_dataset
         with open(data_name, "wb") as f:
             pickle.dump([data_allFiles, input_map, output_map], f)
 
@@ -62,13 +64,16 @@ def raw2nnData(results_all, args):
     input_map = None
 
     for results in results_all:
+        rho0 = results['rho0']
+        x0 = results['x0']
         t = results['t']
         uref_traj = results['uref_traj']
         xref_traj = results['xref_traj']
         xe_traj = results['xe_traj']
         rho_traj = results['rho_traj']
-        u_in = uref_traj[0, :,
-               ::args.N_u]  # just save every N_u'th input (assume input stays constant for N_u timesteps)
+        u_in = uref_traj[0, :,::args.N_u]# just save every N_u'th input (assume input stays constant for N_u timesteps)
+        if u_in.shape[1] < 10:
+            u_in = torch.cat((u_in[:, :], torch.zeros(u_in.shape[0], 10 - u_in.shape[1])), 1)
 
         if input_map is None:
             num_inputs = xe_traj.shape[1] + 2 + u_in.shape[0] * u_in.shape[1]
@@ -83,8 +88,8 @@ def raw2nnData(results_all, args):
 
         input_tensor[input_map['uref']] = torch.cat((u_in[0, :], u_in[1, :]), 0)
         for i_x in range(min(xe_traj.shape[0], 50)):
-            input_tensor[input_map['x0']] = xe_traj[i_x, :, 0] + xref_traj[0, :, 0]
-            input_tensor[input_map['rho0']] = rho_traj[i_x, 0, 0]
+            input_tensor[input_map['x0']] = x0[i_x, :]
+            input_tensor[input_map['rho0']] = rho0[i_x, 0]
             for i_t in range(0, t.shape[0]):
                 input_tensor[input_map['t']] = t[i_t]
                 output_tensor[output_map['x']] = xe_traj[i_x, :, i_t] + xref_traj[0, :, i_t]

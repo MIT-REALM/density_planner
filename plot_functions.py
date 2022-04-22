@@ -68,15 +68,25 @@ def plot_density_heatmap(xpos, ypos, rho, name, args, combine="mean", save=True,
         plt.clf()
 
 
-def plot_losscurves(train_loss, test_loss, name, args, save=True, show=True):
-    plt.plot(train_loss, label='Train Loss')
-    plt.plot(test_loss, label='Test Loss')
+def plot_losscurves(result, name, args, save=True, show=True):
+    if "train_loss" in result:
+        plt.plot(result['train_loss'], '-g', label='Train Loss')
+    if "test_loss" in result:
+        plt.plot(result['test_loss'], '-r', label='Test Loss')
+    if "train_loss_x" in result:
+        plt.plot(result['train_loss_x'], '--g', label='Train Loss x')
+    if "test_loss_x" in result:
+        plt.plot(result['test_loss_x'], '--r', label='Test Loss x')
+    if "train_loss_rho" in result:
+        plt.plot(result['train_loss_rho'], ':g', label='Train Loss rho')
+    if "test_loss_rho" in result:
+        plt.plot(result['test_loss_rho'], ':r', label='Test Loss rho')
     plt.legend()
     plt.title("Loss Curves for Config \n %s" % (name))
     plt.xlabel("Episodes")
     plt.ylabel("Loss")
     bottom, top = plt.ylim()
-    plt.ylim(min(0, max(bottom, -0.1)), min(1000, train_loss[3]))
+    plt.ylim(min(0, max(bottom, -0.1)), min(1000, result['train_loss'][3]))
     plt.tight_layout()
     if save:
         filename = args.path_plot_loss + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_losscurve_" + name + ".jpg"
