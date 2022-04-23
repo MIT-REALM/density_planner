@@ -76,10 +76,10 @@ def test_density(system: ControlAffineSystem, xref_traj, uref_traj, xref0, N_sim
     params_NN = {
         "sample_size": 15 * 15 * 5 * 5,  # [60, 60, 20, 20],
         "title": "NN",
-        "filename": "2022-04-21-06-28-01_NN_newCost_CAR_dt10ms_Nsim100_Nu10_iter1000"
+        "filename": "2022-04-22-10-01-54_NN_finalTrain_lr0.001_numHidd4_sizeHidd64_rhoLoss0.1"
     }
 
-    for params in (params_LE, params_MC, params_NN):
+    for params in (params_NN,params_LE, params_MC): #
         x = system.sample_x0(xref0, params["sample_size"])
         rho = torch.ones(x.shape[0], 1, 1)
         if params["title"] == "LE":
@@ -97,6 +97,8 @@ def test_density(system: ControlAffineSystem, xref_traj, uref_traj, xref0, N_sim
             model.load_state_dict(model_params)
             model.eval()
             u_in = uref_traj[0, :, ::args_NN.N_u]
+            if u_in.shape[1] < 10:
+                u_in = torch.cat((u_in[:, :], torch.zeros(u_in.shape[0], 10 - u_in.shape[1])), 1)
             input_map = {'rho0': 0,
                          'x0': torch.arange(1, xref_traj.shape[1] + 1),
                          't': xref_traj.shape[1] + 1,
@@ -105,7 +107,7 @@ def test_density(system: ControlAffineSystem, xref_traj, uref_traj, xref0, N_sim
             input_tensor[:, input_map['uref']] = (torch.cat((u_in[0, :], u_in[1, :]), 0)).repeat(x.shape[0],1)
             input_tensor[:, input_map['x0']] = x[:, :, 0]
             input_tensor[:, input_map['rho0']] = rho[:, 0, 0]
-            input_tensor[:, input_map['t']] = torch.ones(x.shape[0]) * N_sim * args_NN.dt_sim
+            input_tensor[:, input_map['t']] = torch.ones(x.shape[0]) * N_sim * args.dt_sim
             with torch.no_grad():
                 input = input_tensor.to(args.device)
                 output = model(input[:, 1:])
@@ -129,11 +131,17 @@ if __name__ == "__main__":
     bs = args.batch_size
     system = Car()
     x = (system.X_MAX - system.X_MIN) * torch.rand(bs, system.DIM_X, 1) + system.X_MIN
-    uref_traj = system.sample_uref_traj(args.N_sim, args.N_u)
-
     xref = (system.XREF0_MAX - system.XREF0_MIN) * torch.rand(bs, system.DIM_X, 1) + system.XREF0_MIN
-    xref0 = system.sample_xref0()
-    xref_traj = system.compute_xref_traj(xref0, uref_traj, args.N_sim, args.dt_sim)
+
+    while True:
+        uref_traj = system.sample_uref_traj(args.N_sim, args.N_u)  # get random input trajectory
+        xref0 = system.sample_xref0()  # sample random xref
+        xref_traj = system.compute_xref_traj(xref0, uref_traj, args.N_sim,
+                                             args.dt_sim)  # compute corresponding xref trajectory
+        xref_traj, uref_traj = system.cut_xref_traj(xref_traj,
+                                                    uref_traj)  # cut trajectory where state limits are exceeded
+        if xref_traj.shape[2] == args.N_sim:  # start again if reference trajectory is shorter than 0.9 * N_sim
+            break
 
     test_density(system, xref_traj, uref_traj, xref0, args.N_sim, args.dt_sim)
     test_dimensions(system, x, xref, uref)

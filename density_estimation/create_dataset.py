@@ -11,8 +11,8 @@ class densityDataset(Dataset):
     dataset class for training the neural density estimator
     """
 
-    def __init__(self, args):
-        self.load_data(args)
+    def __init__(self, args, mode=None):
+        self.load_data(args, mode)
 
     def __len__(self):
         return len(self.data)
@@ -21,17 +21,21 @@ class densityDataset(Dataset):
         input_tensor, output_tensor = self.data[index]
         return input_tensor, output_tensor
 
-    def load_data(self, args):
+    def load_data(self, args, mode):
 
-        if args.load_dataset:
+        if mode is not None:
+            if mode == "Val":
+                filename_data = args.nameend_ValDataset
+            elif mode == "Train":
+                filename_data = args.nameend_TrainDataset
             # load dataset from specified path args.path_dataset
             for file in os.listdir(args.path_dataset):
-                if file.endswith(args.nameend_dataset): # just consider the first file with specified filename
+                if file.endswith(filename_data): # just consider the first file with specified filename
                     with open(os.path.join(args.path_dataset, file), "rb") as f:
                         data_all = pickle.load(f)
                     self.data, self.input_map, self.output_map = data_all
                     return
-            print("filename args.load_data was not found")
+            print("filename_data was not found")
             return
 
         # create new dataset from raw density data
@@ -44,12 +48,13 @@ class densityDataset(Dataset):
                     results_all, _ = pickle.load(f)
 
                 # reformat the data
-                data, input_map, output_map = raw2nnData(results_all, args)
-                data_allFiles += data
+                if len(results_all) != 0:
+                    data, input_map, output_map = raw2nnData(results_all, args)
+                    data_allFiles += data
                 i += 1
 
         # save data
-        data_name = args.path_dataset + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + '_dataset_files%d_' % i + args.nameend_dataset
+        data_name = args.path_dataset + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + '_dataset_files%d' % i + args.nameend_rawdata
         with open(data_name, "wb") as f:
             pickle.dump([data_allFiles, input_map, output_map], f)
 
@@ -76,17 +81,19 @@ def raw2nnData(results_all, args):
             u_in = torch.cat((u_in[:, :], torch.zeros(u_in.shape[0], 10 - u_in.shape[1])), 1)
 
         if input_map is None:
-            num_inputs = xe_traj.shape[1] + 2 + u_in.shape[0] * u_in.shape[1]
+            num_inputs = 2 * xe_traj.shape[1] + 2 + u_in.shape[0] * u_in.shape[1]
             input_map = {'rho0': 0,
                          'x0': torch.arange(1, xe_traj.shape[1] + 1),
-                         't': xe_traj.shape[1] + 1,
-                         'uref': torch.arange(xe_traj.shape[1] + 2, num_inputs)}
+                         'xref0': torch.arange(xe_traj.shape[1] + 1, 2 * xe_traj.shape[1] + 1),
+                         't': 2 * xe_traj.shape[1] + 1,
+                         'uref': torch.arange(2 * xe_traj.shape[1] + 2, num_inputs)}
             input_tensor = torch.zeros(num_inputs)
             output_map = {'x': torch.arange(0, xe_traj.shape[1]),
                           'rho': xe_traj.shape[1]}
             output_tensor = torch.zeros(xe_traj.shape[1] + 1)
 
         input_tensor[input_map['uref']] = torch.cat((u_in[0, :], u_in[1, :]), 0)
+        input_tensor[input_map['xref0']] = xref_traj[0, :, 0]
         for i_x in range(min(xe_traj.shape[0], 50)):
             input_tensor[input_map['x0']] = x0[i_x, :]
             input_tensor[input_map['rho0']] = rho0[i_x, 0]
@@ -99,6 +106,7 @@ def raw2nnData(results_all, args):
 
 def nn2rawData(data, input_map, output_map, args):
     input, output = data
+    xref0 = input[input_map['xref0']]
     x0 = input[input_map['x0']]
     rho0 = input[input_map['rho0']]
     t = input[input_map['t']]
@@ -111,6 +119,7 @@ def nn2rawData(data, input_map, output_map, args):
     rho = output[output_map['rho']]
     results = {
         'x0': x0,
+        'xref0': xref0,
         'rho0': rho0,
         't': t,
         'u_in': u_in,

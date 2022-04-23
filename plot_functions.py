@@ -4,31 +4,32 @@ import numpy as np
 from matplotlib import cm
 
 
-def plot_density_heatmap2(xpos, ypos, rho, name, args, save=True, show=True):
-    heatmap, xedges, yedges = np.histogram2d(xpos, ypos, bins=10,
-                                             weights=rho)
-    extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
-    plt.imshow(heatmap.T, extent=extent, origin='lower')
-    plt.title("Density Heatmap for Simulation \n %s" % (name))
-    plt.xlabel("x-xref")
-    plt.ylabel("y-yref")
-    plt.tight_layout()
-    if save:
-        filename = args.path_plot_densityheat + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_heatmap_" + name + ".jpg"
-        plt.savefig(filename)
-    if show:
-        plt.show()
-    plt.clf()
+# def plot_density_heatmap2(xpos, ypos, rho, name, args, save=True, show=True, filename=None):
+#     heatmap, xedges, yedges = np.histogram2d(xpos, ypos, bins=10,
+#                                              weights=rho)
+#     extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
+#     plt.imshow(heatmap.T, extent=extent, origin='lower')
+#     plt.title("Density Heatmap for Simulation \n %s" % (name))
+#     plt.xlabel("x-xref")
+#     plt.ylabel("y-yref")
+#     plt.tight_layout()
+#     if save:
+#         if filename is None:
+#             filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_heatmap_" + name + ".jpg"
+#         plt.savefig(args.path_plot_densityheat + filename)
+#     if show:
+#         plt.show()
+#     plt.clf()
 
 
-def plot_density_heatmap(xpos, ypos, rho, name, args, combine="mean", save=True, show=True):
-    ny = 10
-    nx = 10
+def plot_density_heatmap(xpos, ypos, rho, name, args, combine="sum", save=True, show=True, filename=None):
+    ny = 30
+    nx = 30
     density_log = np.ones((ny, nx))
     density = np.zeros((ny, nx))
     bins = [[[] for _ in range(nx)] for _ in range(ny)]
 
-    xmin, xmax, ymin, ymax = -0.5, 0.5, -0.5, 0.5
+    xmin, xmax, ymin, ymax = -1.5, 1.5, -1.5, 1.5
     bin_x = ((xpos - xmin) / ((xmax - xmin) / nx)).astype(np.int32)
     bin_y = ((ypos - ymin) / ((ymax - ymin) / ny)).astype(np.int32)
     bin_x = np.clip(bin_x, 0, nx - 1)
@@ -60,37 +61,65 @@ def plot_density_heatmap(xpos, ypos, rho, name, args, combine="mean", save=True,
         plt.ylabel("y-yref")
         plt.colorbar(im, fraction=0.046, pad=0.04, format="%.2f")
         if save:
-            filename = args.path_plot_densityheat + datetime.now().strftime(
-                "%Y-%m-%d-%H-%M-%S") + "_heatmap_" + name_new + ".jpg"
+            if filename is None:
+                filename = args.path_plot_densityheat + datetime.now().strftime(
+                    "%Y-%m-%d-%H-%M-%S") + "_heatmap_" + name_new + ".jpg"
             plt.savefig(filename)
         if show:
             plt.show()
         plt.clf()
 
 
-def plot_losscurves(result, name, args, save=True, show=True):
-    if "train_loss" in result:
-        plt.plot(result['train_loss'], '-g', label='Train Loss')
-    if "test_loss" in result:
-        plt.plot(result['test_loss'], '-r', label='Test Loss')
-    if "train_loss_x" in result:
-        plt.plot(result['train_loss_x'], '--g', label='Train Loss x')
-    if "test_loss_x" in result:
-        plt.plot(result['test_loss_x'], '--r', label='Test Loss x')
-    if "train_loss_rho" in result:
-        plt.plot(result['train_loss_rho'], ':g', label='Train Loss rho')
-    if "test_loss_rho" in result:
-        plt.plot(result['test_loss_rho'], ':r', label='Test Loss rho')
+def plot_losscurves(result, name, args, save=True, show=True, filename=None, type="Loss"):
+    colors = ['g', 'r', 'c', 'b', 'm', 'y']
+    if type == "Loss":
+        if "train_loss" in result:
+            for i, (key, val) in enumerate((result['train_loss']).items()):
+                if not 'max' in key:
+                    plt.plot(val, color=colors[i], linestyle='-', label="train " + key)
+        if "test_loss" in result:
+            for i, (key, val) in enumerate(result['test_loss'].items()):
+                if not 'max' in key:
+                    plt.plot(val, color=colors[i], linestyle=':', label="test " + key)
+        plt.title("Loss Curves for Config \n %s" % (name))
+        plt.ylabel("Loss")
+        plt.ylim(0, 0.1)
+
+    elif type == "maxError":
+        if "train_loss" in result:
+            i = 0
+            for key, val in (result['train_loss']).items():
+                if 'max' in key:
+                    if val[0].ndim > 0:
+                        for j in range(val[0].shape[0]):
+                            plt.plot([val[k][j] for k in range(len(val))],
+                                     color=colors[i], linestyle='-', label="train " + key +"[%d]" % j)
+                            i += 1
+                    else:
+                        plt.plot(val, color=colors[i], linestyle='-', label="train " + key)
+                        i += 1
+        if "test_loss" in result:
+            i = 0
+            for key, val in (result['train_loss']).items():
+                if 'max' in key:
+                    if val[0].ndim > 0:
+                        for j in range(val[0].shape[0]):
+                            plt.plot([val[k][j] for k in range(len(val))],
+                                     color=colors[i], linestyle=':', label="test " + key +"[%d]" % j)
+                            i += 1
+                    else:
+                        plt.plot(val, color=colors[i], linestyle=':', label="test " + key)
+                        i += 1
+        plt.title("Maximum Error for Config \n %s" % (name))
+        plt.ylabel("Maximum Error")
+        plt.ylim(0, 1)
     plt.legend()
-    plt.title("Loss Curves for Config \n %s" % (name))
     plt.xlabel("Episodes")
-    plt.ylabel("Loss")
-    bottom, top = plt.ylim()
-    plt.ylim(min(0, max(bottom, -0.1)), min(1000, result['train_loss'][3]))
     plt.tight_layout()
     if save:
-        filename = args.path_plot_loss + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_losscurve_" + name + ".jpg"
-        plt.savefig(filename)
+        if filename is None:
+            filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_%Curve_" % type + name + ".jpg"
+        plt.savefig(args.path_plot_loss + filename)
     if show:
         plt.show()
     plt.clf()

@@ -13,19 +13,22 @@ def compute_data(iteration_number, samples_x, system, args, samples_t=None, save
     for j in range(100):
         for i in range(iteration_number):
             # get random input trajectory and compute corresponding state trajectory
-            uref_traj = system.sample_uref_traj(args.N_sim, args.N_u) # get random input trajectory
-            xref0 = system.sample_xref0() # sample random xref
-            xref_traj = system.compute_xref_traj(xref0, uref_traj, args.N_sim, args.dt_sim) # compute corresponding xref trajectory
-            xref_traj, uref_traj = system.cut_xref_traj(xref_traj, uref_traj) # cut trajectory where state limits are exceeded
-            if xref_traj.shape[2] < 0.9 * args.N_sim: # start again if reference trajectory is shorter than 0.9 * N_sim
-                continue
+            valid = False
+            while not valid:
+                uref_traj = system.sample_uref_traj(args.N_sim, args.N_u) # get random input trajectory
+                xref0 = system.sample_xref0() # sample random xref
+                xref_traj = system.compute_xref_traj(xref0, uref_traj, args.N_sim, args.dt_sim) # compute corresponding xref trajectory
+                xref_traj, uref_traj = system.cut_xref_traj(xref_traj, uref_traj) # cut trajectory where state limits are exceeded
+                if xref_traj.shape[2] < 0.9 * args.N_sim: # start again if reference trajectory is shorter than 0.9 * N_sim
+                    continue
 
-            # compute corresponding  state and density trajectories
-            x0 = system.sample_x0(xref0, samples_x) # get random initial states
-            rho0 = 1 / (torch.prod(system.X_MAX-system.X_MIN)) * torch.ones(x0.shape[0], 1, 1) # equal initial density
-            x_traj, rho_traj = system.compute_density(x0, xref_traj, uref_traj, rho0, xref_traj.shape[2], args.dt_sim) # compute x and rho trajectories
-            if rho_traj.dim() < 2 or x_traj.shape[2] < 0.9 * args.N_sim: # start again if x trajectories shorter than N_sim
-                continue
+                # compute corresponding  state and density trajectories
+                x0 = system.sample_x0(xref0, samples_x) # get random initial states
+                rho0 = 1 / (torch.prod(system.X_MAX-system.X_MIN)) * torch.ones(x0.shape[0], 1, 1) # equal initial density
+                x_traj, rho_traj = system.compute_density(x0, xref_traj, uref_traj, rho0, xref_traj.shape[2], args.dt_sim) # compute x and rho trajectories
+                if rho_traj.dim() < 2 or x_traj.shape[2] < 0.9 * args.N_sim: # start again if x trajectories shorter than N_sim
+                    continue
+                valid = True
 
             # save the results
             xref_traj = xref_traj[[0],:, :x_traj.shape[2]]
@@ -68,7 +71,7 @@ if __name__ == "__main__":
 
     args = hyperparams.parse_args()
 
-    sample_size = 20  # [15, 15, 5, 5] ' number of sampled initial conditions x0
+    samples_x = 20  # [15, 15, 5, 5] ' number of sampled initial conditions x0
     iteration_number = 100
     system = Car()
     random_seed = False
@@ -77,6 +80,6 @@ if __name__ == "__main__":
     else:
         args.random_seed = None
 
-    compute_data(iteration_number, sample_size, system, args, samples_t=int(np.rint(0.1*args.N_sim)), save=True, plot=False)
+    compute_data(iteration_number, samples_x, system, args, samples_t=int(np.rint(0.1*args.N_sim)), save=True, plot=False)
 
     print("end")

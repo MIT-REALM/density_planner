@@ -93,6 +93,12 @@ def get_grid(N):
     return x.unsqueeze(-1)
 
 
+def listDict2dictList(list_dict):
+    dict_list = {key: [] for key in list_dict[0].keys()}
+    for loss in list_dict:
+        for key, val in loss.items():
+            dict_list[key].append(val)
+    return dict_list
 
 # def read_settings(path: str):
 #     with open(os.path.join(path, 'settings.yaml')) as f:

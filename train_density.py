@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader, Dataset, random_split
 from density_estimation.create_dataset import densityDataset
 from datetime import datetime
 from plot_functions import plot_losscurves
+from utils import listDict2dictList
 import os
 import pickle
 
@@ -47,12 +48,15 @@ def loss_function(x_nn, x_true, rho_nn, rho_true, args):
 
 
 def load_dataloader(args):
-    density_data = densityDataset(args)
-    train_set_size = int(len(density_data) * args.train_len)
-    val_set_size = len(density_data) - train_set_size
-    train_data, validation_data = random_split(density_data, [train_set_size, val_set_size])
-    train_dataloader = DataLoader(train_data.dataset, batch_size=args.batch_size, shuffle=True)
-    validation_dataloader = DataLoader(validation_data.dataset, batch_size=args.batch_size, shuffle=True)
+    train_data = densityDataset(args, mode="Train")
+    train_dataloader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
+    val_data = densityDataset(args, mode="Val")
+    validation_dataloader = DataLoader(val_data, batch_size=args.batch_size, shuffle=True)
+    # train_set_size = int(len(density_data) * args.train_len)
+    # val_set_size = len(density_data) - train_set_size
+    # train_data, validation_data = random_split(density_data, [train_set_size, val_set_size])
+    # train_dataloader = DataLoader(train_data.dataset, batch_size=args.batch_size, shuffle=True)
+    # validation_dataloader = DataLoader(validation_data.dataset, batch_size=args.batch_size, shuffle=True)
     return train_dataloader, validation_dataloader
 
 
@@ -110,10 +114,19 @@ def load_nn(num_inputs, num_outputs, args):
     return model, optimizer
 
 
-def train(dataloader, model, optimizer, args):
+def evaluate(dataloader, model, args, optimizer=None, mode="val"):
     size = len(dataloader.dataset)
-    model.train()
-    train_loss, train_loss_x, train_loss_rho, = 0, 0, 0
+    if mode == "train" and optimizer is not None:
+        model.train()
+    elif mode == "val":
+        model.eval()
+    else:
+        print("mode not defined")
+
+    total_loss, total_loss_x, total_loss_rho_w = 0, 0, 0
+    max_loss_x = torch.zeros(len(dataloader), 4)
+    max_loss_rho_w = torch.zeros(len(dataloader))
+
     for batch, (input, target) in enumerate(dataloader):
         input, target = input.to(args.device), target.to(args.device)
 
@@ -126,52 +139,38 @@ def train(dataloader, model, optimizer, args):
         rho_true = target[:, dataloader.dataset.output_map['rho']]
         loss_x, loss_rho_w = loss_function(x_nn, x_true, rho_nn, rho_true, args)
         loss = loss_x + loss_rho_w
-        train_loss_x += loss_x.item()
-        train_loss_rho += loss_rho_w.item()
-        train_loss += loss.item()
+        total_loss_x += loss_x.item()
+        total_loss_rho_w += loss_rho_w.item()
+        max_loss_x[batch, :], _ = torch.max(torch.abs(x_nn-x_true), dim=0)
+        max_loss_rho_w[batch] = args.rho_loss_weight * torch.log(torch.max(torch.abs(rho_nn-rho_true)))
+        total_loss += loss.item()
 
-        # Backpropagation
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        if mode == "train":
+            # Backpropagation
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
-    return train_loss / len(dataloader), train_loss_x / len(dataloader), train_loss_rho / len(dataloader)
+    maxMax_loss_x, _ = torch.max(max_loss_x, dim=0)
+    loss_all = {
+        "loss": total_loss / len(dataloader),
+        "loss_x": total_loss_x / len(dataloader),
+        "loss_rho_w": total_loss_rho_w / len(dataloader),
+        "max_loss_x": maxMax_loss_x.detach().numpy(),
+        "max_loss_rho_w": (torch.max(max_loss_rho_w)).detach().numpy()
+        }
+    return loss_all
 
 
-def test(dataloader, model, args):
-    model.eval()
-    test_loss, test_loss_x, test_loss_rho, = 0, 0, 0
-    with torch.no_grad():
-        for batch, (input, target) in enumerate(dataloader):
-            input, target = input.to(args.device), target.to(args.device)
-
-            # Compute prediction error
-            input_nn = torch.cat((input[:, :dataloader.dataset.input_map['rho0']], input[:, dataloader.dataset.input_map['rho0']+1:]), 1)
-            output = model(input_nn)
-            x_nn = output[:, dataloader.dataset.output_map['x']]
-            rho_nn = input[:, dataloader.dataset.input_map['rho0']] * torch.exp(
-                output[:, dataloader.dataset.output_map['rho']])
-            x_true = target[:, dataloader.dataset.output_map['x']]
-            rho_true = target[:, dataloader.dataset.output_map['rho']]
-            loss_x, loss_rho_w = loss_function(x_nn, x_true, rho_nn, rho_true, args)
-            loss = loss_x + loss_rho_w
-
-            test_loss_rho += loss_rho_w.item()
-            test_loss_x += loss_x.item()
-            test_loss += loss.item()
-
-    return test_loss / len(dataloader), test_loss_x / len(dataloader), test_loss_rho / len(dataloader)
 
 
 if __name__ == "__main__":
-
     args = hyperparams.parse_args()
     args.device = "cuda" if torch.cuda.is_available() else "cpu"
-    run_name = 'bs512'
+    run_name = args.run_name
 
     # configs = create_configs(args=args)
-    configs = create_configs(learning_rate=[0.001], num_hidden=[4], size_hidden=[64],
-                             weight_decay=[0], rho_loss_weight=[0.1], args=args)
+    configs = create_configs(args=args)
     results = []
 
     for i, config in enumerate(configs):
@@ -180,6 +179,8 @@ if __name__ == "__main__":
         name = run_name + f", learning_rate={config['learning_rate']}, num_hidden={config['num_hidden']}, size_hidden={config['size_hidden']}, weight_decay={config['weight_decay']}, optimizer={config['optimizer']}, rho_loss_weight={config['rho_loss_weight']}"
         short_name = run_name + f"_lr{config['learning_rate']}_numHidd{config['num_hidden']}_sizeHidd{config['size_hidden']}_rhoLoss{config['rho_loss_weight']}"
         nn_name = args.path_nn + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_NN_" + short_name + '.pt'
+        lossPlot_name = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_lossCurve_" + short_name + ".jpg"
+        maxErrorPlot_name = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_maxErrorCurve_" + short_name + ".jpg"
         print(name)
 
         train_dataloader, validation_dataloader = load_dataloader(args)
@@ -189,48 +190,42 @@ if __name__ == "__main__":
 
         patience = 0
         test_loss_best = float('Inf')
-        test_loss = float('Inf') * torch.ones(args.epochs)
-        test_loss_x = float('Inf') * torch.ones(args.epochs)
-        test_loss_rho = float('Inf') * torch.ones(args.epochs)
-        train_loss = float('Inf') * torch.ones(args.epochs)
-        train_loss_x = float('Inf') * torch.ones(args.epochs)
-        train_loss_rho = float('Inf') * torch.ones(args.epochs)
-        for t in range(args.epochs):
-            train_loss[t], train_loss_x[t], train_loss_rho[t] = train(train_dataloader, model, optimizer, args)
-            test_loss[t], test_loss_x[t], test_loss_rho[t] = test(validation_dataloader, model, args)
+        test_loss = []
+        train_loss = []
+        for epoch in range(args.epochs):
+            train_loss.append(evaluate(train_dataloader, model, args, optimizer=optimizer, mode="train"))
+            test_loss.append(evaluate(validation_dataloader, model, args, mode="val"))
+            #
+            # if test_loss[-1]["loss"] > test_loss_best:
+            #     patience += 1
+            # else:
+            #     patience = 0
+            #     test_loss_best = test_loss[-1]["loss"]
+            # if args.patience and patience >= args.patience:
+            #      break
+            if epoch == 100:
+                for g in optimizer.param_groups:
+                    g['lr'] = g['lr'] / 10
 
-            if test_loss[t] > test_loss_best:
-                patience += 1
-            else:
-                patience = 0
-                test_loss_best = test_loss[t]
 
-            if args.patience and patience >= args.patience:
-                break
-
-            if t % 20 == 9:
+            if epoch % 20 == 2:
+                train_loss_dict = listDict2dictList(train_loss)
+                test_loss_dict = listDict2dictList(test_loss)
                 result = {
-                    'train_loss': train_loss,
-                    'train_loss_x': train_loss_x,
-                    'train_loss_rho': train_loss_rho,
-                    'test_loss': test_loss,
-                    'test_loss_x': test_loss_x,
-                    'test_loss_rho': test_loss_rho,
-                    'test_loss_best': test_loss_best,
-                    'num_epochs': t,
+                    'train_loss': train_loss_dict,
+                    'test_loss': test_loss_dict,
+                    'num_epochs': epoch,
                     'name': nn_name,
                     'cost_function': "rho_nn=rho0*exp(out)",
                     'hyperparameters': config
                 }
-                results.append(result)
+                plot_losscurves(result, "t%d_" % (epoch) + short_name, args, filename=maxErrorPlot_name, type="maxError")
+                plot_losscurves(result, "t%d_" % (epoch) + short_name, args, filename=lossPlot_name)
+
+            if epoch % 100 == 99:
                 torch.save([model.state_dict(), args, result], nn_name)
-                plot_losscurves(result, "t%d_" % (t) + short_name, args)
-
-        print(f"Best test loss after epoch {t}: {test_loss_best} \n")
-        plot_losscurves(result, "final_t%d_" % (t) + short_name, args)
-
-
-    results_name = args.path_nn + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_results_" + run_name + '.pt'
-    torch.save(results, results_name)
+        print(f"Best test loss after epoch {epoch}: {test_loss_best} \n")
+        torch.save([model.state_dict(), args, result], nn_name)
+        plot_losscurves(result, "final_t%d_" % (epoch) + short_name, args, filename=lossPlot_name)
     print("Done!")
 
