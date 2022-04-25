@@ -33,8 +33,8 @@ class NeuralNetwork(nn.Module):
         return x
 
 
-def loss_function(x_nn, x_true, rho_nn, rho_true, args):
-    loss_x = ((x_nn - x_true) ** 2).mean()
+def loss_function(xe_nn, xe_true, rho_nn, rho_true, args):
+    loss_xe = ((xe_nn - xe_true) ** 2).mean()
     mask = torch.logical_or(rho_true < 1e-5, rho_nn < 1e-5)
     loss_rho = 0
     if mask.any():
@@ -44,7 +44,7 @@ def loss_function(x_nn, x_true, rho_nn, rho_true, args):
     if not mask.all():
         loss_rho += ((torch.log(rho_nn) - torch.log(rho_true)) ** 2).mean()
 
-    return loss_x, args.rho_loss_weight * loss_rho
+    return loss_xe, args.rho_loss_weight * loss_rho
 
 
 def load_dataloader(args):
@@ -123,8 +123,8 @@ def evaluate(dataloader, model, args, optimizer=None, mode="val"):
     else:
         print("mode not defined")
 
-    total_loss, total_loss_x, total_loss_rho_w = 0, 0, 0
-    max_loss_x = torch.zeros(len(dataloader), 4)
+    total_loss, total_loss_xe, total_loss_rho_w = 0, 0, 0
+    max_loss_xe = torch.zeros(len(dataloader), 4)
     max_loss_rho_w = torch.zeros(len(dataloader))
 
     for batch, (input, target) in enumerate(dataloader):
@@ -133,31 +133,34 @@ def evaluate(dataloader, model, args, optimizer=None, mode="val"):
         # Compute prediction error
         input_nn = torch.cat((input[:, :dataloader.dataset.input_map['rho0']], input[:, dataloader.dataset.input_map['rho0']+1:]), 1)
         output = model(input_nn)
-        x_nn = output[:, dataloader.dataset.output_map['x']]
+        xe_nn = output[:, dataloader.dataset.output_map['xe']]
         rho_nn = input[:, dataloader.dataset.input_map['rho0']] * torch.exp(output[:, dataloader.dataset.output_map['rho']])
-        x_true = target[:, dataloader.dataset.output_map['x']]
+        xe_true = target[:, dataloader.dataset.output_map['xe']]
         rho_true = target[:, dataloader.dataset.output_map['rho']]
-        loss_x, loss_rho_w = loss_function(x_nn, x_true, rho_nn, rho_true, args)
-        loss = loss_x + loss_rho_w
-        total_loss_x += loss_x.item()
+        loss_xe, loss_rho_w = loss_function(xe_nn, xe_true, rho_nn, rho_true, args)
+        loss = loss_xe + loss_rho_w
+        total_loss_xe += loss_xe.item()
         total_loss_rho_w += loss_rho_w.item()
-        max_loss_x[batch, :], _ = torch.max(torch.abs(x_nn-x_true), dim=0)
+        max_loss_xe[batch, :], _ = torch.max(torch.abs(xe_nn-xe_true), dim=0)
         max_loss_rho_w[batch] = args.rho_loss_weight * torch.log(torch.max(torch.abs(rho_nn-rho_true)))
         total_loss += loss.item()
 
         if mode == "train":
             # Backpropagation
             optimizer.zero_grad()
-            loss.backward()
+            if batch % 2 == 0:
+                loss_xe.backward()
+            else:
+                loss_rho_w.backward()
             optimizer.step()
 
-    maxMax_loss_x, _ = torch.max(max_loss_x, dim=0)
+    maxMax_loss_xe, _ = torch.max(max_loss_xe, dim=0)
     loss_all = {
         "loss": total_loss / len(dataloader),
-        "loss_x": total_loss_x / len(dataloader),
+        "loss_xe": total_loss_xe / len(dataloader),
         "loss_rho_w": total_loss_rho_w / len(dataloader),
-        "max_loss_x": maxMax_loss_x.detach().numpy(),
-        "max_loss_rho_w": (torch.max(max_loss_rho_w)).detach().numpy()
+        "max_error_xe": maxMax_loss_xe.detach().numpy(),
+        "max_error_rho_w": (torch.max(max_loss_rho_w)).detach().numpy()
         }
     return loss_all
 
@@ -203,7 +206,7 @@ if __name__ == "__main__":
             #     test_loss_best = test_loss[-1]["loss"]
             # if args.patience and patience >= args.patience:
             #      break
-            if epoch == 100:
+            if epoch % 100 == 99:
                 for g in optimizer.param_groups:
                     g['lr'] = g['lr'] / 10
 

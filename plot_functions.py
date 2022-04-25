@@ -1,6 +1,7 @@
 from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 from matplotlib import cm
 
 
@@ -83,7 +84,7 @@ def plot_losscurves(result, name, args, save=True, show=True, filename=None, typ
                     plt.plot(val, color=colors[i], linestyle=':', label="test " + key)
         plt.title("Loss Curves for Config \n %s" % (name))
         plt.ylabel("Loss")
-        plt.ylim(0, 0.1)
+        plt.ylim(0, 0.02)
 
     elif type == "maxError":
         if "train_loss" in result:
@@ -112,14 +113,45 @@ def plot_losscurves(result, name, args, save=True, show=True, filename=None, typ
                         i += 1
         plt.title("Maximum Error for Config \n %s" % (name))
         plt.ylabel("Maximum Error")
-        plt.ylim(0, 1)
+        plt.ylim(0, 10)
     plt.legend()
+    plt.grid()
     plt.xlabel("Episodes")
     plt.tight_layout()
     if save:
         if filename is None:
             filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_%Curve_" % type + name + ".jpg"
         plt.savefig(args.path_plot_loss + filename)
+    if show:
+        plt.show()
+    plt.clf()
+
+
+def plot_scatter(x_nn, x_le, rho_nn, rho_le, name, args, save=True, show=True, filename=None):
+    step = int(80 / x_nn.shape[0])
+    colors = np.arange(0, step * x_nn.shape[0], step)
+    for i in range(x_nn.shape[0]):
+        plt.plot([x_nn[i, 0], x_le[i, 0]],[x_nn[i, 1], x_le[i, 1]], color='gainsboro', zorder=-1)
+
+    plt.scatter(x_nn[:, 0], x_nn[:, 1], marker='o', c=colors, sizes=5 * rho_nn ** (1/6),cmap='gist_ncar',
+                label='NN estimate', zorder=1)
+    plt.scatter(x_le[:, 0], x_le[:, 1], marker='x', c=colors, sizes=5 * rho_le ** (1/6), cmap='gist_ncar',
+                label='LE estimate', zorder=1)  # ,
+
+    plt.legend()
+    plt.grid()
+    plt.xlabel("x[0]")
+    plt.ylabel("x[1]")
+    plt.xlim(-1.5, 1.5)
+    plt.ylim(-1.5, 1.5)
+    error = x_nn - x_le
+    plt.title(name + "\n Max error: %.2f, Mean error: %.2f, MSE: %.2f" %
+              (torch.max(torch.abs(error)), torch.mean(torch.abs(error)), torch.mean(torch.abs(error ** 2))))
+    plt.tight_layout()
+    if save:
+        if filename is None:
+            filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_Scatter_" + name + ".jpg"
+        plt.savefig(args.path_plot_scatter + filename)
     if show:
         plt.show()
     plt.clf()

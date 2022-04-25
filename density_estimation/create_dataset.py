@@ -83,23 +83,23 @@ def raw2nnData(results_all, args):
         if input_map is None:
             num_inputs = 2 * xe_traj.shape[1] + 2 + u_in.shape[0] * u_in.shape[1]
             input_map = {'rho0': 0,
-                         'x0': torch.arange(1, xe_traj.shape[1] + 1),
+                         'xe0': torch.arange(1, xe_traj.shape[1] + 1),
                          'xref0': torch.arange(xe_traj.shape[1] + 1, 2 * xe_traj.shape[1] + 1),
                          't': 2 * xe_traj.shape[1] + 1,
                          'uref': torch.arange(2 * xe_traj.shape[1] + 2, num_inputs)}
             input_tensor = torch.zeros(num_inputs)
-            output_map = {'x': torch.arange(0, xe_traj.shape[1]),
+            output_map = {'xe': torch.arange(0, xe_traj.shape[1]),
                           'rho': xe_traj.shape[1]}
             output_tensor = torch.zeros(xe_traj.shape[1] + 1)
 
         input_tensor[input_map['uref']] = torch.cat((u_in[0, :], u_in[1, :]), 0)
         input_tensor[input_map['xref0']] = xref_traj[0, :, 0]
         for i_x in range(min(xe_traj.shape[0], 50)):
-            input_tensor[input_map['x0']] = x0[i_x, :]
+            input_tensor[input_map['xe0']] = x0[i_x, :] - xref_traj[0, :, 0]
             input_tensor[input_map['rho0']] = rho0[i_x, 0]
             for i_t in range(0, t.shape[0]):
                 input_tensor[input_map['t']] = t[i_t]
-                output_tensor[output_map['x']] = xe_traj[i_x, :, i_t] + xref_traj[0, :, i_t]
+                output_tensor[output_map['xe']] = xe_traj[i_x, :, i_t]
                 output_tensor[output_map['rho']] = rho_traj[i_x, 0, i_t]
                 data.append([input_tensor.numpy().copy(), output_tensor.numpy().copy()])
     return data, input_map, output_map
@@ -107,7 +107,7 @@ def raw2nnData(results_all, args):
 def nn2rawData(data, input_map, output_map, args):
     input, output = data
     xref0 = input[input_map['xref0']]
-    x0 = input[input_map['x0']]
+    xe0 = input[input_map['xe0']]
     rho0 = input[input_map['rho0']]
     t = input[input_map['t']]
     u_in = input[input_map['uref']]
@@ -115,15 +115,15 @@ def nn2rawData(data, input_map, output_map, args):
     # for i in range(math.ceil(N_sim / N_u)):
     #     interv_end = min((i + 1) * N_u, N_sim)
     #     u[0, :, i * N_u: interv_end] = (self.UREF_MAX - self.UREF_MIN) * torch.rand(1, self.DIM_U, 1) + self.UREF_MIN
-    x = output[output_map['x']]
+    xe = output[output_map['xe']]
     rho = output[output_map['rho']]
     results = {
-        'x0': x0,
+        'xe0': xe0,
         'xref0': xref0,
         'rho0': rho0,
         't': t,
         'u_in': u_in,
-        'x': x,
+        'xe': xe,
         'rho': rho,
         }
     return results

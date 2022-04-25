@@ -7,7 +7,7 @@ import argparse
 import matplotlib.pyplot as plt
 import numpy as np
 import hyperparams
-from plot_functions import plot_density_heatmap, plot_density_heatmap2
+from plot_functions import plot_density_heatmap # plot_density_heatmap2
 from train_density import NeuralNetwork
 
 
@@ -76,23 +76,26 @@ def test_density(system: ControlAffineSystem, xref_traj, uref_traj, xref0, N_sim
     params_NN = {
         "sample_size": 15 * 15 * 5 * 5,  # [60, 60, 20, 20],
         "title": "NN",
-        "filename": "2022-04-22-10-01-54_NN_finalTrain_lr0.001_numHidd4_sizeHidd64_rhoLoss0.1"
+        "filename": "2022-04-23-17-07-52_NN_lrStepEvery100BS512layer3noreg_lr0.001_numHidd4_sizeHidd64_rhoLoss0.1"
     }
+    x0 = system.sample_x0(xref0, params_NN["sample_size"])
+    rho = torch.ones(x0.shape[0], 1, 1)
 
     for params in (params_NN,params_LE, params_MC): #
-        x = system.sample_x0(xref0, params["sample_size"])
-        rho = torch.ones(x.shape[0], 1, 1)
+        x = x0
         if params["title"] == "LE":
             x, rho = system.compute_density(x, xref_traj, uref_traj, rho, N_sim, dt, cutting=False)
             comb = "sum"
+            xe = x - xref_traj
         elif params["title"] == "MC":
             with torch.no_grad():
                 for i in range(N_sim):
                     x = system.get_next_x(x, xref_traj[:, :, [i]], uref_traj[:, :, [i]], dt)
             comb = "sum"
+            xe = x - xref_traj
         elif params["title"] == "NN":
             model_params, args_NN, result = torch.load(('data/trained_nn/' + params["filename"] + '.pt'), map_location=args.device)
-            num_inputs = 26
+            num_inputs = 30
             model = NeuralNetwork(num_inputs-1, 5, args_NN).to(args.device)
             model.load_state_dict(model_params)
             model.eval()
@@ -100,23 +103,25 @@ def test_density(system: ControlAffineSystem, xref_traj, uref_traj, xref0, N_sim
             if u_in.shape[1] < 10:
                 u_in = torch.cat((u_in[:, :], torch.zeros(u_in.shape[0], 10 - u_in.shape[1])), 1)
             input_map = {'rho0': 0,
-                         'x0': torch.arange(1, xref_traj.shape[1] + 1),
-                         't': xref_traj.shape[1] + 1,
-                         'uref': torch.arange(xref_traj.shape[1] + 2, num_inputs)}
+                         'xe0': torch.arange(1, xref_traj.shape[1] + 1),
+                         'xref0': torch.arange(xref_traj.shape[1] + 1, 2 * xref_traj.shape[1] + 1),
+                         't': 2 * xref_traj.shape[1] + 1,
+                         'uref': torch.arange(2 * xref_traj.shape[1] + 2, num_inputs)}
             input_tensor = torch.zeros(x.shape[0], num_inputs)
             input_tensor[:, input_map['uref']] = (torch.cat((u_in[0, :], u_in[1, :]), 0)).repeat(x.shape[0],1)
-            input_tensor[:, input_map['x0']] = x[:, :, 0]
+            input_tensor[:, input_map['xe0']] = x[:, :, 0] - xref_traj[0, :, 0]
             input_tensor[:, input_map['rho0']] = rho[:, 0, 0]
             input_tensor[:, input_map['t']] = torch.ones(x.shape[0]) * N_sim * args.dt_sim
+            input_tensor[:, input_map['xref0']] = xref_traj[0, :, 0]
             with torch.no_grad():
                 input = input_tensor.to(args.device)
                 output = model(input[:, 1:])
-                x = output[:, 0:4].unsqueeze(-1)
+                xe = output[:, 0:4].unsqueeze(-1)
                 rho = input[:, 0] * torch.exp(output[:, 4])
                 rho = rho.unsqueeze(-1).unsqueeze(-1)
             comb = "mean"
 
-        xe = x - xref_traj
+
 
         name = params["title"] + "_time%.2fs_numSim%d_numStates%d_randSeed%d" % (
              args.dt_sim * args.N_sim, args.N_sim, xe.shape[0], args.random_seed)
