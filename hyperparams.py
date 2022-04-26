@@ -5,7 +5,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     # simulation parameter
-    parser.add_argument('--N_sim', type=int, default=11)
+    parser.add_argument('--N_sim', type=int, default=101)
     parser.add_argument('--N_sim_min', type=int, default=10)  # for data generation at random simulation time
     parser.add_argument('--N_sim_max', type=int, default=1000)  # for data generation at random simulation time
     parser.add_argument('--N_u', type=int, default=10)
@@ -39,7 +39,7 @@ def parse_args():
     parser.add_argument('--plot_densityheat', type=bool, default=True)
 
     # NN parameter
-    parser.add_argument('--run_name', type=str, default="includeTinExp")
+    parser.add_argument('--run_name', type=str, default="")
     parser.add_argument('--device', type=str, default="cpu")
     parser.add_argument('--batch_size', type=int, default=512)
     parser.add_argument('--epochs', type=int, default=10000)

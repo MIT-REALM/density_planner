@@ -88,9 +88,9 @@ def raw2nnData(results_all, args):
     input_map = None
 
     for results in results_all:
-        x0 = results['x0']
+        xe0 = results['xe0']
         t = results['t']
-        xref_traj = results['xref_traj']
+        xref0 = results['xref0']
         xe_traj = results['xe_traj']
         rho_traj = results['rho_traj']
         if 'u_params' not in results.keys():
@@ -108,9 +108,9 @@ def raw2nnData(results_all, args):
             output_tensor = torch.zeros(num_outputs)
 
         input_tensor[input_map['u_params']] = u_params.flatten()
-        input_tensor[input_map['xref0']] = xref_traj[0, :, 0]
+        input_tensor[input_map['xref0']] = xref0
         for i_x in range(min(xe_traj.shape[0], 50)):
-            input_tensor[input_map['xe0']] = x0[i_x, :] - xref_traj[0, :, 0]
+            input_tensor[input_map['xe0']] = xe0[i_x, :]
             for i_t in range(0, t.shape[0]):
                 input_tensor[input_map['t']] = t[i_t]
                 output_tensor[output_map['xe']] = xe_traj[i_x, :, i_t]

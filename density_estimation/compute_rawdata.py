@@ -43,12 +43,12 @@ def compute_data(iteration_number, samples_x, system, args,samples_t=None, save=
             else:
                 indizes = torch.arange(0, t.shape[0])
             results = {
-                'uref_traj': uref_traj,
+                #'uref_traj': uref_traj,
                 'u_params': u_params,
-                'x0': x_traj[:,:,0],
-                #'rho0': rho_traj[:,:,0],
+                'xe0': xe_traj[:,:,0],
                 't': t[indizes],
-                'xref_traj': xref_traj[:,:,indizes],
+                'xref0': xref_traj[0, :, 0],
+                #'xref_traj': xref_traj[:,:,indizes],
                 'xe_traj': xe_traj[:,:,indizes],
                 'rho_traj': rho_traj[:,:,indizes]
                 }
@@ -74,7 +74,7 @@ if __name__ == "__main__":
 
     args = hyperparams.parse_args()
 
-    samples_x = 20  # [15, 15, 5, 5] ' number of sampled initial conditions x0
+    samples_x = 30  # [15, 15, 5, 5] ' number of sampled initial conditions x0
     iteration_number = 500
     system = Car()
     random_seed = False
@@ -83,8 +83,9 @@ if __name__ == "__main__":
     else:
         args.random_seed = None
 
-    compute_data(iteration_number, 100, system, args, samples_t=0, save=True,
-                 plot=False) #samples_t=0... no sample times inbetween, just final value after N_sim-1 timesteps saved
-    #compute_data(iteration_number, samples_x, system, args, samples_t=int(np.rint(0.1*args.N_sim)), save=True, plot=False)
+    # compute_data(iteration_number, 100, system, args, samples_t=0, save=True,
+    #              plot=False) #samples_t=0... no sample times inbetween, just final value after N_sim-1 timesteps saved
+    compute_data(iteration_number, samples_x, system, args, samples_t=int(np.rint(0.1*args.N_sim)),
+                 save=True, plot=False)
 
     print("end")

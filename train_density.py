@@ -133,8 +133,7 @@ def evaluate(dataloader, model, args, optimizer=None, mode="val"):
         # Compute prediction error
         output = model(input)
         xe_nn = output[:, dataloader.dataset.output_map['xe']]
-        t_true = input[:, dataloader.dataset.input_map['t']]
-        rho_nn = torch.exp(t_true * output[:, dataloader.dataset.output_map['rho']])
+        rho_nn = torch.exp(output[:, dataloader.dataset.output_map['rho']])
         xe_true = target[:, dataloader.dataset.output_map['xe']]
         rho_true = target[:, dataloader.dataset.output_map['rho']]
         loss_xe, loss_rho_w = loss_function(xe_nn, xe_true, rho_nn, rho_true, args)
