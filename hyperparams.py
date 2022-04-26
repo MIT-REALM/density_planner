@@ -5,7 +5,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     # simulation parameter
-    parser.add_argument('--N_sim', type=int, default=100)
+    parser.add_argument('--N_sim', type=int, default=11)
     parser.add_argument('--N_sim_min', type=int, default=10)  # for data generation at random simulation time
     parser.add_argument('--N_sim_max', type=int, default=1000)  # for data generation at random simulation time
     parser.add_argument('--N_u', type=int, default=10)
@@ -14,7 +14,7 @@ def parse_args():
     parser.add_argument('--random_seed', type=int, default=4)
 
     # data paths
-    parser.add_argument('--path_rawdata', type=str, default="data/rawdata/2022-04-26_filesVal_polyn3")  # directory for the density data
+    parser.add_argument('--path_rawdata', type=str, default="data/rawdata/")  # directory for the density data
     parser.add_argument('--path_dataset', type=str, default="data/dataset/")  # directory for the density data
     parser.add_argument('--path_nn', type=str, default="data/trained_nn/")  # directory for saving and loading the trained NN
 

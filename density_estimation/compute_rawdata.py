@@ -36,7 +36,9 @@ def compute_data(iteration_number, samples_x, system, args,samples_t=None, save=
             xe_traj = x_traj - xref_traj
             t = args.dt_sim * torch.arange(0, x_traj.shape[2])
 
-            if samples_t is not None:
+            if samples_t == 0:
+                indizes = args.N_sim-1
+            elif samples_t is not None:
                 indizes = torch.randint(0, t.shape[0], (samples_t,))
             else:
                 indizes = torch.arange(0, t.shape[0])
@@ -81,6 +83,8 @@ if __name__ == "__main__":
     else:
         args.random_seed = None
 
-    compute_data(iteration_number, samples_x, system, args, samples_t=int(np.rint(0.1*args.N_sim)), save=True, plot=False)
+    compute_data(iteration_number, 100, system, args, samples_t=0, save=True,
+                 plot=False) #samples_t=0... no sample times inbetween, just final value after N_sim-1 timesteps saved
+    #compute_data(iteration_number, samples_x, system, args, samples_t=int(np.rint(0.1*args.N_sim)), save=True, plot=False)
 
     print("end")
