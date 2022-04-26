@@ -18,7 +18,7 @@ from density_estimation.create_dataset import raw2nnData, nn2rawData
 import numpy as np
 
 
-def get_nn_prediction(rho0, xe0, xref0, t, u_ref, args):
+def get_nn_prediction(model, rho0, xe0, xref0, t, uref_traj, num_inputs, args):
     u_in = uref_traj[0, :, ::args.N_u]
     if u_in.shape[1] < 10:
         u_in = torch.cat((u_in[:, :], torch.zeros(u_in.shape[0], 10 - u_in.shape[1])), 1)
@@ -82,7 +82,8 @@ if __name__ == "__main__":
     step = 5
     t_vec = np.arange(0, args.N_sim * args.dt_sim, step * args.dt_sim)
     for i, t in enumerate(t_vec):
-        xe_nn, rho_nn = get_nn_prediction(rho_traj[:, 0, 0], x_traj[:, :, 0] - xref_traj[0, :, 0], xref_traj[0, :, 0], t, uref_traj, args)
+        xe_nn, rho_nn = get_nn_prediction(model, rho_traj[:, 0, 0], x_traj[:, :, 0] - xref_traj[0, :, 0], xref_traj[0, :, 0],
+                                          t, uref_traj, num_inputs, args)
         error = xe_nn[:, :, 0] - xe_LE[:, :, i*step]
         print("Max error: %.2f, Mean error: %.2f, MSE: %.2f" %
               (torch.max(torch.abs(error)), torch.mean(torch.abs(error)), torch.mean(torch.abs(error ** 2))))

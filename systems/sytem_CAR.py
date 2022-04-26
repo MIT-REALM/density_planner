@@ -14,6 +14,10 @@ class Car(ControlAffineSystem):
     UREF_MIN = torch.tensor([-3., -3.]).reshape(1, -1, 1)
     UREF_MAX = torch.tensor([3., 3.]).reshape(1, -1, 1)
 
+    # parameters for polynomial parametrization of input
+    UPOLYN_MIN = -2
+    UPOLYN_MAX = 2
+
     # for initialization
     XREF0_MIN = torch.tensor([-2., -2., -1., 1.5]).reshape(1, -1, 1)
     XREF0_MAX = torch.tensor([2., 2., 1., 1.5]).reshape(1, -1, 1)

@@ -100,7 +100,7 @@ def load_args(config, args):
 
 
 def load_nn(num_inputs, num_outputs, args):
-    model = NeuralNetwork(num_inputs-1, num_outputs, args).to(args.device)
+    model = NeuralNetwork(num_inputs, num_outputs, args).to(args.device)
     if args.load_pretrained_nn:
         model_params, _, _ = torch.load(args.name_pretrained_nn, map_location=args.device)
         model.load_state_dict(model_params)
@@ -131,10 +131,10 @@ def evaluate(dataloader, model, args, optimizer=None, mode="val"):
         input, target = input.to(args.device), target.to(args.device)
 
         # Compute prediction error
-        input_nn = torch.cat((input[:, :dataloader.dataset.input_map['rho0']], input[:, dataloader.dataset.input_map['rho0']+1:]), 1)
-        output = model(input_nn)
+        output = model(input)
         xe_nn = output[:, dataloader.dataset.output_map['xe']]
-        rho_nn = input[:, dataloader.dataset.input_map['rho0']] * torch.exp(output[:, dataloader.dataset.output_map['rho']])
+        t_true = input[:, dataloader.dataset.input_map['t']]
+        rho_nn = torch.exp(t_true * output[:, dataloader.dataset.output_map['rho']])
         xe_true = target[:, dataloader.dataset.output_map['xe']]
         rho_true = target[:, dataloader.dataset.output_map['rho']]
         loss_xe, loss_rho_w = loss_function(xe_nn, xe_true, rho_nn, rho_true, args)
@@ -148,10 +148,7 @@ def evaluate(dataloader, model, args, optimizer=None, mode="val"):
         if mode == "train":
             # Backpropagation
             optimizer.zero_grad()
-            if batch % 2 == 0:
-                loss_xe.backward()
-            else:
-                loss_rho_w.backward()
+            loss.backward()
             optimizer.step()
 
     maxMax_loss_xe, _ = torch.max(max_loss_xe, dim=0)
@@ -205,8 +202,8 @@ if __name__ == "__main__":
             #     patience = 0
             #     test_loss_best = test_loss[-1]["loss"]
             # if args.patience and patience >= args.patience:
-            #      break
-            if epoch % 100 == 99:
+            #     break
+            if epoch % 1000 == 999:
                 for g in optimizer.param_groups:
                     g['lr'] = g['lr'] / 10
 

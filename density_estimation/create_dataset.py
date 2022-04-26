@@ -63,40 +63,54 @@ class densityDataset(Dataset):
         self.output_map = output_map
         return
 
+def load_inputmap(dim_x, args):
+    if args.input_type == "discr10":
+        dim_u = 20
+    elif args.input_type == "polyn3":
+        dim_u = 8
+    else:
+        raise NotImplementedError
+    num_inputs = 2 * dim_x + 1 + dim_u
+    input_map = {'xe0': torch.arange(0, dim_x),
+                 'xref0': torch.arange(dim_x, 2 * dim_x),
+                 't': 2 * dim_x,
+                 'u_params': torch.arange(2 * dim_x + 1, num_inputs)}
+    return input_map, num_inputs
+
+def load_outputmap(dim_x):
+    num_outputs = dim_x + 1
+    output_map = {'xe': torch.arange(0, dim_x),
+                  'rho': dim_x}
+    return output_map, num_outputs
 
 def raw2nnData(results_all, args):
     data = []
     input_map = None
 
     for results in results_all:
-        rho0 = results['rho0']
         x0 = results['x0']
         t = results['t']
-        uref_traj = results['uref_traj']
         xref_traj = results['xref_traj']
         xe_traj = results['xe_traj']
         rho_traj = results['rho_traj']
-        u_in = uref_traj[0, :,::args.N_u]# just save every N_u'th input (assume input stays constant for N_u timesteps)
-        if u_in.shape[1] < 10:
-            u_in = torch.cat((u_in[:, :], torch.zeros(u_in.shape[0], 10 - u_in.shape[1])), 1)
+        if 'u_params' not in results.keys():
+            uref_traj = results['uref_traj']
+            u_params = uref_traj[0, :, ::args.N_u]
+            if u_params.shape[1] < 10:
+                u_params = torch.cat((u_params[:, :], torch.zeros(u_params.shape[0], 10 - u_params.shape[1])), 1)
+        else:
+            u_params = results['u_params']
 
         if input_map is None:
-            num_inputs = 2 * xe_traj.shape[1] + 2 + u_in.shape[0] * u_in.shape[1]
-            input_map = {'rho0': 0,
-                         'xe0': torch.arange(1, xe_traj.shape[1] + 1),
-                         'xref0': torch.arange(xe_traj.shape[1] + 1, 2 * xe_traj.shape[1] + 1),
-                         't': 2 * xe_traj.shape[1] + 1,
-                         'uref': torch.arange(2 * xe_traj.shape[1] + 2, num_inputs)}
+            input_map, num_inputs = load_inputmap(xe_traj.shape[1], args)
             input_tensor = torch.zeros(num_inputs)
-            output_map = {'xe': torch.arange(0, xe_traj.shape[1]),
-                          'rho': xe_traj.shape[1]}
-            output_tensor = torch.zeros(xe_traj.shape[1] + 1)
+            output_map, num_outputs = load_outputmap(xe_traj.shape[1])
+            output_tensor = torch.zeros(num_outputs)
 
-        input_tensor[input_map['uref']] = torch.cat((u_in[0, :], u_in[1, :]), 0)
+        input_tensor[input_map['u_params']] = u_params.flatten()
         input_tensor[input_map['xref0']] = xref_traj[0, :, 0]
         for i_x in range(min(xe_traj.shape[0], 50)):
             input_tensor[input_map['xe0']] = x0[i_x, :] - xref_traj[0, :, 0]
-            input_tensor[input_map['rho0']] = rho0[i_x, 0]
             for i_t in range(0, t.shape[0]):
                 input_tensor[input_map['t']] = t[i_t]
                 output_tensor[output_map['xe']] = xe_traj[i_x, :, i_t]
@@ -108,21 +122,15 @@ def nn2rawData(data, input_map, output_map, args):
     input, output = data
     xref0 = input[input_map['xref0']]
     xe0 = input[input_map['xe0']]
-    rho0 = input[input_map['rho0']]
     t = input[input_map['t']]
-    u_in = input[input_map['uref']]
-    # uref = torch.ones(1, self.DIM_U, N_sim)
-    # for i in range(math.ceil(N_sim / N_u)):
-    #     interv_end = min((i + 1) * N_u, N_sim)
-    #     u[0, :, i * N_u: interv_end] = (self.UREF_MAX - self.UREF_MIN) * torch.rand(1, self.DIM_U, 1) + self.UREF_MIN
+    u_params = input[input_map['u_params']]
     xe = output[output_map['xe']]
     rho = output[output_map['rho']]
     results = {
         'xe0': xe0,
         'xref0': xref0,
-        'rho0': rho0,
         't': t,
-        'u_in': u_in,
+        'u_params': u_params,
         'xe': xe,
         'rho': rho,
         }

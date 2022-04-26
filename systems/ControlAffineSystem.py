@@ -288,40 +288,63 @@ class ControlAffineSystem(ABC):
     #             return True
     #     return False
 
-    def sample_uref_traj(self, N_sim, N_u=None):
-        if N_u is None:
-            return (self.UREF_MAX - self.UREF_MIN) * torch.rand(1, self.DIM_U, N_sim) + self.UREF_MIN
-        else:
-            u = torch.ones(1, self.DIM_U, N_sim)
+    def sample_uref_traj(self, args):
+        N_sim = args.N_sim
+
+        # parametrization by discretized input signals
+        if args.input_type == "discr10":
+            N_u = args.N_u
+            # if N_u is None:
+            #     uref_traj = (self.UREF_MAX - self.UREF_MIN) * torch.rand(1, self.DIM_U, N_sim) + self.UREF_MIN
+            #     return uref_traj, False
+            # else:
+            uref_traj = torch.ones(1, self.DIM_U, N_sim)
             for i in range(math.ceil(N_sim / N_u)):
-                interv_end = min((i+1)*N_u, N_sim)
-                u[0, :, i*N_u : interv_end] = (self.UREF_MAX - self.UREF_MIN) * torch.rand(1, self.DIM_U, 1) + self.UREF_MIN
-            return u
+                interv_end = min((i + 1) * N_u, N_sim)
+                uref_traj[0, :, i * N_u: interv_end] = (self.UREF_MAX - self.UREF_MIN) * torch.rand(1, self.DIM_U,
+                                                                                                    1) + self.UREF_MIN
+                u_params = uref_traj[0, :, ::args.N_u]
+            return uref_traj, u_params
+
+        # parametrization by polynomials of degree 3
+        elif args.input_type == "polyn3":
+            valid = False
+            t = torch.arange(0, args.dt_sim * N_sim, args.dt_sim).reshape(1, 1, -1).repeat(1, self.DIM_U, 1)
+            while not valid:
+                u_params = ((self.UPOLYN_MAX - self.UPOLYN_MIN) * torch.rand(4, self.DIM_U) + self.UPOLYN_MIN).reshape(1, 2, 1, -1)#.repeat(1, 1, t.shape[2], 1)
+                uref_traj = u_params[:,:,:,0] * torch.ones_like(t) + u_params[:,:,:,1] * t + u_params[:,:,:,2] * t ** 2 + u_params[:,:,:,3] * t ** 3
+                valid = True
+                for j in range(self.DIM_U):
+                    if (torch.any(uref_traj[:, [j], [0]] > self.UREF_MAX[0, j, 0]) or torch.any(uref_traj[:, [j], [0]] < self.UREF_MIN[0, j, 0])):
+                        valid = False
+            return uref_traj, u_params
 
     def sample_xref0(self):
         return (self.XREF0_MAX - self.XREF0_MIN) * torch.rand(1, self.DIM_X, 1) + self.XREF0_MIN
 
-    def compute_xref_traj(self, xref0: torch.Tensor, uref_traj: torch.Tensor, N_sim, dt) -> torch.Tensor:
+    def compute_xref_traj(self, xref0: torch.Tensor, uref_traj: torch.Tensor, args) -> torch.Tensor:
+        N_sim = args.N_sim
+        dt = args.dt_sim
         xref_traj = xref0.repeat(1, 1, N_sim)
 
         for i in range(N_sim - 1):
             xref_traj[:, :, [i + 1]] = self.get_next_xref(xref_traj[:, :, [i]], uref_traj[:, :, [i]], dt)
         return xref_traj
 
-    def sample_ref_traj(self, xref0: torch.Tensor, N_sim, dt):
-        xref_traj = xref0.repeat(1, 1, N_sim)
-        uref_traj = self.sample_uref_traj(N_sim)
-
-        for i in range(N_sim - 1):
-            xref_traj[:, :, [i + 1]] = self.get_next_xref(xref_traj[:, :, [i]], uref_traj[:, :, [i]], dt)
-            rep = 0
-            while self.exceed_state_limits(xref_traj[:, :, [i + 1]]):
-                uref_traj[:, :, [i]] = self.sample_uref_traj(1)
-                xref_traj[:, :, [i + 1]] = self.get_next_xref(xref_traj[:, :, [i]], uref_traj[:, :, [i]], dt)
-                rep += 1
-                if rep >= 10:
-                    return xref_traj[:, :, :i + 1], uref_traj[:, :, :i + 1]
-        return xref_traj[:, :, :i + 1], uref_traj[:, :, :i + 1]
+    # def sample_ref_traj(self, xref0: torch.Tensor, N_sim, dt):
+    #     xref_traj = xref0.repeat(1, 1, N_sim)
+    #     uref_traj = self.sample_uref_traj(N_sim)
+    #
+    #     for i in range(N_sim - 1):
+    #         xref_traj[:, :, [i + 1]] = self.get_next_xref(xref_traj[:, :, [i]], uref_traj[:, :, [i]], dt)
+    #         rep = 0
+    #         while self.exceed_state_limits(xref_traj[:, :, [i + 1]]):
+    #             uref_traj[:, :, [i]] = self.sample_uref_traj(1)
+    #             xref_traj[:, :, [i + 1]] = self.get_next_xref(xref_traj[:, :, [i]], uref_traj[:, :, [i]], dt)
+    #             rep += 1
+    #             if rep >= 10:
+    #                 return xref_traj[:, :, :i + 1], uref_traj[:, :, :i + 1]
+    #     return xref_traj[:, :, :i + 1], uref_traj[:, :, :i + 1]
 
     def sample_x0(self, xref0, sample_size):
         xe0_max = torch.minimum(self.X_MAX - xref0, self.XE0_MAX)
