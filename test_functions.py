@@ -1,14 +1,10 @@
 import torch
 from systems.sytem_CAR import Car
 from systems.ControlAffineSystem import ControlAffineSystem
-import sys
-from utils import approximate_derivative, get_grid
-import argparse
-import matplotlib.pyplot as plt
-import numpy as np
+from systems.utils import approximate_derivative
 import hyperparams
 from plot_functions import plot_density_heatmap # plot_density_heatmap2
-from train_density import NeuralNetwork
+from density_training.train_density import NeuralNetwork
 
 
 def test_dimensions(object: ControlAffineSystem, x: torch.Tensor, xref: torch.Tensor, uref: torch.Tensor):

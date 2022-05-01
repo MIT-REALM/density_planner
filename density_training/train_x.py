@@ -1,14 +1,11 @@
-import matplotlib.pyplot as plt
 import torch
 import hyperparams
 from torch import nn
-from torch.utils.data import DataLoader, Dataset, random_split
-from density_estimation.create_dataset import densityDataset
+from torch.utils.data import DataLoader
+from data_generation.create_dataset import densityDataset
 from datetime import datetime
 from plot_functions import plot_losscurves
-from utils import listDict2dictList
-import os
-import pickle
+from systems.utils import listDict2dictList
 
 
 class NeuralNetwork(nn.Module):

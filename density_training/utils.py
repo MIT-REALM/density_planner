@@ -1,36 +1,10 @@
-import matplotlib.pyplot as plt
 import torch
 import hyperparams
 from torch import nn
-from torch.utils.data import DataLoader, Dataset, random_split
-from density_estimation.create_dataset import densityDataset
 from datetime import datetime
 from plot_functions import plot_losscurves
-from utils import listDict2dictList
-import os
-import pickle
-
-
-class NeuralNetwork(nn.Module):
-    def __init__(self, num_inputs, num_outputs, args):
-        super(NeuralNetwork, self).__init__()
-
-        if args.activation == "relu":
-            self.activation = nn.ReLU()
-        else:
-            raise NotImplemented('NotImplemented')
-
-        self.linear_list = nn.ModuleList()
-        self.linear_list.append(nn.Linear(num_inputs, args.size_hidden[0]))
-        for i in range(len(args.size_hidden) - 1):
-            self.linear_list.append(nn.Linear(args.size_hidden[i], args.size_hidden[i + 1]))
-        self.linear_list.append(nn.Linear(args.size_hidden[-1], num_outputs))
-
-    def forward(self, x):
-        for i in range(len(self.linear_list) - 1):
-            x = self.activation(self.linear_list[i](x))
-        x = self.linear_list[len(self.linear_list) - 1](x)
-        return x
+from systems.utils import listDict2dictList
+from data_generation.create_dataset import densityDataset
 
 
 def loss_function(xe_nn, xe_true, rho_nn, rho_true, args):
@@ -108,6 +82,8 @@ def load_nn(num_inputs, num_outputs, args):
         optimizer = torch.optim.SGD(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
     elif args.optimizer == "Adam":
         optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
+    elif args.optimizer == "LBFGS":
+        optimizer = torch.optim.LBFGS(model.parameters(), lr=args.learning_rate)
     else:
         raise NotImplemented('NotImplemented')
 
@@ -115,7 +91,7 @@ def load_nn(num_inputs, num_outputs, args):
 
 
 def evaluate(dataloader, model, args, optimizer=None, mode="val"):
-    size = len(dataloader.dataset)
+
     if mode == "train" and optimizer is not None:
         model.train()
     elif mode == "val":
@@ -132,10 +108,9 @@ def evaluate(dataloader, model, args, optimizer=None, mode="val"):
 
         # Compute prediction error
         output = model(input)
-        xe_nn = output[:, dataloader.dataset.output_map['xe']]
-        rho_nn = torch.exp(output[:, dataloader.dataset.output_map['rho']])
-        xe_true = target[:, dataloader.dataset.output_map['xe']]
-        rho_true = target[:, dataloader.dataset.output_map['rho']]
+        xe_nn, rho_nn = get_output_variables(output, dataloader.dataset.output_map, type='exp')
+        xe_true, rho_true = get_output_variables(target, dataloader.dataset.output_map)
+
         loss_xe, loss_rho_w = loss_function(xe_nn, xe_true, rho_nn, rho_true, args)
         loss = loss_xe + loss_rho_w
         total_loss_xe += loss_xe.item()
@@ -146,9 +121,21 @@ def evaluate(dataloader, model, args, optimizer=None, mode="val"):
 
         if mode == "train":
             # Backpropagation
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            if args.optimizer == "LBFGS":
+                def closure():
+                    output = model(input)
+                    xe_nn, rho_nn = get_output_variables(output, dataloader.dataset.output_map, type='exp')
+                    xe_true, rho_true = get_output_variables(target, dataloader.dataset.output_map)
+                    loss_xe, loss_rho_w = loss_function(xe_nn, xe_true, rho_nn, rho_true, args)
+                    loss = loss_xe + loss_rho_w
+                    loss.backward()
+                    return loss
+
+                optimizer.step(closure)
+            else:
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
 
     maxMax_loss_xe, _ = torch.max(max_loss_xe, dim=0)
     loss_all = {
@@ -160,71 +147,4 @@ def evaluate(dataloader, model, args, optimizer=None, mode="val"):
         }
     return loss_all
 
-
-
-
-if __name__ == "__main__":
-    args = hyperparams.parse_args()
-    args.device = "cuda" if torch.cuda.is_available() else "cpu"
-    run_name = args.run_name
-
-    # configs = create_configs(args=args)
-    configs = create_configs(args=args)
-    results = []
-
-    for i, config in enumerate(configs):
-
-        print(f"_____Configuration {i}:______")
-        name = run_name + f", learning_rate={config['learning_rate']}, num_hidden={config['num_hidden']}, size_hidden={config['size_hidden']}, weight_decay={config['weight_decay']}, optimizer={config['optimizer']}, rho_loss_weight={config['rho_loss_weight']}"
-        short_name = run_name + f"_lr{config['learning_rate']}_numHidd{config['num_hidden']}_sizeHidd{config['size_hidden']}_rhoLoss{config['rho_loss_weight']}"
-        nn_name = args.path_nn + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_NN_" + short_name + '.pt'
-        lossPlot_name = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_lossCurve_" + short_name + ".jpg"
-        maxErrorPlot_name = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_maxErrorCurve_" + short_name + ".jpg"
-        print(name)
-
-        train_dataloader, validation_dataloader = load_dataloader(args)
-        args = load_args(config, args)
-        model, optimizer = load_nn(len(train_dataloader.dataset.data[0][0]), len(train_dataloader.dataset.data[0][1]),
-                                   args)
-
-        patience = 0
-        test_loss_best = float('Inf')
-        test_loss = []
-        train_loss = []
-        for epoch in range(args.epochs):
-            train_loss.append(evaluate(train_dataloader, model, args, optimizer=optimizer, mode="train"))
-            test_loss.append(evaluate(validation_dataloader, model, args, mode="val"))
-            #
-            # if test_loss[-1]["loss"] > test_loss_best:
-            #     patience += 1
-            # else:
-            #     patience = 0
-            #     test_loss_best = test_loss[-1]["loss"]
-            # if args.patience and patience >= args.patience:
-            #     break
-            if epoch % 1000 == 999:
-                for g in optimizer.param_groups:
-                    g['lr'] = g['lr'] / 10
-
-
-            if epoch % 20 == 2:
-                train_loss_dict = listDict2dictList(train_loss)
-                test_loss_dict = listDict2dictList(test_loss)
-                result = {
-                    'train_loss': train_loss_dict,
-                    'test_loss': test_loss_dict,
-                    'num_epochs': epoch,
-                    'name': nn_name,
-                    'cost_function': "rho_nn=rho0*exp(out)",
-                    'hyperparameters': config
-                }
-                plot_losscurves(result, "t%d_" % (epoch) + short_name, args, filename=maxErrorPlot_name, type="maxError")
-                plot_losscurves(result, "t%d_" % (epoch) + short_name, args, filename=lossPlot_name)
-
-            if epoch % 100 == 99:
-                torch.save([model.state_dict(), args, result], nn_name)
-        print(f"Best test loss after epoch {epoch}: {test_loss_best} \n")
-        torch.save([model.state_dict(), args, result], nn_name)
-        plot_losscurves(result, "final_t%d_" % (epoch) + short_name, args, filename=lossPlot_name)
-    print("Done!")
 
