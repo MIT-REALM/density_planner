@@ -2,16 +2,14 @@ import torch
 from systems.sytem_CAR import Car
 import hyperparams
 from datetime import datetime
-import matplotlib.pyplot as plt
-import numpy as np
 import pickle
-from plot_functions import plot_density_heatmap
+from plots.plot_functions import plot_density_heatmap
 
 def compute_data(iteration_number, samples_x, system, args,samples_t=None, save=True, plot=True):
     results_all = []
     for j in range(100):
         for i in range(iteration_number):
-            xref_traj, rho_traj, uref_traj, u_params, xe_traj, t = get_valid_trajectories(system, args)
+            xref_traj, rho_traj, uref_traj, u_params, xe_traj, t = system.get_valid_trajectories(samples_x, args)
 
             if samples_t == 0:
                 indizes = args.N_sim-1

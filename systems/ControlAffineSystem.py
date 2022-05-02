@@ -402,7 +402,7 @@ class ControlAffineSystem(ABC):
                         return x_traj[:, :, :i + 2], rho_traj[:, [0], :i + 2]
         return x_traj, rho_traj
 
-    def get_valid_trajectories(self, args):
+    def get_valid_trajectories(self, sample_size, args):
         # get random input trajectory and compute corresponding state trajectory
         valid = False
         while not valid:
@@ -415,7 +415,7 @@ class ControlAffineSystem(ABC):
                 continue
 
             # compute corresponding  state and density trajectories
-            x0 = self.sample_x0(xref0, self)  # get random initial states
+            x0 = self.sample_x0(xref0, sample_size)  # get random initial states
             rho0 = torch.ones(x0.shape[0], 1, 1)  # equal initial density
             x_traj, rho_traj = self.compute_density(x0, xref_traj, uref_traj, rho0,
                                                       xref_traj.shape[2], args.dt_sim)  # compute x and rho trajectories

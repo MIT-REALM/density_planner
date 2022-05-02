@@ -2,9 +2,9 @@ import torch
 import hyperparams
 from torch import nn
 from datetime import datetime
-from plot_functions import plot_losscurves
+from plots.plot_functions import plot_losscurves
 from systems.utils import listDict2dictList
-from utils import *
+from density_training.utils import *
 
 class NeuralNetwork(nn.Module):
     def __init__(self, num_inputs, num_outputs, args):

@@ -4,7 +4,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 from data_generation.create_dataset import densityDataset
 from datetime import datetime
-from plot_functions import plot_losscurves
+from plots.plot_functions import plot_losscurves
 from systems.utils import listDict2dictList
 
 

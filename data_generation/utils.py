@@ -72,13 +72,17 @@ def raw2nnData(results_all, args):
     return data, input_map, output_map
 
 
-def get_input_tensors(u_params, xref0, xe0, t):
-    input_map, num_inputs = load_inputmap(xe0.shape[0], args)
-    input_tensor = torch.zeros(num_inputs)
-    input_tensor[input_map['u_params']] = u_params.flatten()
-    input_tensor[input_map['xref0']] = xref0
-    input_tensor[input_map['xe0']] = xe0
-    input_tensor[input_map['t']] = t
+def get_input_tensors(u_params, xref0, xe0, t, args):
+    if xe0.dim() > 1:
+        input_map, num_inputs = load_inputmap(xe0.shape[1], args)
+        input_tensor = torch.zeros(xe0.shape[0], num_inputs)
+    else:
+        input_map, num_inputs = load_inputmap(xe0.shape[0], args)
+        input_tensor = torch.zeros(1, num_inputs)
+    input_tensor[:, input_map['u_params']] = u_params.flatten()
+    input_tensor[:, input_map['xref0']] = xref0
+    input_tensor[:, input_map['xe0']] = xe0
+    input_tensor[:, input_map['t']] = t
     return input_tensor, input_map
 
 

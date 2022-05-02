@@ -1,10 +1,6 @@
 import torch
-import hyperparams
-from torch import nn
-from datetime import datetime
-from plot_functions import plot_losscurves
-from systems.utils import listDict2dictList
 from data_generation.create_dataset import densityDataset
+from density_training.train_density import NeuralNetwork
 
 
 def loss_function(xe_nn, xe_true, rho_nn, rho_true, args):
@@ -73,9 +69,9 @@ def load_args(config, args):
     return args
 
 
-def load_nn(num_inputs, num_outputs, args):
+def load_nn(num_inputs, num_outputs, args, load_pretrained=False):
     model = NeuralNetwork(num_inputs, num_outputs, args).to(args.device)
-    if args.load_pretrained_nn:
+    if load_pretrained:
         model_params, _, _ = torch.load(args.name_pretrained_nn, map_location=args.device)
         model.load_state_dict(model_params)
     if args.optimizer == "SGD":

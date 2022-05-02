@@ -1,9 +1,7 @@
 data
-plots
+plots/losscurves
+plots/scatter
+plots/density_heatmaps
 scretch.py
 .idea
 __pycache__
-yue_sim.py
-yue_sim_original.py
-point_est.py
-fig

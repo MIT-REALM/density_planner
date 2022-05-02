@@ -6,13 +6,11 @@ def parse_args():
 
     # simulation parameter
     parser.add_argument('--N_sim', type=int, default=101)
-    parser.add_argument('--N_sim_min', type=int, default=10)  # for data generation at random simulation time
-    parser.add_argument('--N_sim_max', type=int, default=1000)  # for data generation at random simulation time
     parser.add_argument('--N_u', type=int, default=10)
     parser.add_argument('--input_type', type=str, default="polyn3")  # discr10, polyn3
     #parser.add_argument('--input_params_zero', type=list, default=[0])
     parser.add_argument('--dt_sim', type=int, default=0.01)
-    parser.add_argument('--random_seed', type=int, default=4)
+    parser.add_argument('--random_seed', type=int, default=1)
 
     # data paths
     parser.add_argument('--path_rawdata', type=str, default="data/rawdata/2022-04-27_filesTrain_polyn3/")  # directory for the density data
@@ -47,7 +45,7 @@ def parse_args():
     parser.add_argument('--epochs', type=int, default=1000)
     parser.add_argument('--train_len', type=float, default=0.7)  # val_len = 1-train_len
     parser.add_argument('--activation', type=str, default="relu")
-    parser.add_argument('--size_hidden', type=list, nargs="+", default=[100, 100, 100, 100, 100]) #4 x 64
+    parser.add_argument('--size_hidden', type=list, nargs="+", default=[100, 100, 100, 100]) #4 x 64
     parser.add_argument('--rho_loss_weight', type=float, default=0.1)
     parser.add_argument('--optimizer', type=str, default="Adam") # Adam or LFBGS
     parser.add_argument('--learning_rate', type=float, default=0.0001)  # 2 e-5

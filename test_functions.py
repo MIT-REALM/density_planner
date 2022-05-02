@@ -3,7 +3,7 @@ from systems.sytem_CAR import Car
 from systems.ControlAffineSystem import ControlAffineSystem
 from systems.utils import approximate_derivative
 import hyperparams
-from plot_functions import plot_density_heatmap # plot_density_heatmap2
+from plots.plot_functions import plot_density_heatmap # plot_density_heatmap2
 from density_training.train_density import NeuralNetwork
 
 

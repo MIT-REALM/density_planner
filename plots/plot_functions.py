@@ -2,7 +2,10 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from matplotlib import cm
+from scipy.spatial import Delaunay
+from scipy.interpolate import LinearNDInterpolator
+from plots.utils import sample_from
+import scipy
 
 
 # def plot_density_heatmap2(xpos, ypos, rho, name, args, save=True, show=True, filename=None):
@@ -23,33 +26,63 @@ from matplotlib import cm
 #     plt.clf()
 
 
-def plot_density_heatmap(xpos, ypos, rho, name, args, combine="sum", save=True, show=True, filename=None):
+def plot_density_heatmap(x, rho, name, args, combine="sampling", save=True, show=True, filename=None):
+    """
+    Plot a heat map
+
+    Parameters
+    ----------
+    x: torch.Tensor
+        batch_size x self.DIM_X: tensor of states at certain time point
+    rho: torch.Tensor
+        batch_size: tensor of corresponding densities
+    """
     ny = 30
     nx = 30
+    sample_size = 1000
+    xmin, xmax, ymin, ymax = -1.5, 1.5, -1.5, 1.5
+
     density_log = np.ones((ny, nx))
     density = np.zeros((ny, nx))
-    bins = [[[] for _ in range(nx)] for _ in range(ny)]
+    x = x.detach().cpu().numpy()
+    rho = rho.detach().cpu().numpy()
 
-    xmin, xmax, ymin, ymax = -1.5, 1.5, -1.5, 1.5
-    bin_x = ((xpos - xmin) / ((xmax - xmin) / nx)).astype(np.int32)
-    bin_y = ((ypos - ymin) / ((ymax - ymin) / ny)).astype(np.int32)
+    # get the number of the bin in x and y direction for each state sample
+    bin_x = ((x[:,0] - xmin) / ((xmax - xmin) / nx)).astype(np.int32)
+    bin_y = ((x[:,1] - ymin) / ((ymax - ymin) / ny)).astype(np.int32)
     bin_x = np.clip(bin_x, 0, nx - 1)
     bin_y = np.clip(bin_y, 0, ny - 1)
 
+    # save density and state 3+4 in list of the corresponding bin
+    bins_rho = [[[] for _ in range(nx)] for _ in range(ny)]
+    bins_x = [[[] for _ in range(nx)] for _ in range(ny)]
     for i in range(bin_x.shape[0]):
-        bins[bin_y[i]][bin_x[i]].append(rho[i])
+        bins_rho[bin_y[i]][bin_x[i]].append(rho[i])
+        bins_x[bin_y[i]][bin_x[i]].append(x[i, 2:])
+
     for i in range(ny):
         for j in range(nx):
-            if len(bins[i][j]) > 0:
+            if len(bins_rho[i][j]) > 0:
                 if combine == "mean":
-                    density_log[i, j] = np.mean(bins[i][j])
-                    density[i, j] = np.mean(bins[i][j])
+                    density_log[i, j] = np.mean(bins_rho[i][j])
+                    density[i, j] = np.mean(bins_rho[i][j])
                 elif combine == "max":
-                    density_log[i, j] = np.max(bins[i][j])
-                    density[i, j] = np.max(bins[i][j])
+                    density_log[i, j] = np.max(bins_rho[i][j])
+                    density[i, j] = np.max(bins_rho[i][j])
                 elif combine == "sum":
-                    density_log[i, j] = np.sum(bins[i][j]) #/ xpos.shape[0]
-                    density[i, j] = np.sum(bins[i][j]) #/ xpos.shape[0]
+                    density_log[i, j] = np.sum(bins_rho[i][j])  # / xpos.shape[0]
+                    density[i, j] = np.sum(bins_rho[i][j])  # / xpos.shape[0]
+                elif combine == "sampling" and len(bins_rho[i][j]) > 3:
+                    samp_x = np.stack(bins_x[i][j], axis=0).astype(np.double)
+                    samp_rho = np.stack(bins_rho[i][j], axis=0).astype(np.double)
+                    estimator = LinearNDInterpolator(samp_x, samp_rho, fill_value=0.0)
+                    samp_xs, hull1 = sample_from(samp_x, sample_size, sel_indices=[0, 1],
+                                                 hull_sampling=True, gain=1, faster_hull=True)
+                    dens2 = estimator(*(samp_xs.T))
+                    cvh_vol = scipy.spatial.ConvexHull(bins_x[i][j]).volume
+                    prob = np.mean(dens2) * cvh_vol
+                    density_log[i, j] = prob
+                    density[i, j] = prob
 
     extent = [xmin, xmax, ymin, ymax]
     for i, heatmap in enumerate([np.log(density_log), density]):
@@ -57,15 +90,15 @@ def plot_density_heatmap(xpos, ypos, rho, name, args, combine="sum", save=True, 
             continue
         im = plt.imshow(heatmap, extent=extent, origin='lower')
         name_new = ("logRho_" if i == 0 else "Rho_") + name
-        plt.title("Density Heatmap for Simulation \n %s" % (name_new))
+        plt.title("Heatmap for Simulation \n %s \n Density estimation by %s" % (name_new, combine))
         plt.xlabel("x-xref")
         plt.ylabel("y-yref")
         plt.colorbar(im, fraction=0.046, pad=0.04, format="%.2f")
+        plt.tight_layout()
         if save:
             if filename is None:
-                filename = args.path_plot_densityheat + datetime.now().strftime(
-                    "%Y-%m-%d-%H-%M-%S") + "_heatmap_" + name_new + ".jpg"
-            plt.savefig(filename)
+                filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_heatmap_" + name_new + ".jpg"
+            plt.savefig(args.path_plot_densityheat + 'random_seed%d/' % args.random_seed + filename)
         if show:
             plt.show()
         plt.clf()
@@ -155,7 +188,7 @@ def plot_scatter(x_nn, x_le, rho_nn, rho_le, name, args, save=True, show=True, f
         plt.xlim(-1.5, 1.5)
         plt.ylim(-1.5, 1.5)
         error = x_nn - x_le
-        plt.title(name + "\n Max error: %.3f, Mean error: %.3f, MSE: %.3f" %
+        plt.title(name + "\n Max error: %.3f, Mean error: %.4f, MSE: %.4f" %
                   (torch.max(torch.abs(error)), torch.mean(torch.abs(error)), torch.mean(torch.abs(error ** 2))))
         plt.tight_layout()
         if save:

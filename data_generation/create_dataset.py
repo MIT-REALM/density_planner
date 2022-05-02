@@ -5,7 +5,7 @@ import os
 import pickle
 from datetime import datetime
 from systems.sytem_CAR import Car
-from utils import *
+from data_generation.utils import raw2nnData
 
 class densityDataset(Dataset):
     """
