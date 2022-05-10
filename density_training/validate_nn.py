@@ -50,15 +50,15 @@ if __name__ == "__main__":
         xe_nn, rho_nn = get_nn_prediction(model, xe_traj[:, :, 0], xref_traj[0, :, 0],
                                           t, u_params, args)
         error = xe_nn[:, :, 0] - xe_traj[:, :, i*step]
-        print("Max error: %.2f, Mean error: %.2f, MSE: %.2f" %
-              (torch.max(torch.abs(error)), torch.mean(torch.abs(error)), torch.mean(torch.abs(error ** 2))))
+        print("Max error: %.3f, Mean error: %.4f" %
+              (torch.max(torch.abs(error)), torch.mean(torch.abs(error))))
 
         plot_density_heatmap(xe_nn[:,:,0], rho_nn[:,0,0], run_name + "_time=%.2fs_NN" % t, args,
                              save=True, show=True, filename=None)
         plot_density_heatmap(xe_traj[:, :, i*step], rho_traj[:, 0, i*step], run_name + "_time=%.2fs_LE" % t, args,
                              save=True, show=True, filename=None)
-        #plot_scatter(xe_nn[:,:,0], xe_traj[:, :, i*step], rho_nn[:,0,0], rho_traj[:, 0, i*step],
-        #                     run_name + "_time=%.2fs" % t, args, save=False, show=True, filename=None)
+        plot_scatter(xe_nn[:50,:,0], xe_traj[:50, :, i*step], rho_nn[:50,0,0], rho_traj[:50, 0, i*step],
+                             run_name + "_time=%.2fs" % t, args, save=True, show=True, filename=None)
 
 
 

@@ -411,7 +411,7 @@ class ControlAffineSystem(ABC):
             xref_traj = self.compute_xref_traj(xref0, uref_traj, args)  # compute corresponding xref trajectory
             xref_traj, uref_traj = self.cut_xref_traj(xref_traj,
                                                         uref_traj)  # cut trajectory where state limits are exceeded
-            if xref_traj.shape[2] < 0.9 * args.N_sim:  # start again if reference trajectory is shorter than 0.9 * N_sim
+            if xref_traj.shape[2] < args.N_sim:  # start again if reference trajectory is shorter than 0.9 * N_sim
                 continue
 
             # compute corresponding  state and density trajectories

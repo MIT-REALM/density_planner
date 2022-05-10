@@ -10,7 +10,7 @@ def parse_args():
     parser.add_argument('--input_type', type=str, default="polyn3")  # discr10, polyn3
     #parser.add_argument('--input_params_zero', type=list, default=[0])
     parser.add_argument('--dt_sim', type=int, default=0.01)
-    parser.add_argument('--random_seed', type=int, default=1)
+    parser.add_argument('--random_seed', type=int, default=4)
 
     # data paths
     parser.add_argument('--path_rawdata', type=str, default="data/rawdata/2022-04-27_filesTrain_polyn3/")  # directory for the density data
@@ -48,7 +48,7 @@ def parse_args():
     parser.add_argument('--size_hidden', type=list, nargs="+", default=[100, 100, 100, 100]) #4 x 64
     parser.add_argument('--rho_loss_weight', type=float, default=0.1)
     parser.add_argument('--optimizer', type=str, default="Adam") # Adam or LFBGS
-    parser.add_argument('--learning_rate', type=float, default=0.0001)  # 2 e-5
+    parser.add_argument('--learning_rate', type=float, default=0.001)  # 2 e-5
     parser.add_argument('--weight_decay', type=float, default=0)  #1e-6 L2 regularization
     parser.add_argument('--patience', type=int, default=0)
 

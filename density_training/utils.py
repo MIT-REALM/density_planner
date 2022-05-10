@@ -1,6 +1,8 @@
 import torch
 from data_generation.create_dataset import densityDataset
+from data_generation.utils import get_output_variables
 from density_training.train_density import NeuralNetwork
+from torch.utils.data import DataLoader
 
 
 def loss_function(xe_nn, xe_true, rho_nn, rho_true, args):

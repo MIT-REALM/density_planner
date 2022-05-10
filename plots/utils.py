@@ -32,10 +32,6 @@ def sample_from(set1, num_points, sel_indices=None, hull_sampling=False, gain=1,
     if sel_indices:
         s_mins = np.min(set1, axis=0)[sel_indices]
         s_maxs = np.max(set1, axis=0)[sel_indices]
-    else:
-        s_mins = np.min(set1, axis=0)
-        s_maxs = np.max(set1, axis=0)
-    if sel_indices:
         pts_list = np.zeros((0, len(sel_indices)))
         #if faster_hull:
             # hull1 = _Qhull(b"i", set1[:, sel_indices],
@@ -47,6 +43,8 @@ def sample_from(set1, num_points, sel_indices=None, hull_sampling=False, gain=1,
         #else:
         hull1 = Delaunay(set1[:, sel_indices])
     else:
+        s_mins = np.min(set1, axis=0)
+        s_maxs = np.max(set1, axis=0)
         pts_list = np.zeros((0, set1.shape[1]))
         hull1 = Delaunay(set1)
     while pts_list.shape[0]<num_points:

@@ -26,7 +26,7 @@ import scipy
 #     plt.clf()
 
 
-def plot_density_heatmap(x, rho, name, args, combine="sampling", save=True, show=True, filename=None):
+def plot_density_heatmap(x, rho, name, args, combine="sampling", save=True, show=True, filename=None, include_date=False):
     """
     Plot a heat map
 
@@ -37,10 +37,10 @@ def plot_density_heatmap(x, rho, name, args, combine="sampling", save=True, show
     rho: torch.Tensor
         batch_size: tensor of corresponding densities
     """
-    ny = 30
-    nx = 30
+    ny = 22
+    nx = 22
     sample_size = 1000
-    xmin, xmax, ymin, ymax = -1.5, 1.5, -1.5, 1.5
+    xmin, xmax, ymin, ymax = -1.1, 1.1, -1.1, 1.1
 
     density_log = np.ones((ny, nx))
     density = np.zeros((ny, nx))
@@ -97,14 +97,17 @@ def plot_density_heatmap(x, rho, name, args, combine="sampling", save=True, show
         plt.tight_layout()
         if save:
             if filename is None:
-                filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_heatmap_" + name_new + ".jpg"
+                if include_date:
+                    filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_heatmap_" + name_new + ".jpg"
+                else:
+                    filename = "heatmap_" + name_new + ".jpg"
             plt.savefig(args.path_plot_densityheat + 'random_seed%d/' % args.random_seed + filename)
         if show:
             plt.show()
         plt.clf()
 
 
-def plot_losscurves(result, name, args, save=True, show=True, filename=None, type="Loss"):
+def plot_losscurves(result, name, args, save=True, show=True, filename=None, type="Loss", include_date=False):
     colors = ['g', 'r', 'c', 'b', 'm', 'y']
     if type == "Loss":
         if "train_loss" in result:
@@ -155,14 +158,17 @@ def plot_losscurves(result, name, args, save=True, show=True, filename=None, typ
     plt.tight_layout()
     if save:
         if filename is None:
-            filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_%Curve_" % type + name + ".jpg"
+            if include_date:
+                filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_%Curve_" % type + name + ".jpg"
+            else:
+                filename = "%Curve_" % type + name + ".jpg"
         plt.savefig(args.path_plot_loss + filename)
     if show:
         plt.show()
     plt.clf()
 
 
-def plot_scatter(x_nn, x_le, rho_nn, rho_le, name, args, save=True, show=True, filename=None):
+def plot_scatter(x_nn, x_le, rho_nn, rho_le, name, args, save=True, show=True, filename=None, include_date=False):
     step = int(80 / x_nn.shape[0])
     colors = np.arange(0, step * x_nn.shape[0], step)
 
@@ -185,15 +191,18 @@ def plot_scatter(x_nn, x_le, rho_nn, rho_le, name, args, save=True, show=True, f
             plt.xlabel("theta-thetaref")
             plt.ylabel("v-vref")
 
-        plt.xlim(-1.5, 1.5)
-        plt.ylim(-1.5, 1.5)
+        plt.xlim(-1.1, 1.1)
+        plt.ylim(-1.1, 1.1)
         error = x_nn - x_le
-        plt.title(name + "\n Max error: %.3f, Mean error: %.4f, MSE: %.4f" %
-                  (torch.max(torch.abs(error)), torch.mean(torch.abs(error)), torch.mean(torch.abs(error ** 2))))
+        plt.title(name + "\n Max error: %.3f, Mean error: %.4f" %
+                  (torch.max(torch.abs(error)), torch.mean(torch.abs(error))))
         plt.tight_layout()
         if save:
             if filename is None:
-                filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_Scatter_" + name + ".jpg"
+                if include_date:
+                    filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_Scatter_" + name + ".jpg"
+                else:
+                    filename = "Scatter_" + name + ".jpg"
             plt.savefig(args.path_plot_scatter + 'dims%d-%d/' % (j, j+1) + 'random_seed%d/' % args.random_seed + filename)
         if show:
             plt.show()

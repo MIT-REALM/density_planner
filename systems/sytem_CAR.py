@@ -7,12 +7,12 @@ class Car(ControlAffineSystem):
     DIM_X = 4
     DIM_U = 2
 
-    X_MIN = torch.tensor([-5., -5., -np.pi, 1]).reshape(1, -1, 1)
-    X_MAX = torch.tensor([5., 5., np.pi, 2]).reshape(1, -1, 1)
-    XE_MIN = torch.tensor([-1, -1, -1, -1]).reshape(1, -1, 1)
-    XE_MAX = torch.tensor([1, 1, 1, 1]).reshape(1, -1, 1)
-    UREF_MIN = torch.tensor([-3., -3.]).reshape(1, -1, 1)
-    UREF_MAX = torch.tensor([3., 3.]).reshape(1, -1, 1)
+    X_MIN = torch.tensor([-50., -50., -np.pi, 0]).reshape(1, -1, 1) #X_MIN = torch.tensor([-5., -5., -np.pi, 1]).reshape(1, -1, 1)
+    X_MAX = torch.tensor([50., 50., np.pi, 10]).reshape(1, -1, 1) #X_MAX = torch.tensor([5., 5., np.pi, 2]).reshape(1, -1, 1)
+    XE_MIN = torch.tensor([-2, -2, -1, -1]).reshape(1, -1, 1) #XE_MIN = torch.tensor([-1, -1, -1, -1]).reshape(1, -1, 1)
+    XE_MAX = torch.tensor([2, 2, 1, 1]).reshape(1, -1, 1) #XE_MAX = torch.tensor([1, 1, 1, 1]).reshape(1, -1, 1)
+    UREF_MIN = torch.tensor([-3., -4.]).reshape(1, -1, 1) #UREF_MIN = torch.tensor([-3., -3.]).reshape(1, -1, 1)
+    UREF_MAX = torch.tensor([3., 4.]).reshape(1, -1, 1) #UREF_MAX = torch.tensor([3., 3.]).reshape(1, -1, 1)
 
     # parameters for polynomial parametrization of input
     UPOLYN_MIN = -2
