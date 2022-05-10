@@ -19,10 +19,10 @@ class Car(ControlAffineSystem):
     UPOLYN_MAX = 2
 
     # for initialization
-    XREF0_MIN = torch.tensor([-2., -2., -1., 1.5]).reshape(1, -1, 1)
-    XREF0_MAX = torch.tensor([2., 2., 1., 1.5]).reshape(1, -1, 1)
-    XE0_MIN = torch.tensor([-1, -1, -1, -1]).reshape(1, -1, 1)
-    XE0_MAX = torch.tensor([1, 1, 1, 1]).reshape(1, -1, 1)
+    XREF0_MIN = X_MIN - XE_MIN #XREF0_MIN = torch.tensor([-2., -2., -1., 1.5]).reshape(1, -1, 1)
+    XREF0_MAX = X_MAX - XE_MAX #XREF0_MAX = torch.tensor([2., 2., 1., 1.5]).reshape(1, -1, 1)
+    XE0_MIN = torch.tensor([-2, -2, -1, -1]).reshape(1, -1, 1) #XE0_MIN = torch.tensor([-1, -1, -1, -1]).reshape(1, -1, 1)
+    XE0_MAX = torch.tensor([2, 2, 1, 1]).reshape(1, -1, 1) #XE0_MAX = torch.tensor([1, 1, 1, 1]).reshape(1, -1, 1)
 
     def __init__(self):
         super().__init__("CAR")
