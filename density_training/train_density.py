@@ -1,44 +1,9 @@
 import torch
 import hyperparams
-from torch import nn
 from datetime import datetime
 from plots.plot_functions import plot_losscurves
 from systems.utils import listDict2dictList
-from density_training.utils import *
-
-class NeuralNetwork(nn.Module):
-    def __init__(self, num_inputs, num_outputs, args):
-        super(NeuralNetwork, self).__init__()
-
-        if args.activation == "relu":
-            self.activation = nn.ReLU()
-        else:
-            raise NotImplemented('NotImplemented')
-        self.type = args.nn_type
-
-        if args.nn_type == 'MLP':
-            self.linear_list = nn.ModuleList()
-            self.linear_list.append(nn.Linear(num_inputs, args.size_hidden[0]))
-            for i in range(len(args.size_hidden) - 1):
-                self.linear_list.append(nn.Linear(args.size_hidden[i], args.size_hidden[i + 1]))
-            self.linear_list.append(nn.Linear(args.size_hidden[-1], num_outputs))
-        elif args.nn_type == 'LSTM':
-            self.hidden_size = args.size_hidden[0]
-            self.num_layers = len(args.size_hidden)
-            self.lstm = nn.LSTM(input_size=num_inputs, hidden_size=self.hidden_size,
-                                num_layers=self.num_layers, batch_first=True)
-            self.linear = nn.Linear(args.size_hidden[0], num_outputs)
-
-    def forward(self, x):
-        if self.type == 'MLP':
-            for i in range(len(self.linear_list) - 1):
-                x = self.activation(self.linear_list[i](x))
-            x = self.linear_list[len(self.linear_list) - 1](x)
-        elif self.type == 'LSTM':
-            h_0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size)
-            c_0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size)
-
-        return x
+from density_training.utils import NeuralNetwork, load_nn, load_args, load_dataloader, loss_function, evaluate, create_configs
 
 
 if __name__ == "__main__":

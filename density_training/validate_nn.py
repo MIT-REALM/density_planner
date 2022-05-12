@@ -1,26 +1,13 @@
 from systems.sytem_CAR import Car
 import torch
 import hyperparams
-from plots.plot_functions import plot_scatter, plot_density_heatmap
-from density_training.utils import load_nn
+from plots.plot_functions import plot_scatter, plot_density_heatmap, plot_ref
+from density_training.utils import load_nn, get_nn_prediction
 import numpy as np
 from data_generation.utils import load_outputmap, get_input_tensors, get_output_variables
 
 
 
-def get_nn_prediction(model, xe0, xref0, t, u_params, args):
-
-    # if args.input_type == "discr10" and u_params.shape[1] < 10:
-    #     u_params = torch.cat((u_params[:, :], torch.zeros(u_params.shape[0], 10 - u_params.shape[1])), 1)
-
-    input_tensor, _ = get_input_tensors(u_params.flatten(), xref0, xe0, t, args)
-    output_map, num_outputs = load_outputmap(xref0.shape[0])
-
-    with torch.no_grad():
-        input = input_tensor.to(args.device)
-        output = model(input)
-        xe, rho = get_output_variables(output, output_map, type='exp')
-    return xe.unsqueeze(-1), rho.unsqueeze(-1).unsqueeze(-1)
 
 
 if __name__ == "__main__":
@@ -34,10 +21,11 @@ if __name__ == "__main__":
     #nn_name = args.path_nn + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_NN_" + short_name + '.pt'
 
     # data preparation
-    torch.manual_seed(args.random_seed)
+    #torch.manual_seed(args.random_seed)
     bs = args.batch_size
     system = Car()
     xref_traj, rho_traj, uref_traj, u_params, xe_traj, t = system.get_valid_trajectories(sample_size, args)
+    plot_ref(xref_traj, uref_traj, 'test', args, include_date=True)
     #x_traj = xe_traj + xref_traj
 
     # NN prediction

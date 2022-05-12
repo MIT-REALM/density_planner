@@ -14,7 +14,12 @@ def compute_data(iteration_number, samples_x, system, args,samples_t=None, save=
             if samples_t == 0:
                 indizes = args.N_sim-1
             elif samples_t is not None:
-                indizes = torch.randint(0, t.shape[0], (samples_t,))
+                if t[-1] > 3: # additional samples at the beginning of trajectory
+                    indizes = torch.randint(0, t.shape[0], (int(0.5*samples_t),))
+                    indizes = torch.cat((indizes, torch.randint(0, int(2 / t[1]), (int(0.5*samples_t),))), 0)
+                else:
+                    indizes = torch.randint(0, t.shape[0], (int(samples_t),))
+                indizes = list(set(indizes.tolist()))
             else:
                 indizes = torch.arange(0, t.shape[0])
             results = {
@@ -23,7 +28,7 @@ def compute_data(iteration_number, samples_x, system, args,samples_t=None, save=
                 'xe0': xe_traj[:,:,0],
                 't': t[indizes],
                 'xref0': xref_traj[0, :, 0],
-                #'xref_traj': xref_traj[:,:,indizes],
+                'xref_traj': xref_traj[:,:,indizes],
                 'xe_traj': xe_traj[:,:,indizes],
                 'rho_traj': rho_traj[:,:,indizes]
                 }
@@ -58,9 +63,8 @@ if __name__ == "__main__":
     else:
         args.random_seed = None
 
-    compute_data(iteration_number, 100, system, args, samples_t=0, save=True,
-                  plot=False) #samples_t=0... no sample times inbetween, just final value after N_sim-1 timesteps saved
-    #compute_data(iteration_number, samples_x, system, args, samples_t=int(np.rint(0.1*args.N_sim)),
-    #             save=True, plot=False)
+    #compute_data(iteration_number, 100, system, args, samples_t=0, save=True,
+    #               plot=False) #samples_t=0... no sample times inbetween, just final value after N_sim-1 timesteps saved
+    compute_data(iteration_number, samples_x, system, args, samples_t=10, save=True, plot=False)
 
     print("end")

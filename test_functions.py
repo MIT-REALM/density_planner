@@ -3,8 +3,8 @@ from systems.sytem_CAR import Car
 from systems.ControlAffineSystem import ControlAffineSystem
 from systems.utils import approximate_derivative
 import hyperparams
-from plots.plot_functions import plot_density_heatmap # plot_density_heatmap2
-from density_training.train_density import NeuralNetwork
+from plots.plot_functions import plot_density_heatmap, plot_ref, plot_scatter # plot_density_heatmap2
+from density_training.utils import NeuralNetwork, load_nn, get_nn_prediction
 
 
 def test_dimensions(object: ControlAffineSystem, x: torch.Tensor, xref: torch.Tensor, uref: torch.Tensor):
@@ -61,89 +61,78 @@ def test_derivatives(object: ControlAffineSystem, x: torch.Tensor, xref: torch.T
 
 def test_density(system: ControlAffineSystem, xref_traj, uref_traj, xref0, N_sim, dt):
 
-    params_LE = {
-        "sample_size": 15 * 15 * 5 * 5, #15, 15, 5, 5],
-        "title": "LE",
-    }
     params_MC = {
-        "sample_size": 60 * 60 * 20 * 20, #[60, 60, 20, 20],
-        "title": "MC",
+        "sample_size": 20 * 20 * 10 * 10, #[60, 60, 20, 20],
     }
     params_NN = {
         "sample_size": 15 * 15 * 5 * 5,  # [60, 60, 20, 20],
-        "title": "NN",
-        "filename": "2022-04-23-17-07-52_NN_lrStepEvery100BS512layer3noreg_lr0.001_numHidd4_sizeHidd64_rhoLoss0.1"
     }
+    run_name = "test"
+
+    # MC Estimate
+    x0_MC = system.sample_x0(xref0, params_MC["sample_size"])
+    rho0_MC = torch.ones(x0_MC.shape[0], 1, 1)
+    x_traj_MC, _ = system.compute_density(x0_MC, xref_traj, uref_traj, rho0_MC, xref_traj.shape[2], args.dt_sim, computeDensity=False)
+    xe_traj_MC = x_traj_MC - xref_traj
+
     x0 = system.sample_x0(xref0, params_NN["sample_size"])
-    rho = torch.ones(x0.shape[0], 1, 1)
+    rho0 = torch.ones(x0.shape[0], 1, 1)
+    # LE Estimate
+    x_traj, rho_traj = system.compute_density(x0, xref_traj, uref_traj, rho0, xref_traj.shape[2], args.dt_sim)
+    xe_traj = x_traj - xref_traj
 
-    for params in (params_NN,params_LE, params_MC): #
-        x = x0
-        if params["title"] == "LE":
-            x, rho = system.compute_density(x, xref_traj, uref_traj, rho, N_sim, dt, cutting=False)
-            comb = "sum"
-            xe = x - xref_traj
-        elif params["title"] == "MC":
-            with torch.no_grad():
-                for i in range(N_sim):
-                    x = system.get_next_x(x, xref_traj[:, :, [i]], uref_traj[:, :, [i]], dt)
-            comb = "sum"
-            xe = x - xref_traj
-        elif params["title"] == "NN":
-            model_params, args_NN, result = torch.load(('data/trained_nn/' + params["filename"] + '.pt'), map_location=args.device)
-            num_inputs = 30
-            model = NeuralNetwork(num_inputs-1, 5, args_NN).to(args.device)
-            model.load_state_dict(model_params)
-            model.eval()
-            u_in = uref_traj[0, :, ::args_NN.N_u]
-            if u_in.shape[1] < 10:
-                u_in = torch.cat((u_in[:, :], torch.zeros(u_in.shape[0], 10 - u_in.shape[1])), 1)
-            input_map = {'rho0': 0,
-                         'xe0': torch.arange(1, xref_traj.shape[1] + 1),
-                         'xref0': torch.arange(xref_traj.shape[1] + 1, 2 * xref_traj.shape[1] + 1),
-                         't': 2 * xref_traj.shape[1] + 1,
-                         'uref': torch.arange(2 * xref_traj.shape[1] + 2, num_inputs)}
-            input_tensor = torch.zeros(x.shape[0], num_inputs)
-            input_tensor[:, input_map['uref']] = (torch.cat((u_in[0, :], u_in[1, :]), 0)).repeat(x.shape[0],1)
-            input_tensor[:, input_map['xe0']] = x[:, :, 0] - xref_traj[0, :, 0]
-            input_tensor[:, input_map['rho0']] = rho[:, 0, 0]
-            input_tensor[:, input_map['t']] = torch.ones(x.shape[0]) * N_sim * args.dt_sim
-            input_tensor[:, input_map['xref0']] = xref_traj[0, :, 0]
-            with torch.no_grad():
-                input = input_tensor.to(args.device)
-                output = model(input[:, 1:])
-                xe = output[:, 0:4].unsqueeze(-1)
-                rho = input[:, 0] * torch.exp(output[:, 4])
-                rho = rho.unsqueeze(-1).unsqueeze(-1)
-            comb = "mean"
+    # NN prediction
+    num_inputs = 17
+    model, _ = load_nn(num_inputs, 5, args, load_pretrained=True)
+    model.eval()
+    step = 5
+    t_vec = torch.arange(0, args.N_sim * args.dt_sim, step * args.dt_sim)
+    for i, t in enumerate(t_vec):
+        xe_nn, rho_nn = get_nn_prediction(model, xe_traj[:, :, 0], xref_traj[0, :, 0],
+                                          t, u_params, args)
+        error = xe_nn[:, :, 0] - xe_traj[:, :, i * step]
+        print("Max error: %.3f, Mean error: %.4f" %
+              (torch.max(torch.abs(error)), torch.mean(torch.abs(error))))
+
+        plot_density_heatmap(xe_nn[:, :, 0], rho_nn[:, 0, 0], run_name + "_time=%.2fs_NN" % t, args,
+                             save=True, show=True, filename=None)
+        plot_density_heatmap(xe_traj[:, :, i * step], rho_traj[:, 0, i * step], run_name + "_time=%.2fs_LE" % t, args,
+                             save=True, show=True, filename=None)
+        plot_density_heatmap(xe_traj_MC[:, :, i * step], 1, run_name + "_time=%.2fs_MC" % t, args,
+                             save=True, show=True, filename=None)
+        plot_scatter(xe_nn[:50, :, 0], xe_traj[:50, :, i * step], rho_nn[:50, 0, 0], rho_traj[:50, 0, i * step],
+                     run_name + "_time=%.2fs" % t, args, save=True, show=True, filename=None)
 
 
 
-        name = params["title"] + "_time%.2fs_numSim%d_numStates%d_randSeed%d" % (
-             args.dt_sim * args.N_sim, args.N_sim, xe.shape[0], args.random_seed)
-        #plot_density_heatmap2(xe[:, 0, -1].numpy(), xe[:, 1, -1].numpy(), rho[:, 0, -1].numpy(), name, args, save=False)
-        plot_density_heatmap(xe[:, 0, -1].numpy(), xe[:, 1, -1].numpy(), rho[:, 0, -1].numpy(), name, args, combine=comb, save=False)
+def test_controller(xref_traj, uref_traj, args):
+    x0 = system.sample_x0(xref0, 20)  # get random initial states
+    rho0 = torch.ones(x0.shape[0], 1, 1)  # equal initial density
+    x_traj, rho_traj = system.compute_density(x0, xref_traj, uref_traj, rho0,
+                                              xref_traj.shape[2], args.dt_sim)
+    plot_ref(xref_traj, uref_traj, 'test', args, x_traj=x_traj, include_date=True)
 
 if __name__ == "__main__":
     args = hyperparams.parse_args()
     args.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    torch.manual_seed(args.random_seed)
+    torch.manual_seed(8) #(args.random_seed)
     bs = args.batch_size
     system = Car()
     x = (system.X_MAX - system.X_MIN) * torch.rand(bs, system.DIM_X, 1) + system.X_MIN
     xref = (system.XREF0_MAX - system.XREF0_MIN) * torch.rand(bs, system.DIM_X, 1) + system.XREF0_MIN
+    uref = (system.UREF_MAX - system.UREF_MIN) * torch.rand(bs, system.DIM_U, 1) + system.UREF_MIN
 
     while True:
-        uref_traj = system.sample_uref_traj(args.N_sim, args.N_u)  # get random input trajectory
+        uref_traj, u_params = system.sample_uref_traj(args)  # get random input trajectory
         xref0 = system.sample_xref0()  # sample random xref
-        xref_traj = system.compute_xref_traj(xref0, uref_traj, args.N_sim,
-                                             args.dt_sim)  # compute corresponding xref trajectory
+        xref_traj = system.compute_xref_traj(xref0, uref_traj, args)  # compute corresponding xref trajectory
         xref_traj, uref_traj = system.cut_xref_traj(xref_traj,
                                                     uref_traj)  # cut trajectory where state limits are exceeded
         if xref_traj.shape[2] == args.N_sim:  # start again if reference trajectory is shorter than 0.9 * N_sim
             break
 
+    test_controller(xref_traj, uref_traj, args)
     test_density(system, xref_traj, uref_traj, xref0, args.N_sim, args.dt_sim)
     test_dimensions(system, x, xref, uref)
     test_derivatives(system, x, xref, uref)

@@ -1,9 +1,43 @@
 import torch
+from torch import nn
 from data_generation.create_dataset import densityDataset
 from data_generation.utils import get_output_variables
-from density_training.train_density import NeuralNetwork
 from torch.utils.data import DataLoader
 
+
+class NeuralNetwork(nn.Module):
+    def __init__(self, num_inputs, num_outputs, args):
+        super(NeuralNetwork, self).__init__()
+
+        if args.activation == "relu":
+            self.activation = nn.ReLU()
+        else:
+            raise NotImplemented('NotImplemented')
+        self.type = args.nn_type
+
+        if args.nn_type == 'MLP':
+            self.linear_list = nn.ModuleList()
+            self.linear_list.append(nn.Linear(num_inputs, args.size_hidden[0]))
+            for i in range(len(args.size_hidden) - 1):
+                self.linear_list.append(nn.Linear(args.size_hidden[i], args.size_hidden[i + 1]))
+            self.linear_list.append(nn.Linear(args.size_hidden[-1], num_outputs))
+        elif args.nn_type == 'LSTM':
+            self.hidden_size = args.size_hidden[0]
+            self.num_layers = len(args.size_hidden)
+            self.lstm = nn.LSTM(input_size=num_inputs, hidden_size=self.hidden_size,
+                                num_layers=self.num_layers, batch_first=True)
+            self.linear = nn.Linear(args.size_hidden[0], num_outputs)
+
+    def forward(self, x):
+        if self.type == 'MLP':
+            for i in range(len(self.linear_list) - 1):
+                x = self.activation(self.linear_list[i](x))
+            x = self.linear_list[len(self.linear_list) - 1](x)
+        elif self.type == 'LSTM':
+            h_0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size)
+            c_0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size)
+
+        return x
 
 def loss_function(xe_nn, xe_true, rho_nn, rho_true, args):
     loss_xe = ((xe_nn - xe_true) ** 2).mean()
@@ -145,4 +179,16 @@ def evaluate(dataloader, model, args, optimizer=None, mode="val"):
         }
     return loss_all
 
+def get_nn_prediction(model, xe0, xref0, t, u_params, args):
 
+    # if args.input_type == "discr10" and u_params.shape[1] < 10:
+    #     u_params = torch.cat((u_params[:, :], torch.zeros(u_params.shape[0], 10 - u_params.shape[1])), 1)
+
+    input_tensor, _ = get_input_tensors(u_params.flatten(), xref0, xe0, t, args)
+    output_map, num_outputs = load_outputmap(xref0.shape[0])
+
+    with torch.no_grad():
+        input = input_tensor.to(args.device)
+        output = model(input)
+        xe, rho = get_output_variables(output, output_map, type='exp')
+    return xe.unsqueeze(-1), rho.unsqueeze(-1).unsqueeze(-1)

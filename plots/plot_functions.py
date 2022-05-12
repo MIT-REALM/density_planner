@@ -207,3 +207,63 @@ def plot_scatter(x_nn, x_le, rho_nn, rho_le, name, args, save=True, show=True, f
         if show:
             plt.show()
         plt.clf()
+
+
+def plot_ref(xref_traj, uref_traj, name, args, x_traj=None, save=True, show=True, filename=None, include_date=False):
+    # xref_traj[0, 2, :] = (xref_traj[0, 2, :] + np.pi) % (2 * np.pi) - np.pi
+    # x_traj[:, 2, :] = (x_traj[:, 2, :] + np.pi) % (2 * np.pi) - np.pi
+
+    t = args.dt_sim * torch.arange(0, xref_traj.shape[2])
+    fig, ax = plt.subplots(4, 1, gridspec_kw={'height_ratios': [4, 1, 1, 1]})
+    fig.set_figheight(11)
+
+    if x_traj is not None:
+        for i in range(x_traj.shape[0]):
+            if i == 1:
+                ax[0].plot(x_traj[i, 0, :], x_traj[i, 1, :], 'slategrey', label='Sample Trajectories')
+            else:
+                ax[0].plot(x_traj[i, 0, :], x_traj[i, 1, :], 'slategrey')
+            ax[1].plot(t, x_traj[i, 2, :], 'slategrey')
+            ax[2].plot(t, x_traj[0, 3, :], 'slategrey')
+
+    ax[0].plot(xref_traj[0,0,:], xref_traj[0,1,:], 'firebrick', label='Reference Trajectory')
+    ax[0].grid()
+    ax[0].set_xlabel("x-position")
+    ax[0].set_ylabel("y-position")
+    ax[0].set_xlim(-50, 50)
+    ax[0].set_ylim(-50, 50)
+    ax[0].legend()
+    ax[0].set_title("Reference Trajectories of type " + args.input_type + "\n" + name)
+
+    ax[1].plot(t, xref_traj[0, 2, :], 'firebrick')
+    ax[1].grid()
+    ax[1].set_xlabel("Time")
+    ax[1].set_ylabel("Heading angle")
+    ax[1].set_ylim(-np.pi, np.pi)
+
+    ax[2].plot(t, xref_traj[0, 3, :], 'firebrick')
+    ax[2].grid()
+    ax[2].set_xlabel("Time")
+    ax[2].set_ylabel("Velocity")
+    ax[2].set_ylim(0, 10)
+
+    ax[3].plot(t, uref_traj[0, 0, :], label='Angular velocity')
+    ax[3].plot(t, uref_traj[0, 1, :], label='Longitudinal acceleration')
+    ax[3].grid()
+    ax[3].set_xlabel("Time")
+    ax[3].set_ylabel("Inputs")
+    ax[3].set_ylim(-4, 4)
+    ax[3].legend()
+
+
+    fig.tight_layout()
+    if save:
+        if filename is None:
+            if include_date:
+                filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_References_" + name + ".jpg"
+            else:
+                filename = "References_" + name + ".jpg"
+        plt.savefig(args.path_plot_references + args.input_type + '/' +filename)
+    if show:
+        plt.show()
+    plt.clf()

@@ -5,15 +5,16 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     # simulation parameter
-    parser.add_argument('--N_sim', type=int, default=101)
+    parser.add_argument('--N_sim', type=int, default=201)
     parser.add_argument('--N_u', type=int, default=10)
-    parser.add_argument('--input_type', type=str, default="polyn3")  # discr10, polyn3
+    parser.add_argument('--input_type', type=str, default="cust2")  # discr10, polyn3, sin, cust*
     #parser.add_argument('--input_params_zero', type=list, default=[0])
     parser.add_argument('--dt_sim', type=int, default=0.01)
+    parser.add_argument('--factor_pred', type=int, default=10)
     parser.add_argument('--random_seed', type=int, default=4)
 
     # data paths
-    parser.add_argument('--path_rawdata', type=str, default="data/rawdata/2022-04-27_filesTrain_polyn3/")  # directory for the density data
+    parser.add_argument('--path_rawdata', type=str, default="data/rawdata/2022-05-11_filesTrain_cust2/")  # directory for the density data
     parser.add_argument('--path_dataset', type=str, default="data/dataset/")  # directory for the density data
     parser.add_argument('--path_nn', type=str, default="data/trained_nn/")  # directory for saving and loading the trained NN
 
@@ -34,6 +35,7 @@ def parse_args():
     parser.add_argument('--path_plot_loss', type=str, default="plots/losscurves/")
     parser.add_argument('--path_plot_densityheat', type=str, default="plots/density_heatmaps/")
     parser.add_argument('--path_plot_scatter', type=str, default="plots/scatter/")
+    parser.add_argument('--path_plot_references', type=str, default="plots/references/")
     parser.add_argument('--plot_loss', type=bool, default=False)
     parser.add_argument('--plot_densityheat', type=bool, default=True)
 
