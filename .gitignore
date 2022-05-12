@@ -2,6 +2,7 @@ data
 plots/losscurves
 plots/scatter
 plots/density_heatmaps
+plots/references
 scretch.py
 .idea
 __pycache__
