@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 from data_generation.create_dataset import densityDataset
-from data_generation.utils import get_output_variables
+from data_generation.utils import get_output_variables, get_input_variables, get_input_tensors, get_output_tensors, load_outputmap, load_inputmap
 from torch.utils.data import DataLoader
 
 
@@ -39,16 +39,17 @@ class NeuralNetwork(nn.Module):
 
         return x
 
-def loss_function(xe_nn, xe_true, rho_nn, rho_true, args):
+
+def loss_function(xe_nn, xe_true, rho_log_nn, rho_true, args):
     loss_xe = ((xe_nn - xe_true) ** 2).mean()
-    mask = torch.logical_or(rho_true < 1e-5, rho_nn < 1e-5)
+    #mask = (rho_true < 1e-5)
     loss_rho = 0
-    if mask.any():
-        loss_rho = ((rho_nn[mask] - rho_true[mask]) ** 2).mean()
-        rho_nn = rho_nn[torch.logical_not(mask)]
-        rho_true = rho_true[torch.logical_not(mask)]
-    if not mask.all():
-        loss_rho += ((torch.log(rho_nn) - torch.log(rho_true)) ** 2).mean()
+    # if mask.any():
+    #     loss_rho = ((rho_log_nn[mask] - rho_true[mask]) ** 2).mean()
+    #     rho_log_nn = rho_log_nn[torch.logical_not(mask)]
+    #     rho_true = rho_true[torch.logical_not(mask)]
+    #if not mask.all():
+    loss_rho += ((rho_log_nn - torch.log(rho_true)) ** 2).mean()
 
     return loss_xe, args.rho_loss_weight * loss_rho
 
@@ -129,7 +130,7 @@ def evaluate(dataloader, model, args, optimizer=None, mode="val"):
     elif mode == "val":
         model.eval()
     else:
-        print("mode not defined")
+        raise NotImplemented('Mode not defined')
 
     total_loss, total_loss_xe, total_loss_rho_w = 0, 0, 0
     max_loss_xe = torch.zeros(len(dataloader), 4)
@@ -140,34 +141,34 @@ def evaluate(dataloader, model, args, optimizer=None, mode="val"):
 
         # Compute prediction error
         output = model(input)
-        xe_nn, rho_nn = get_output_variables(output, dataloader.dataset.output_map, type='exp')
+        xe_nn, rho_log_nn = get_output_variables(output, dataloader.dataset.output_map, type='exp')
         xe_true, rho_true = get_output_variables(target, dataloader.dataset.output_map)
 
-        loss_xe, loss_rho_w = loss_function(xe_nn, xe_true, rho_nn, rho_true, args)
+        loss_xe, loss_rho_w = loss_function(xe_nn, xe_true, rho_log_nn, rho_true, args)
         loss = loss_xe + loss_rho_w
         total_loss_xe += loss_xe.item()
         total_loss_rho_w += loss_rho_w.item()
         max_loss_xe[batch, :], _ = torch.max(torch.abs(xe_nn-xe_true), dim=0)
-        max_loss_rho_w[batch] = args.rho_loss_weight * torch.log(torch.max(torch.abs(rho_nn-rho_true)))
+        max_loss_rho_w[batch] = args.rho_loss_weight * torch.max(torch.abs(rho_log_nn-torch.log(rho_true)))
         total_loss += loss.item()
 
         if mode == "train":
             # Backpropagation
-            if args.optimizer == "LBFGS":
-                def closure():
-                    output = model(input)
-                    xe_nn, rho_nn = get_output_variables(output, dataloader.dataset.output_map, type='exp')
-                    xe_true, rho_true = get_output_variables(target, dataloader.dataset.output_map)
-                    loss_xe, loss_rho_w = loss_function(xe_nn, xe_true, rho_nn, rho_true, args)
-                    loss = loss_xe + loss_rho_w
-                    loss.backward()
-                    return loss
-
-                optimizer.step(closure)
-            else:
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+            # if args.optimizer == "LBFGS":
+            #     def closure():
+            #         output = model(input)
+            #         xe_nn, rho_nn = get_output_variables(output, dataloader.dataset.output_map, type='exp')
+            #         xe_true, rho_true = get_output_variables(target, dataloader.dataset.output_map)
+            #         loss_xe, loss_rho_w = loss_function(xe_nn, xe_true, rho_nn, rho_true, args)
+            #         loss = loss_xe + loss_rho_w
+            #         loss.backward()
+            #         return loss
+            #
+            #     optimizer.step(closure)
+            # else:
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
     maxMax_loss_xe, _ = torch.max(max_loss_xe, dim=0)
     loss_all = {
@@ -178,6 +179,7 @@ def evaluate(dataloader, model, args, optimizer=None, mode="val"):
         "max_error_rho_w": (torch.max(max_loss_rho_w)).detach().numpy()
         }
     return loss_all
+
 
 def get_nn_prediction(model, xe0, xref0, t, u_params, args):
 

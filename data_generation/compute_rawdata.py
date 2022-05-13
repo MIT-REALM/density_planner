@@ -14,7 +14,7 @@ def compute_data(iteration_number, samples_x, system, args,samples_t=None, save=
             if samples_t == 0:
                 indizes = args.N_sim-1
             elif samples_t is not None:
-                if t[-1] > 3: # additional samples at the beginning of trajectory
+                if False: #t[-1] > 3: # additional samples at the beginning of trajectory
                     indizes = torch.randint(0, t.shape[0], (int(0.5*samples_t),))
                     indizes = torch.cat((indizes, torch.randint(0, int(2 / t[1]), (int(0.5*samples_t),))), 0)
                 else:
@@ -54,7 +54,7 @@ if __name__ == "__main__":
 
     args = hyperparams.parse_args()
 
-    samples_x = 30  # [15, 15, 5, 5] ' number of sampled initial conditions x0
+    samples_x = 60  # [15, 15, 5, 5] ' number of sampled initial conditions x0
     iteration_number = 500
     system = Car()
     random_seed = False
@@ -65,6 +65,6 @@ if __name__ == "__main__":
 
     #compute_data(iteration_number, 100, system, args, samples_t=0, save=True,
     #               plot=False) #samples_t=0... no sample times inbetween, just final value after N_sim-1 timesteps saved
-    compute_data(iteration_number, samples_x, system, args, samples_t=10, save=True, plot=False)
+    compute_data(iteration_number, samples_x, system, args, samples_t=30, save=True, plot=False)
 
     print("end")

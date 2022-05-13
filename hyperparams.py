@@ -5,7 +5,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     # simulation parameter
-    parser.add_argument('--N_sim', type=int, default=201)
+    parser.add_argument('--N_sim', type=int, default=1001)
     parser.add_argument('--N_u', type=int, default=10)
     parser.add_argument('--input_type', type=str, default="cust2")  # discr10, polyn3, sin, cust*
     #parser.add_argument('--input_params_zero', type=list, default=[0])
@@ -14,16 +14,16 @@ def parse_args():
     parser.add_argument('--random_seed', type=int, default=4)
 
     # data paths
-    parser.add_argument('--path_rawdata', type=str, default="data/rawdata/2022-05-11_filesTrain_cust2/")  # directory for the density data
+    parser.add_argument('--path_rawdata', type=str, default="data/rawdata/2022-05-11_filesVal_cust2/")  # directory for the density data
     parser.add_argument('--path_dataset', type=str, default="data/dataset/")  # directory for the density data
     parser.add_argument('--path_nn', type=str, default="data/trained_nn/")  # directory for saving and loading the trained NN
 
     parser.add_argument('--nameend_rawdata', type=str,
                         default=".pickle")  # ending of the file used for creating the data set / dataloader
     parser.add_argument('--nameend_TrainDataset', type=str,
-                        default="Train_polyn3_xpred.pickle")
+                        default="Train_cust2_short.pickle")
     parser.add_argument('--nameend_ValDataset', type=str,
-                        default="Val_polyn3_xpred.pickle")
+                        default="Val_cust2_short.pickle")
     parser.add_argument('--nameend_nn', type=str,
                         default="CAR_dt10ms_Nsim100_Nu10_iter1000.pickle")
     parser.add_argument('--name_pretrained_nn', type=str,
@@ -40,18 +40,23 @@ def parse_args():
     parser.add_argument('--plot_densityheat', type=bool, default=True)
 
     # NN parameter
-    parser.add_argument('--run_name', type=str, default="xpred")
+    parser.add_argument('--run_name', type=str, default="biggerSS")
     parser.add_argument('--device', type=str, default="cpu")
     parser.add_argument('--nn_type', type=str, default="MLP")
     parser.add_argument('--batch_size', type=int, default=256) # 256
     parser.add_argument('--epochs', type=int, default=1000)
     parser.add_argument('--train_len', type=float, default=0.7)  # val_len = 1-train_len
     parser.add_argument('--activation', type=str, default="relu")
-    parser.add_argument('--size_hidden', type=list, nargs="+", default=[100, 100, 100, 100]) #4 x 64
+    parser.add_argument('--size_hidden', type=list, nargs="+", default=[64] * 4) #[100] * 4
     parser.add_argument('--rho_loss_weight', type=float, default=0.1)
     parser.add_argument('--optimizer', type=str, default="Adam") # Adam or LFBGS
     parser.add_argument('--learning_rate', type=float, default=0.001)  # 2 e-5
+    parser.add_argument('--lr_step', type=int, default=1)
     parser.add_argument('--weight_decay', type=float, default=0)  #1e-6 L2 regularization
     parser.add_argument('--patience', type=int, default=0)
+
+    # motion planning parameter
+    parser.add_argument('--environment_size', type=list, default=[-12, 12, -30, 30])
+    parser.add_argument('--grid_size', type=list, default=[240, 600])
 
     return parser.parse_args()

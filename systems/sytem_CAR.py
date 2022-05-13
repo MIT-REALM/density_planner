@@ -24,6 +24,8 @@ class Car(ControlAffineSystem):
     USIN_WIDE = 3 * torch.tensor([1, 1])
 
     # for initialization
+    # XREF0_MIN = torch.tensor([-10., -10., -np.pi, 1]).reshape(1, -1, 1) 'for startMiddle'
+    # XREF0_MAX = torch.tensor([10., 10., np.pi, 6]).reshape(1, -1, 1)
     XREF0_MIN = torch.tensor([-40., -40., -np.pi, 1]).reshape(1, -1, 1) #XREF0_MIN = torch.tensor([-2., -2., -1., 1.5]).reshape(1, -1, 1)
     XREF0_MAX = torch.tensor([40., 40., np.pi, 8]).reshape(1, -1, 1) #XREF0_MAX = torch.tensor([2., 2., 1., 1.5]).reshape(1, -1, 1)
     XE0_MIN = torch.tensor([-2, -2, -1, -1]).reshape(1, -1, 1) #XE0_MIN = torch.tensor([-1, -1, -1, -1]).reshape(1, -1, 1)

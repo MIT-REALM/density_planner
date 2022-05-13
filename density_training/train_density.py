@@ -37,7 +37,8 @@ if __name__ == "__main__":
         for epoch in range(args.epochs):
             train_loss.append(evaluate(train_dataloader, model, args, optimizer=optimizer, mode="train"))
             test_loss.append(evaluate(validation_dataloader, model, args, mode="val"))
-            #
+            print(f"Epoch {epoch},   Train loss: {train_loss[-1]['loss']},   Test loss: {test_loss[-1]['loss']} \n")
+
             # if test_loss[-1]["loss"] > test_loss_best:
             #     patience += 1
             # else:
@@ -45,10 +46,9 @@ if __name__ == "__main__":
             #     test_loss_best = test_loss[-1]["loss"]
             # if args.patience and patience >= args.patience:
             #     break
-            # if epoch == 18:
-            #     for g in optimizer.param_groups:
-            #         g['lr'] = g['lr'] / 2
-
+            if epoch % 20 == 19:
+                for g in optimizer.param_groups:
+                    g['lr'] = g['lr'] / args.lr_step
 
             if epoch % 20 == 2:
                 train_loss_dict = listDict2dictList(train_loss)
@@ -66,7 +66,7 @@ if __name__ == "__main__":
 
             if epoch % 100 == 99:
                 torch.save([model.state_dict(), args, result], nn_name)
-        print(f"Best test loss after epoch {epoch}: {test_loss_best} \n")
+        #print(f"Best test loss after epoch {epoch}: {test_loss_best} \n")
         torch.save([model.state_dict(), args, result], nn_name)
         plot_losscurves(result, "final_t%d_" % (epoch) + short_name, args, filename=lossPlot_name)
     print("Done!")
