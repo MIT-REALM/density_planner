@@ -57,7 +57,10 @@ def loss_function(xe_nn, xe_true, rho_log_nn, rho_true, args):
 def load_dataloader(args):
     train_data = densityDataset(args, mode="Train")
     train_dataloader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
+    #train_data.data = train_data.data[0:500]
     val_data = densityDataset(args, mode="Val")
+    # val_data = train_data
+    # val_data.data = train_data.data[0:100]
     validation_dataloader = DataLoader(val_data, batch_size=args.batch_size, shuffle=True)
     # train_set_size = int(len(density_data) * args.train_len)
     # val_set_size = len(density_data) - train_set_size
@@ -141,7 +144,7 @@ def evaluate(dataloader, model, args, optimizer=None, mode="val"):
 
         # Compute prediction error
         output = model(input)
-        xe_nn, rho_log_nn = get_output_variables(output, dataloader.dataset.output_map, type='exp')
+        xe_nn, rho_log_nn = get_output_variables(output, dataloader.dataset.output_map)
         xe_true, rho_true = get_output_variables(target, dataloader.dataset.output_map)
 
         loss_xe, loss_rho_w = loss_function(xe_nn, xe_true, rho_log_nn, rho_true, args)
@@ -167,7 +170,7 @@ def evaluate(dataloader, model, args, optimizer=None, mode="val"):
             #     optimizer.step(closure)
             # else:
             optimizer.zero_grad()
-            loss.backward()
+            loss_xe.backward()
             optimizer.step()
 
     maxMax_loss_xe, _ = torch.max(max_loss_xe, dim=0)

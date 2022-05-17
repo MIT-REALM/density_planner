@@ -6,12 +6,16 @@ def parse_args():
 
     # simulation parameter
     parser.add_argument('--N_sim', type=int, default=1001)
-    parser.add_argument('--N_u', type=int, default=10)
-    parser.add_argument('--input_type', type=str, default="cust2")  # discr10, polyn3, sin, cust*
+    parser.add_argument('--input_type', type=str, default="sins10")  # discr10, polyn3, sin, cust*, sins10
     #parser.add_argument('--input_params_zero', type=list, default=[0])
     parser.add_argument('--dt_sim', type=int, default=0.01)
     parser.add_argument('--factor_pred', type=int, default=10)
     parser.add_argument('--random_seed', type=int, default=4)
+
+    # processing
+    parser.add_argument('--gpus', type=str, default="0")
+    parser.add_argument('--num_workers', type=int, default=12)
+    parser.add_argument('--num_jobs', type=int, default=50)
 
     # data paths
     parser.add_argument('--path_rawdata', type=str, default="data/rawdata/2022-05-11_filesVal_cust2/")  # directory for the density data
@@ -40,17 +44,17 @@ def parse_args():
     parser.add_argument('--plot_densityheat', type=bool, default=True)
 
     # NN parameter
-    parser.add_argument('--run_name', type=str, default="biggerSS")
+    parser.add_argument('--run_name', type=str, default="extendedSS_trainXe")
     parser.add_argument('--device', type=str, default="cpu")
     parser.add_argument('--nn_type', type=str, default="MLP")
     parser.add_argument('--batch_size', type=int, default=256) # 256
-    parser.add_argument('--epochs', type=int, default=1000)
+    parser.add_argument('--epochs', type=int, default=10000)
     parser.add_argument('--train_len', type=float, default=0.7)  # val_len = 1-train_len
     parser.add_argument('--activation', type=str, default="relu")
-    parser.add_argument('--size_hidden', type=list, nargs="+", default=[64] * 4) #[100] * 4
+    parser.add_argument('--size_hidden', type=list, nargs="+", default=[100] * 4) #[100] * 4
     parser.add_argument('--rho_loss_weight', type=float, default=0.1)
     parser.add_argument('--optimizer', type=str, default="Adam") # Adam or LFBGS
-    parser.add_argument('--learning_rate', type=float, default=0.001)  # 2 e-5
+    parser.add_argument('--learning_rate', type=float, default=0.00001)  # 2 e-5
     parser.add_argument('--lr_step', type=int, default=1)
     parser.add_argument('--weight_decay', type=float, default=0)  #1e-6 L2 regularization
     parser.add_argument('--patience', type=int, default=0)

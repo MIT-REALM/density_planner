@@ -3,7 +3,8 @@ from systems.sytem_CAR import Car
 import hyperparams
 from datetime import datetime
 import pickle
-from plots.plot_functions import plot_density_heatmap
+from plots.plot_functions import plot_density_heatmap, plot_ref
+from multiprocessing.pool import Pool
 
 def compute_data(iteration_number, samples_x, system, args,samples_t=None, save=True, plot=True):
     results_all = []
@@ -49,6 +50,9 @@ def compute_data(iteration_number, samples_x, system, args,samples_t=None, save=
 
     return results_all
 
+def worker_job(input_data):
+    iteration_number, samples_x, system, args = input_data
+    compute_data(iteration_number, samples_x, system, args, samples_t=30, save=True, plot=False)
 
 if __name__ == "__main__":
 
@@ -63,8 +67,16 @@ if __name__ == "__main__":
     else:
         args.random_seed = None
 
+    #compute_data(iteration_number, samples_x, system, args, samples_t=30, save=True, plot=False)
+
+    input_list = []
+    for i in range(args.num_jobs):
+        input_list.append((iteration_number, samples_x, system, args))
+    pool = Pool(processes=args.num_workers)
+    outputs = pool.map(worker_job, input_list)
+
     #compute_data(iteration_number, 100, system, args, samples_t=0, save=True,
     #               plot=False) #samples_t=0... no sample times inbetween, just final value after N_sim-1 timesteps saved
-    compute_data(iteration_number, samples_x, system, args, samples_t=30, save=True, plot=False)
+
 
     print("end")

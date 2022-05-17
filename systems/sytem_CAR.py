@@ -3,17 +3,56 @@ from .ControlAffineSystem import ControlAffineSystem
 import numpy as np
 import sys
 
+class Controller:
+    def __init__(self, _controller, u_min, u_max):
+        self.controller = _controller
+        self.U_MIN = u_min
+        self.U_MAX = u_max
+
+    def __call__(self, x: torch.Tensor, xref: torch.Tensor, uref: torch.Tensor):
+        xe = x - xref
+        # xe = self.project_angle(xe)
+        # x = self.project_angle(x)
+        u = self.controller(x, xe, uref)  # .squeeze(0)
+        return u.clip(self.U_MIN, self.U_MAX)
+
 
 class Car(ControlAffineSystem):
     DIM_X = 4
     DIM_U = 2
 
-    X_MIN = torch.tensor([-50., -50., -np.inf, 0]).reshape(1, -1, 1) #X_MIN = torch.tensor([-5., -5., -np.pi, 1]).reshape(1, -1, 1)
-    X_MAX = torch.tensor([50., 50., np.inf, 10]).reshape(1, -1, 1) #X_MAX = torch.tensor([5., 5., np.pi, 2]).reshape(1, -1, 1)
-    XE_MIN = torch.tensor([-2, -2, -1, -1]).reshape(1, -1, 1) #XE_MIN = torch.tensor([-1, -1, -1, -1]).reshape(1, -1, 1)
-    XE_MAX = torch.tensor([2, 2, 1, 1]).reshape(1, -1, 1) #XE_MAX = torch.tensor([1, 1, 1, 1]).reshape(1, -1, 1)
-    UREF_MIN = torch.tensor([-3., -4.]).reshape(1, -1, 1) #UREF_MIN = torch.tensor([-3., -3.]).reshape(1, -1, 1)
-    UREF_MAX = torch.tensor([3., 4.]).reshape(1, -1, 1) #UREF_MAX = torch.tensor([3., 3.]).reshape(1, -1, 1)
+    small_SS = False
+    if small_SS:
+        X_MIN = torch.tensor([-5., -5., -np.pi, 1]).reshape(1, -1, 1)
+        X_MAX = torch.tensor([5., 5., np.pi, 2]).reshape(1, -1, 1)
+        XE_MIN = torch.tensor([-1, -1, -1, -1]).reshape(1, -1, 1)
+        XE_MAX = torch.tensor([1, 1, 1, 1]).reshape(1, -1, 1)
+        UREF_MIN = torch.tensor([-3., -3.]).reshape(1, -1, 1)
+        UREF_MAX = torch.tensor([3., 3.]).reshape(1, -1, 1)
+        XREF0_MIN = torch.tensor([-2., -2., -1., 1.5]).reshape(1, -1, 1)
+        XREF0_MAX = torch.tensor([2., 2., 1., 1.5]).reshape(1, -1, 1)
+        XE0_MIN = torch.tensor([-1, -1, -1, -1]).reshape(1, -1, 1)
+        XE0_MAX = torch.tensor([1, 1, 1, 1]).reshape(1, -1, 1)
+    else: #ext SS
+        X_MIN = torch.tensor([-50., -50., -np.inf, 0]).reshape(1, -1, 1)
+        X_MAX = torch.tensor([50., 50., np.inf, 10]).reshape(1, -1, 1)
+        XE_MIN = torch.tensor([-2, -2, -1, -1]).reshape(1, -1, 1)
+        XE_MAX = torch.tensor([2, 2, 1, 1]).reshape(1, -1, 1)
+        UREF_MIN = torch.tensor([-3., -3.]).reshape(1, -1, 1)
+        UREF_MAX = torch.tensor([3., 3.]).reshape(1, -1, 1)
+
+        #for initialization
+        XREF0_MIN = torch.tensor([-40., -40., 0, 1]).reshape(1, -1, 1)
+        XREF0_MAX = torch.tensor([40., 40., 2*np.pi, 8]).reshape(1, -1, 1)
+        XE0_MIN = torch.tensor([-2, -2, -1, -1]).reshape(1, -1, 1)
+        XE0_MAX = torch.tensor([2, 2, 1, 1]).reshape(1, -1, 1)
+
+    #'for startMiddle'
+    # XREF0_MIN = torch.tensor([-10., -10., -np.pi, 1]).reshape(1, -1, 1)
+    # XREF0_MAX = torch.tensor([10., 10., np.pi, 6]).reshape(1, -1, 1)
+
+    U_MIN = torch.tensor([-4., -4.]).reshape(1, -1, 1)
+    U_MAX = torch.tensor([4., 4.]).reshape(1, -1, 1)
 
     # parameters for polynomial parametrization of input
     UPOLYN_MIN = -0.5
@@ -23,13 +62,6 @@ class Car(ControlAffineSystem):
     USIN_AMPL = UREF_MAX.flatten() * 1.5
     USIN_WIDE = 3 * torch.tensor([1, 1])
 
-    # for initialization
-    # XREF0_MIN = torch.tensor([-10., -10., -np.pi, 1]).reshape(1, -1, 1) 'for startMiddle'
-    # XREF0_MAX = torch.tensor([10., 10., np.pi, 6]).reshape(1, -1, 1)
-    XREF0_MIN = torch.tensor([-40., -40., -np.pi, 1]).reshape(1, -1, 1) #XREF0_MIN = torch.tensor([-2., -2., -1., 1.5]).reshape(1, -1, 1)
-    XREF0_MAX = torch.tensor([40., 40., np.pi, 8]).reshape(1, -1, 1) #XREF0_MAX = torch.tensor([2., 2., 1., 1.5]).reshape(1, -1, 1)
-    XE0_MIN = torch.tensor([-2, -2, -1, -1]).reshape(1, -1, 1) #XE0_MIN = torch.tensor([-1, -1, -1, -1]).reshape(1, -1, 1)
-    XE0_MAX = torch.tensor([2, 2, 1, 1]).reshape(1, -1, 1) #XE0_MAX = torch.tensor([1, 1, 1, 1]).reshape(1, -1, 1)
 
     def __init__(self):
         self.controller = self.controller_wrapper()
@@ -50,17 +82,18 @@ class Car(ControlAffineSystem):
         """
 
         _controller = self.load_controller()
+        return Controller(_controller, self.U_MIN, self.U_MAX)
 
-        def controller(x: torch.Tensor, xref: torch.Tensor, uref: torch.Tensor) -> torch.Tensor:
-            xe = x - xref
-            xe = self.project_angle(xe)
-            u = _controller(x, xe, uref)  # .squeeze(0)
-            return u
+        # def controller(x: torch.Tensor, xref: torch.Tensor, uref: torch.Tensor) -> torch.Tensor:
+        #     xe = x - xref
+        #     xe = self.project_angle(xe)
+        #     #x = self.project_angle(x)
+        #     u = _controller(x, xe, uref)  # .squeeze(0)
+        #     return u.clip(self.U_MIN, self.U_MAX)
 
-        return controller
+        #return controller
 
-    @staticmethod
-    def load_controller():
+    def load_controller(self):
         """
         load the pretrained neural controller
 
@@ -74,7 +107,10 @@ class Car(ControlAffineSystem):
         """
 
         sys.path.append('data/trained_controller')
-        controller_path = 'data/trained_controller/controller_CAR_ext3.pth.tar'
+        if self.small_SS:
+            controller_path = 'data/trained_controller/controller_CAR_smallSS.pth.tar' #'data/trained_controller/controller_CAR_ext3.pth.tar'
+        else:
+            controller_path = 'data/trained_controller/controller_CAR_ext3.pth.tar'
         _controller = torch.load(controller_path, map_location=torch.device('cpu'))
         _controller.cpu()
         return _controller
@@ -118,5 +154,6 @@ class Car(ControlAffineSystem):
 
 
     def project_angle(self, x_traj) -> torch.Tensor:
-        x_traj[:, 2, :] = (x_traj[:, 2, :] + np.pi) % (2 * np.pi) - np.pi
+        with torch.no_grad():
+            x_traj[:, 2, :] = (x_traj[:, 2, :] + np.pi) % (2 * np.pi) - np.pi
         return x_traj

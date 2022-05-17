@@ -4,8 +4,8 @@ import hyperparams
 from plots.plot_functions import plot_scatter, plot_density_heatmap, plot_ref
 from density_training.utils import load_nn, get_nn_prediction
 import numpy as np
+import os
 from data_generation.utils import load_outputmap, get_input_tensors, get_output_variables
-
 
 
 
@@ -13,6 +13,7 @@ from data_generation.utils import load_outputmap, get_input_tensors, get_output_
 if __name__ == "__main__":
     sample_size = 20000
     args = hyperparams.parse_args()
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus
     args.device = "cuda" if torch.cuda.is_available() else "cpu"
     run_name = 'finalTrain'
     results = []

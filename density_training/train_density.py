@@ -37,7 +37,7 @@ if __name__ == "__main__":
         for epoch in range(args.epochs):
             train_loss.append(evaluate(train_dataloader, model, args, optimizer=optimizer, mode="train"))
             test_loss.append(evaluate(validation_dataloader, model, args, mode="val"))
-            print(f"Epoch {epoch},   Train loss: {train_loss[-1]['loss']},   Test loss: {test_loss[-1]['loss']} \n")
+            #print(f"Epoch {epoch},   Train loss: {train_loss[-1]['loss']},   Test loss: {test_loss[-1]['loss']} \n")
 
             # if test_loss[-1]["loss"] > test_loss_best:
             #     patience += 1
@@ -46,7 +46,7 @@ if __name__ == "__main__":
             #     test_loss_best = test_loss[-1]["loss"]
             # if args.patience and patience >= args.patience:
             #     break
-            if epoch % 20 == 19:
+            if epoch > 2000 and epoch % 1000 == 19:
                 for g in optimizer.param_groups:
                     g['lr'] = g['lr'] / args.lr_step
 
