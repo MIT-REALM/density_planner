@@ -26,7 +26,7 @@ import scipy
 #     plt.clf()
 
 
-def plot_density_heatmap(x, rho, name, args, combine="sampling", save=True, show=True, filename=None, include_date=False):
+def plot_density_heatmap(x, rho, name, args, combine="mean", save=True, show=True, filename=None, include_date=False):
     """
     Plot a heat map
 
@@ -40,7 +40,7 @@ def plot_density_heatmap(x, rho, name, args, combine="sampling", save=True, show
     ny = 22
     nx = 22
     sample_size = 1000
-    xmin, xmax, ymin, ymax = -1.1, 1.1, -1.1, 1.1
+    xmin, xmax, ymin, ymax = -2.1, 2.1, -2.1, 2.1
 
     density_log = np.ones((ny, nx))
     density = np.zeros((ny, nx))
@@ -168,7 +168,7 @@ def plot_losscurves(result, name, args, save=True, show=True, filename=None, typ
     plt.clf()
 
 
-def plot_scatter(x_nn, x_le, rho_nn, rho_le, name, args, save=True, show=True, filename=None, include_date=False):
+def plot_scatter(x_nn, x_le, rho_nn, rho_le, name, args, save=True, show=True, filename=None, include_date=False, weighted=False):
     step = int(80 / x_nn.shape[0])
     colors = np.arange(0, step * x_nn.shape[0], step)
 
@@ -176,9 +176,13 @@ def plot_scatter(x_nn, x_le, rho_nn, rho_le, name, args, save=True, show=True, f
         for i in range(x_nn.shape[0]):
             plt.plot([x_nn[i, j], x_le[i, j]],[x_nn[i, j+1], x_le[i, j+1]], color='gainsboro', zorder=-1)
 
-        plt.scatter(x_nn[:, j], x_nn[:, j+1], marker='o', c=colors, sizes=5 * rho_nn ** (1/6),cmap='gist_ncar',
+        if weighted:
+            sizes = 5 * rho_nn ** (1/6)
+        else:
+            sizes = torch.ones_like(rho_nn)
+        plt.scatter(x_nn[:, j], x_nn[:, j+1], marker='o', c=colors, sizes=sizes, cmap='gist_ncar',
                     label='NN estimate', zorder=1)
-        plt.scatter(x_le[:, j], x_le[:, j+1], marker='x', c=colors, sizes=5 * rho_le ** (1/6), cmap='gist_ncar',
+        plt.scatter(x_le[:, j], x_le[:, j+1], marker='x', c=colors, sizes=sizes, cmap='gist_ncar',
                     label='LE estimate', zorder=1)  # ,
 
         plt.legend()
@@ -191,11 +195,12 @@ def plot_scatter(x_nn, x_le, rho_nn, rho_le, name, args, save=True, show=True, f
             plt.xlabel("theta-thetaref")
             plt.ylabel("v-vref")
 
-        plt.xlim(-1.1, 1.1)
-        plt.ylim(-1.1, 1.1)
+        plt.xlim(-2.1, 2.1)
+        plt.ylim(-2.1, 2.1)
         error = x_nn - x_le
-        plt.title(name + "\n Max error: %.3f, Mean error: %.4f" %
-                  (torch.max(torch.abs(error)), torch.mean(torch.abs(error))))
+        error_dim = torch.sqrt((x_nn[:, j] - x_le[:, j]) ** 2 + (x_nn[:, j+1] - x_le[:, j+1]) ** 2)
+        plt.title(name + "\n Max state error: %.3f, Mean state error: %.4f, \n Max eucl-distance: %.3f, Mean eucl-distance: %.4f" %
+                  (torch.max(torch.abs(error)), torch.mean(torch.abs(error)), torch.max(torch.abs(error_dim)), torch.mean(torch.abs(error_dim))))
         plt.tight_layout()
         if save:
             if filename is None:
@@ -212,14 +217,14 @@ def plot_scatter(x_nn, x_le, rho_nn, rho_le, name, args, save=True, show=True, f
 def plot_ref(xref_traj, uref_traj, name, args, system, t=None, x_traj=None, save=True, show=True, filename=None, include_date=False):
     # xref_traj[0, 2, :] = (xref_traj[0, 2, :] + np.pi) % (2 * np.pi) - np.pi
     # x_traj[:, 2, :] = (x_traj[:, 2, :] + np.pi) % (2 * np.pi) - np.pi
-    xref_traj = system.project_angle(xref_traj)
+    #xref_traj = system.project_angle(xref_traj)
     if t is None:
         t = args.dt_sim * torch.arange(0, xref_traj.shape[2])
     fig, ax = plt.subplots(5, 1, gridspec_kw={'height_ratios': [4, 1, 1, 1, 1]})
     fig.set_figheight(13)
 
     if x_traj is not None:
-        x_traj = system.project_angle(x_traj)
+        #x_traj = system.project_angle(x_traj)
         for i in range(x_traj.shape[0]):
             if i == 1:
                 ax[0].plot(x_traj[i, 0, :], x_traj[i, 1, :], 'slategrey', label='Sample Trajectories')
@@ -249,7 +254,7 @@ def plot_ref(xref_traj, uref_traj, name, args, system, t=None, x_traj=None, save
     ax[2].grid()
     ax[2].set_xlabel("Time")
     ax[2].set_ylabel("Heading angle")
-    ax[2].set_ylim(-np.pi - 0.1, np.pi + 0.1)
+    ax[2].set_ylim(system.X_MIN[0, 2, 0] - 0.1, system.X_MAX[0, 2, 0] + 0.1)
 
     ax[3].plot(t, xref_traj[0, 3, :], 'firebrick')
     ax[3].grid()
@@ -261,7 +266,7 @@ def plot_ref(xref_traj, uref_traj, name, args, system, t=None, x_traj=None, save
     ax[4].plot(t, uref_traj[0, 1, :], label='Longitudinal acceleration')
     ax[4].grid()
     ax[4].set_xlabel("Time")
-    ax[4].set_ylabel("Inputs")
+    ax[4].set_ylabel("Reference Inputs")
     ax[4].set_ylim(system.UREF_MIN[0, :, 0].min() - 0.1, system.UREF_MAX[0, :, 0].max() + 0.1)
     ax[4].legend()
 

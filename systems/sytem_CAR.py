@@ -34,8 +34,8 @@ class Car(ControlAffineSystem):
         XE0_MIN = torch.tensor([-1, -1, -1, -1]).reshape(1, -1, 1)
         XE0_MAX = torch.tensor([1, 1, 1, 1]).reshape(1, -1, 1)
     else: #ext SS
-        X_MIN = torch.tensor([-50., -50., -np.inf, 0]).reshape(1, -1, 1)
-        X_MAX = torch.tensor([50., 50., np.inf, 10]).reshape(1, -1, 1)
+        X_MIN = torch.tensor([-50., -50., -np.pi, 0]).reshape(1, -1, 1)
+        X_MAX = torch.tensor([50., 50., 3 * np.pi, 10]).reshape(1, -1, 1)
         XE_MIN = torch.tensor([-2, -2, -1, -1]).reshape(1, -1, 1)
         XE_MAX = torch.tensor([2, 2, 1, 1]).reshape(1, -1, 1)
         UREF_MIN = torch.tensor([-3., -3.]).reshape(1, -1, 1)
@@ -110,7 +110,7 @@ class Car(ControlAffineSystem):
         if self.small_SS:
             controller_path = 'data/trained_controller/controller_CAR_smallSS.pth.tar' #'data/trained_controller/controller_CAR_ext3.pth.tar'
         else:
-            controller_path = 'data/trained_controller/controller_CAR_ext3.pth.tar'
+            controller_path = 'data/trained_controller/controller_CAR_4layers.pth.tar'
         _controller = torch.load(controller_path, map_location=torch.device('cpu'))
         _controller.cpu()
         return _controller

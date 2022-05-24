@@ -170,7 +170,7 @@ def evaluate(dataloader, model, args, optimizer=None, mode="val"):
             #     optimizer.step(closure)
             # else:
             optimizer.zero_grad()
-            loss_xe.backward()
+            loss.backward()
             optimizer.step()
 
     maxMax_loss_xe, _ = torch.max(max_loss_xe, dim=0)

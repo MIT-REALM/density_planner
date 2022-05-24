@@ -1,4 +1,5 @@
 import torch
+import os
 import hyperparams
 from datetime import datetime
 from plots.plot_functions import plot_losscurves
@@ -8,6 +9,7 @@ from density_training.utils import NeuralNetwork, load_nn, load_args, load_datal
 
 if __name__ == "__main__":
     args = hyperparams.parse_args()
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus
     args.device = "cuda" if torch.cuda.is_available() else "cpu"
     run_name = args.run_name
 
@@ -37,7 +39,7 @@ if __name__ == "__main__":
         for epoch in range(args.epochs):
             train_loss.append(evaluate(train_dataloader, model, args, optimizer=optimizer, mode="train"))
             test_loss.append(evaluate(validation_dataloader, model, args, mode="val"))
-            #print(f"Epoch {epoch},   Train loss: {train_loss[-1]['loss']},   Test loss: {test_loss[-1]['loss']} \n")
+            print(f"Epoch {epoch},    Train loss: {(train_loss[-1]['loss']):.3f}  (x: {(train_loss[-1]['loss_xe']):.5f}),    Test loss: {(test_loss[-1]['loss']):.5f}  (x: {(test_loss[-1]['loss_xe']):.5f})")
 
             # if test_loss[-1]["loss"] > test_loss_best:
             #     patience += 1
@@ -61,7 +63,7 @@ if __name__ == "__main__":
                     'cost_function': "rho_nn=rho0*exp(out)",
                     'hyperparameters': config
                 }
-                plot_losscurves(result, "t%d_" % (epoch) + short_name, args, filename=maxErrorPlot_name, type="maxError")
+                #plot_losscurves(result, "t%d_" % (epoch) + short_name, args, filename=maxErrorPlot_name, type="maxError")
                 plot_losscurves(result, "t%d_" % (epoch) + short_name, args, filename=lossPlot_name)
 
             if epoch % 100 == 99:

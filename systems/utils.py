@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 
 
@@ -64,33 +65,48 @@ def load_controller(task):
 #     return data
 
 
-def get_grid(N):
+def get_mesh_pos(N, x_min=None, x_max=None):
     """
-    Create a grid over all state dimensions
+    Create a mesh over all state dimensions
 
     Parameters
     ----------
     N: list or tensor
-        dim_state: number of different grid values for each state dimension
+        dim_state: number of different mash values for each state dimension
 
     Returns
     -------
     x: torch.Tensor
-        N x dim_state x 1: grid over states
+        N x dim_state x 1: mesh over states
     """
 
-    dim_x = len(N)
-    x = torch.arange(0, 1+1/(N[0]-1)-1e-10, 1/(N[0]-1)).unsqueeze(-1)
-    for i in range(1, dim_x):
-        len_x = x.shape[0]
-        for j in torch.arange(0, 1+1/(N[i]-1)-1e-10, 1/(N[i]-1)):
-            if j == 0:
-                y = j * torch.ones(len_x, 1)
-            else:
-                y = torch.cat((y, j*torch.ones(len_x, 1)),0)
-        x = torch.cat((x.repeat(N[i],1), y), 1)
+    mesh_inputs = []
+    if x_min is None:
+        x_min = torch.zeros(len(N))
+    if x_max is None:
+        x_max = torch.ones(len(N))
 
-    return x.unsqueeze(-1)
+    for i in range(len(N)):
+        mesh_inputs.append(torch.linspace(x_min[i], x_max[i], int(N[i])))
+    mesh_outputs = torch.meshgrid(*mesh_inputs, indexing='ij')
+    for i, output in enumerate(mesh_outputs):
+        if i == 0:
+            positions = output.flatten().unsqueeze(-1)
+        else:
+            positions = torch.cat((positions, output.flatten().unsqueeze(-1)), 1)
+    return positions
+
+    #dim_x = len(N)
+    # x = torch.arange(0, 1+1/(N[0]-1)-1e-10, 1/(N[0]-1)).unsqueeze(-1)
+    # for i in range(1, dim_x):
+    #     len_x = x.shape[0]
+    #     for j in torch.arange(0, 1+1/(N[i]-1)-1e-10, 1/(N[i]-1)):
+    #         if j == 0:
+    #             y = j * torch.ones(len_x, 1)
+    #         else:
+    #             y = torch.cat((y, j*torch.ones(len_x, 1)),0)
+    #     x = torch.cat((x.repeat(N[i],1), y), 1)
+    #return x.unsqueeze(-1)
 
 
 def listDict2dictList(list_dict):
