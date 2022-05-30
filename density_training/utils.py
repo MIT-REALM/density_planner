@@ -42,14 +42,17 @@ class NeuralNetwork(nn.Module):
 
 def loss_function(xe_nn, xe_true, rho_log_nn, rho_true, args):
     loss_xe = ((xe_nn - xe_true) ** 2).mean()
-    #mask = (rho_true < 1e-5)
-    loss_rho = 0
     # if mask.any():
     #     loss_rho = ((rho_log_nn[mask] - rho_true[mask]) ** 2).mean()
     #     rho_log_nn = rho_log_nn[torch.logical_not(mask)]
     #     rho_true = rho_true[torch.logical_not(mask)]
     #if not mask.all():
-    loss_rho += ((rho_log_nn - torch.log(rho_true)) ** 2).mean()
+    rho_log_true = torch.log(rho_true)
+    weight = rho_log_true
+    mask = (rho_log_true < 0.1)
+    if mask.any():
+        weight[mask] = 0.1
+    loss_rho = ((rho_log_nn - rho_log_true) ** 2 / weight).mean()
 
     return loss_xe, args.rho_loss_weight * loss_rho
 

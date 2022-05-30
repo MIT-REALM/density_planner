@@ -7,16 +7,16 @@ from data_generation.utils import load_inputmap, load_outputmap
 import numpy as np
 import os
 from data_generation.utils import load_outputmap, get_input_tensors, get_output_variables
-
+from datetime import datetime
 
 
 
 if __name__ == "__main__":
-    sample_size = 100
+    sample_size = 1000000
     args = hyperparams.parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus
-    args.device = "cuda" if torch.cuda.is_available() else "cpu"
-    run_name = 'finalTrain'
+    args.device = "cpu" # "cuda" if torch.cuda.is_available() else "cpu"
+    run_name = args.run_name
     results = []
 
     #short_name = run_name
@@ -26,8 +26,9 @@ if __name__ == "__main__":
     torch.manual_seed(args.random_seed)
     bs = args.batch_size
     system = Car()
-    xref_traj, rho_traj, uref_traj, u_params, xe_traj, t_vec = system.get_valid_trajectories(sample_size, args)
-    plot_ref(xref_traj, uref_traj, 'test', args, system, t=t_vec, x_traj=xe_traj[:50, :, :]+xref_traj, include_date=True)
+    for k in range(1):
+        xref_traj, rho_traj, uref_traj, u_params, xe_traj, t_vec = system.get_valid_trajectories(sample_size, args)
+        #plot_ref(xref_traj, uref_traj, 'test', args, system, t=t_vec, x_traj=xe_traj[:50, :, :]+xref_traj, include_date=True)
     #x_traj = xe_traj + xref_traj
 
     # NN prediction
@@ -39,19 +40,33 @@ if __name__ == "__main__":
     #t_vec = np.arange(0, args.N_sim * args.dt_sim, step * args.dt_sim)
     xe_nn = torch.zeros_like(xe_traj)
     rho_nn = torch.zeros_like(rho_traj)
+
+    args.path_plot_densityheat = os.path.join(args.path_plot_densityheat, datetime.now().strftime("%Y-%m-%d") + "_" + args.run_name + "/")
+    if not os.path.exists(args.path_plot_densityheat):
+        os.makedirs(args.path_plot_densityheat)
+    args.path_plot_scatter = os.path.join(args.path_plot_scatter, datetime.now().strftime("%Y-%m-%d") + "_" + args.run_name + "/")
+    if not os.path.exists(args.path_plot_scatter):
+        os.makedirs(args.path_plot_scatter)
+
     for i, t in enumerate(t_vec):
         xe_nn[:,:, [i]], rho_nn[:, :, [i]] = get_nn_prediction(model, xe_traj[:, :, 0], xref_traj[0, :, 0],
                                           t, u_params, args)
         error = torch.sqrt((xe_nn[:, 0, i] - xe_traj[:, 0, i]) ** 2 + (xe_nn[:, 1, i] - xe_traj[:, 1, i]) ** 2)
         print("Max position error: %.3f, Mean position error: %.4f" %
               (torch.max(torch.abs(error)), torch.mean(torch.abs(error))))
-
-        plot_density_heatmap(xe_nn[:, :, i], rho_nn[:, 0, i], run_name + "_time=%.2fs_NN" % t, args,
-                             save=True, show=True, filename=None)
-        plot_density_heatmap(xe_traj[:, :, i], rho_traj[:, 0, i], run_name + "_time=%.2fs_LE" % t, args,
-                             save=True, show=True, filename=None)
+        min_rho = torch.minimum(rho_nn[:, 0, i].min(), rho_traj[:, 0, i].min())
+        max_rho = torch.maximum(rho_nn[:, 0, i].max(), rho_traj[:, 0, i].max())
+        plot_limits = [min_rho, max_rho]
+        # plot_density_heatmap2(xe_nn[:, :, i], rho_nn[:, 0, i], "time=%.2fs_NN" % t, args, plot_limits=plot_limits,
+        #                      save=True, show=True, filename=None)
+        # plot_density_heatmap2(xe_traj[:, :, i], rho_traj[:, 0, i], "time=%.2fs_LE" % t, args, plot_limits=plot_limits,
+        #                      save=True, show=False, filename=None)
+        plot_density_heatmap(xe_nn[:, 0, i], xe_nn[:, 1, i], rho_nn[:, 0, i], "time=%.2fs_NN" % t, args,
+                              plot_limits=plot_limits, save=True, show=False, filename=None)
+        plot_density_heatmap(xe_traj[:, 0, i], xe_traj[:, 1, i], rho_traj[:, 0, i], "time=%.2fs_LE" % t, args,
+                              plot_limits=plot_limits, save=True, show=False, filename=None)
         plot_scatter(xe_nn[:50,:,i], xe_traj[:50, :, i], rho_nn[:50,0,i], rho_traj[:50, 0, i],
-                             run_name + "_time=%.2fs" % t, args, save=True, show=True, filename=None, weighted=False)
+                            run_name + "_time=%.2fs" % t, args, save=True, show=False, filename=None, weighted=False)
 
 
 

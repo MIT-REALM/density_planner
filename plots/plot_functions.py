@@ -6,105 +6,121 @@ from scipy.spatial import Delaunay
 from scipy.interpolate import LinearNDInterpolator
 from plots.utils import sample_from
 import scipy
+from motion_planning.utils import pos2gridpos
+
+def plot_density_heatmap(xpos, ypos, rho, name, args, plot_limits=None, save=True, show=True, filename=None, include_date=False):
+    if plot_limits is None:
+        plot_limits = [-np.inf, np.inf]
+    num_samples, _, _ = np.histogram2d(xpos.numpy(), ypos.numpy(), bins=22,
+                                             range=[[-2.1, 2.1], [-2.1, 2.1]])
+    density_mean, xedges, yedges = np.histogram2d(xpos.numpy(), ypos.numpy(), bins=22,
+                                             weights=rho.numpy(), range=[[-2.1, 2.1], [-2.1, 2.1]])
+    mask = num_samples > 0
+    density_mean[mask] /= num_samples[mask]
+    extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
+    im = plt.imshow(density_mean.T, extent=extent, origin='lower', vmin=plot_limits[0], vmax=plot_limits[1])
+    plt.title("Density Heatmap \n %s" % (name))
+    ticks_y_grid, ticks_y = plt.yticks()
+    plt.xticks(ticks_y_grid[1:-1], ticks_y_grid[1:-1])
+    plt.xlabel("x-xref")
+    plt.ylabel("y-yref")
+    plt.colorbar(im, fraction=0.046, pad=0.04, format="%.2f")
+    plt.tight_layout()
+    if save:
+        if filename is None:
+            if include_date:
+                filename = datetime.now().strftime(
+                    "%Y-%m-%d-%H-%M-%S") + "_heatmap_" + 'randomSeed%d_' % args.random_seed + name + ".jpg"
+            else:
+                filename = "heatmap_" + 'randomSeed%d_' % args.random_seed + name + ".jpg"
+        plt.savefig(args.path_plot_densityheat + filename)
+    if show:
+        plt.show()
+    plt.clf()
 
 
-# def plot_density_heatmap2(xpos, ypos, rho, name, args, save=True, show=True, filename=None):
-#     heatmap, xedges, yedges = np.histogram2d(xpos, ypos, bins=10,
-#                                              weights=rho)
-#     extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
-#     plt.imshow(heatmap.T, extent=extent, origin='lower')
-#     plt.title("Density Heatmap for Simulation \n %s" % (name))
-#     plt.xlabel("x-xref")
-#     plt.ylabel("y-yref")
-#     plt.tight_layout()
-#     if save:
-#         if filename is None:
-#             filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_heatmap_" + name + ".jpg"
-#         plt.savefig(args.path_plot_densityheat + filename)
-#     if show:
-#         plt.show()
-#     plt.clf()
-
-
-def plot_density_heatmap(x, rho, name, args, combine="mean", save=True, show=True, filename=None, include_date=False):
-    """
-    Plot a heat map
-
-    Parameters
-    ----------
-    x: torch.Tensor
-        batch_size x self.DIM_X: tensor of states at certain time point
-    rho: torch.Tensor
-        batch_size: tensor of corresponding densities
-    """
-    ny = 22
-    nx = 22
-    sample_size = 1000
-    xmin, xmax, ymin, ymax = -2.1, 2.1, -2.1, 2.1
-
-    density_log = np.ones((ny, nx))
-    density = np.zeros((ny, nx))
-    x = x.detach().cpu().numpy()
-    rho = rho.detach().cpu().numpy()
-
-    # get the number of the bin in x and y direction for each state sample
-    bin_x = ((x[:,0] - xmin) / ((xmax - xmin) / nx)).astype(np.int32)
-    bin_y = ((x[:,1] - ymin) / ((ymax - ymin) / ny)).astype(np.int32)
-    bin_x = np.clip(bin_x, 0, nx - 1)
-    bin_y = np.clip(bin_y, 0, ny - 1)
-
-    # save density and state 3+4 in list of the corresponding bin
-    bins_rho = [[[] for _ in range(nx)] for _ in range(ny)]
-    bins_x = [[[] for _ in range(nx)] for _ in range(ny)]
-    for i in range(bin_x.shape[0]):
-        bins_rho[bin_y[i]][bin_x[i]].append(rho[i])
-        bins_x[bin_y[i]][bin_x[i]].append(x[i, 2:])
-
-    for i in range(ny):
-        for j in range(nx):
-            if len(bins_rho[i][j]) > 0:
-                if combine == "mean":
-                    density_log[i, j] = np.mean(bins_rho[i][j])
-                    density[i, j] = np.mean(bins_rho[i][j])
-                elif combine == "max":
-                    density_log[i, j] = np.max(bins_rho[i][j])
-                    density[i, j] = np.max(bins_rho[i][j])
-                elif combine == "sum":
-                    density_log[i, j] = np.sum(bins_rho[i][j])  # / xpos.shape[0]
-                    density[i, j] = np.sum(bins_rho[i][j])  # / xpos.shape[0]
-                elif combine == "sampling" and len(bins_rho[i][j]) > 3:
-                    samp_x = np.stack(bins_x[i][j], axis=0).astype(np.double)
-                    samp_rho = np.stack(bins_rho[i][j], axis=0).astype(np.double)
-                    estimator = LinearNDInterpolator(samp_x, samp_rho, fill_value=0.0)
-                    samp_xs, hull1 = sample_from(samp_x, sample_size, sel_indices=[0, 1],
-                                                 hull_sampling=True, gain=1, faster_hull=True)
-                    dens2 = estimator(*(samp_xs.T))
-                    cvh_vol = scipy.spatial.ConvexHull(bins_x[i][j]).volume
-                    prob = np.mean(dens2) * cvh_vol
-                    density_log[i, j] = prob
-                    density[i, j] = prob
-
-    extent = [xmin, xmax, ymin, ymax]
-    for i, heatmap in enumerate([np.log(density_log), density]):
-        if i == 0:
-            continue
-        im = plt.imshow(heatmap, extent=extent, origin='lower')
-        name_new = ("logRho_" if i == 0 else "Rho_") + name
-        plt.title("Heatmap for Simulation \n %s \n Density estimation by %s" % (name_new, combine))
-        plt.xlabel("x-xref")
-        plt.ylabel("y-yref")
-        plt.colorbar(im, fraction=0.046, pad=0.04, format="%.2f")
-        plt.tight_layout()
-        if save:
-            if filename is None:
-                if include_date:
-                    filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_heatmap_" + name_new + ".jpg"
-                else:
-                    filename = "heatmap_" + name_new + ".jpg"
-            plt.savefig(args.path_plot_densityheat + 'random_seed%d/' % args.random_seed + filename)
-        if show:
-            plt.show()
-        plt.clf()
+# def plot_density_heatmap2(x, rho, name, args, plot_limits=None, combine="mean", save=True, show=True, filename=None, include_date=False):
+#     """
+#     Plot a heat map
+#
+#     Parameters
+#     ----------
+#     x: torch.Tensor
+#         batch_size x self.DIM_X: tensor of states at certain time point
+#     rho: torch.Tensor
+#         batch_size: tensor of corresponding densities
+#     """
+#
+#     if plot_limits is None:
+#         plot_limits = [-np.inf, np.inf]
+#     ny = 22
+#     nx = 22
+#     sample_size = 1000
+#     xmin, xmax, ymin, ymax = -2.1, 2.1, -2.1, 2.1
+#
+#     density_log = np.ones((ny, nx))
+#     density = np.zeros((ny, nx))
+#     x = x.detach().cpu().numpy()
+#     rho = rho.detach().cpu().numpy()
+#
+#     # get the number of the bin in x and y direction for each state sample
+#     bin_x = ((x[:,0] - xmin) / ((xmax - xmin) / nx)).astype(np.int32)
+#     bin_y = ((x[:,1] - ymin) / ((ymax - ymin) / ny)).astype(np.int32)
+#     bin_x = np.clip(bin_x, 0, nx - 1)
+#     bin_y = np.clip(bin_y, 0, ny - 1)
+#
+#     # save density and state 3+4 in list of the corresponding bin
+#     bins_rho = [[[] for _ in range(nx)] for _ in range(ny)]
+#     bins_x = [[[] for _ in range(nx)] for _ in range(ny)]
+#     for i in range(bin_x.shape[0]):
+#         bins_rho[bin_y[i]][bin_x[i]].append(rho[i])
+#         bins_x[bin_y[i]][bin_x[i]].append(x[i, 2:])
+#
+#     for i in range(ny):
+#         for j in range(nx):
+#             if len(bins_rho[i][j]) > 0:
+#                 if combine == "mean":
+#                     density_log[i, j] = np.mean(bins_rho[i][j])
+#                     density[i, j] = np.mean(bins_rho[i][j])
+#                 elif combine == "max":
+#                     density_log[i, j] = np.max(bins_rho[i][j])
+#                     density[i, j] = np.max(bins_rho[i][j])
+#                 elif combine == "sum":
+#                     density_log[i, j] = np.sum(bins_rho[i][j])  # / xpos.shape[0]
+#                     density[i, j] = np.sum(bins_rho[i][j])  # / xpos.shape[0]
+#                 elif combine == "sampling" and len(bins_rho[i][j]) > 3:
+#                     samp_x = np.stack(bins_x[i][j], axis=0).astype(np.double)
+#                     samp_rho = np.stack(bins_rho[i][j], axis=0).astype(np.double)
+#                     estimator = LinearNDInterpolator(samp_x, samp_rho, fill_value=0.0)
+#                     samp_xs, hull1 = sample_from(samp_x, sample_size, sel_indices=[0, 1],
+#                                                  hull_sampling=True, gain=1, faster_hull=True)
+#                     dens2 = estimator(*(samp_xs.T))
+#                     cvh_vol = scipy.spatial.ConvexHull(bins_x[i][j]).volume
+#                     prob = np.mean(dens2) * cvh_vol
+#                     density_log[i, j] = prob
+#                     density[i, j] = prob
+#
+#     extent = [xmin, xmax, ymin, ymax]
+#     for i, heatmap in enumerate([np.log(density_log), density]):
+#         if i == 0:
+#             continue
+#         im = plt.imshow(heatmap, extent=extent, origin='lower', vmin=plot_limits[0], vmax=plot_limits[1])
+#         name_new = ("logRho_" if i == 0 else "Rho_") + name
+#         plt.title("Heatmap for Simulation \n %s \n Density estimation by %s" % (name_new, combine))
+#         plt.xlabel("x-xref")
+#         plt.ylabel("y-yref")
+#         plt.colorbar(im, fraction=0.046, pad=0.04, format="%.2f")
+#         plt.tight_layout()
+#         if save:
+#             if filename is None:
+#                 if include_date:
+#                     filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_heatmap_" + 'randomSeed%d_' % args.random_seed + name_new + ".jpg"
+#                 else:
+#                     filename = "heatmap_" + 'randomSeed%d_' % args.random_seed + name_new + ".jpg"
+#             plt.savefig(args.path_plot_densityheat + filename)
+#         if show:
+#             plt.show()
+#         plt.clf()
 
 
 def plot_losscurves(result, name, args, save=True, show=True, filename=None, type="Loss", include_date=False):
@@ -179,24 +195,27 @@ def plot_scatter(x_nn, x_le, rho_nn, rho_le, name, args, save=True, show=True, f
         if weighted:
             sizes = 5 * rho_nn ** (1/6)
         else:
-            sizes = torch.ones_like(rho_nn)
+            sizes = 15 * torch.ones_like(rho_nn)
         plt.scatter(x_nn[:, j], x_nn[:, j+1], marker='o', c=colors, sizes=sizes, cmap='gist_ncar',
                     label='NN estimate', zorder=1)
         plt.scatter(x_le[:, j], x_le[:, j+1], marker='x', c=colors, sizes=sizes, cmap='gist_ncar',
                     label='LE estimate', zorder=1)  # ,
-
+        plt.axis('scaled')
         plt.legend()
         plt.grid()
 
         if j == 0:
             plt.xlabel("x-xref")
             plt.ylabel("y-yref")
+            lim = 2.1
         elif j == 2:
             plt.xlabel("theta-thetaref")
             plt.ylabel("v-vref")
-
-        plt.xlim(-2.1, 2.1)
-        plt.ylim(-2.1, 2.1)
+            lim = 1.1
+        plt.xlim(-lim, lim)
+        plt.ylim(-lim, lim)
+        ticks_y_grid, ticks_y = plt.yticks()
+        plt.xticks(ticks_y_grid[1:-1], ticks_y_grid[1:-1])
         error = x_nn - x_le
         error_dim = torch.sqrt((x_nn[:, j] - x_le[:, j]) ** 2 + (x_nn[:, j+1] - x_le[:, j+1]) ** 2)
         plt.title(name + "\n Max state error: %.3f, Mean state error: %.4f, \n Max eucl-distance: %.3f, Mean eucl-distance: %.4f" %
@@ -205,10 +224,10 @@ def plot_scatter(x_nn, x_le, rho_nn, rho_le, name, args, save=True, show=True, f
         if save:
             if filename is None:
                 if include_date:
-                    filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_Scatter_" + name + ".jpg"
+                    filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_Scatter_" + 'dims%d-%d_' % (j, j+1) + '_randomSeed%d_' % args.random_seed + name + ".jpg"
                 else:
-                    filename = "Scatter_" + name + ".jpg"
-            plt.savefig(args.path_plot_scatter + 'dims%d-%d/' % (j, j+1) + 'random_seed%d/' % args.random_seed + filename)
+                    filename = "Scatter_" + 'dims%d-%d_' % (j, j+1) + '_randomSeed%d_' % args.random_seed + name + ".jpg"
+            plt.savefig(args.path_plot_scatter + filename)
         if show:
             plt.show()
         plt.clf()
@@ -262,8 +281,8 @@ def plot_ref(xref_traj, uref_traj, name, args, system, t=None, x_traj=None, save
     ax[3].set_ylabel("Velocity")
     ax[3].set_ylim(system.X_MIN[0, 3, 0] - 0.1, system.X_MAX[0, 3, 0] + 0.1)
 
-    ax[4].plot(t, uref_traj[0, 0, :], label='Angular velocity')
-    ax[4].plot(t, uref_traj[0, 1, :], label='Longitudinal acceleration')
+    ax[4].plot(t[:uref_traj.shape[2]], uref_traj[0, 0, :], label='Angular velocity')
+    ax[4].plot(t[:uref_traj.shape[2]], uref_traj[0, 1, :], label='Longitudinal acceleration')
     ax[4].grid()
     ax[4].set_xlabel("Time")
     ax[4].set_ylabel("Reference Inputs")
@@ -282,3 +301,37 @@ def plot_ref(xref_traj, uref_traj, name, args, system, t=None, x_traj=None, save
     if show:
         plt.show()
     plt.clf()
+
+
+def plot_grid(object, args, timestep=None, name=None):
+    if torch.is_tensor(object):
+        if object.dim() == 3:
+            if timestep is None:
+                grid = object[:, :, -1]
+            else:
+                grid = object[:, :, timestep]
+        else:
+            grid = object
+        if name is None:
+            name = "grid"
+    else:
+        if timestep is None:
+            timestep = object.current_timestep
+        grid = object.grid[:, :, timestep]
+        if name is None:
+            name = object.name
+    x_wide = max((args.environment_size[1] - args.environment_size[0]) / 10, 3)
+    y_wide = (args.environment_size[3] - args.environment_size[2]) / 10
+    plt.figure(figsize=(x_wide, y_wide))
+    plt.pcolormesh(grid.T, cmap='binary')
+    plt.axis('scaled')
+
+    ticks_x = np.concatenate((np.arange(0, args.environment_size[1]+1, 10), np.arange(-10, args.environment_size[0]-1, -10)), 0)
+    ticks_y = np.concatenate((np.arange(0, args.environment_size[3]+1, 10), np.arange(-10, args.environment_size[2]-1, -10)), 0)
+    ticks_x_grid, ticks_y_grid = pos2gridpos(args, ticks_x, ticks_y)
+    plt.xticks(ticks_x_grid, ticks_x)
+    plt.yticks(ticks_y_grid, ticks_y)
+
+    plt.title(f"{name} at timestep={timestep}")
+    plt.tight_layout()
+    plt.show()

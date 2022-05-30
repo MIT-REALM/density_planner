@@ -12,6 +12,10 @@ def load_inputmap(dim_x, args):
         dim_u = 20
     elif args.input_type == "polyn3":
         dim_u = 8
+    elif args.input_type == "sincos3":
+        dim_u = 12
+    elif args.input_type == "sincos4":
+        dim_u = 16
     elif args.input_type == "sin":
         dim_u = 8
     elif args.input_type == "cust2":
@@ -82,6 +86,11 @@ def get_input_tensors(u_params, xref0, xe0, t, args):
     if xe0.dim() > 1:
         input_map, num_inputs = load_inputmap(xe0.shape[1], args)
         input_tensor = torch.zeros(xe0.shape[0], num_inputs)
+        if xref0.shape[0] == 1:
+            xref0 = xref0.flatten()
+        else:
+            xref0 = xref0.squeeze()
+        xe0 = xe0.squeeze()
     else:
         input_map, num_inputs = load_inputmap(xe0.shape[0], args)
         input_tensor = torch.zeros(1, num_inputs)
