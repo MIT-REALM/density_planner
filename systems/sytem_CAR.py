@@ -42,8 +42,8 @@ class Car(ControlAffineSystem):
         UREF_MAX = torch.tensor([3., 3.]).reshape(1, -1, 1)
 
         #for initialization
-        XREF0_MIN = torch.tensor([-40., -40., 0, 1]).reshape(1, -1, 1)
-        XREF0_MAX = torch.tensor([40., 40., 2*np.pi, 8]).reshape(1, -1, 1)
+        XREF0_MIN = torch.tensor([-30., -10., 0, 1]).reshape(1, -1, 1)
+        XREF0_MAX = torch.tensor([30., 10., 2*np.pi, 8]).reshape(1, -1, 1)
         XE0_MIN = torch.tensor([-2, -2, -1, -1]).reshape(1, -1, 1)
         XE0_MAX = torch.tensor([2, 2, 1, 1]).reshape(1, -1, 1)
 

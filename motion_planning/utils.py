@@ -23,19 +23,19 @@ class MultivariateGaussians():
         prob[mask] = 0
         return prob
 
-def pos2gridpos(args, pos_x=None, pos_y=None, format='torch'):
+def pos2gridpos(args, pos_x=None, pos_y=None):
     if pos_x is not None:
         if isinstance(pos_x, list):
-            pos_x = np.array(pos_x)
-        pos_x = np.array((pos_x - args.environment_size[0]) / (args.environment_size[1] - args.environment_size[0])) * \
+            pos_x = torch.from_numpy(np.array(pos_x))
+        pos_x = ((pos_x - args.environment_size[0]) / (args.environment_size[1] - args.environment_size[0])) * \
                 (args.grid_size[0]-1)
     if pos_y is not None:
         if isinstance(pos_y, list):
-            pos_y = np.array(pos_y)
-        pos_y = np.array((pos_y - args.environment_size[2]) / (args.environment_size[3] - args.environment_size[2])) * \
+            pos_y = torch.from_numpy(np.array(pos_y))
+        pos_y = ((pos_y - args.environment_size[2]) / (args.environment_size[3] - args.environment_size[2])) * \
                (args.grid_size[1]-1)
-    if format == 'torch':
-        return torch.from_numpy(np.round(pos_x+0.001)).type(torch.LongTensor), torch.from_numpy(np.round(pos_y+0.001)).type(torch.LongTensor)
+    if torch.is_tensor(pos_x):
+        return (torch.round(pos_x+0.001)).long(), (torch.round(pos_y+0.001)).long()
     else:
         return (np.round(pos_x + 0.001).astype(int)), (np.round(pos_y + 0.001).astype(int))
 
@@ -50,24 +50,34 @@ def gridpos2pos(args, pos_x=None, pos_y=None):
     return pos_x, pos_y
 
 
-def shift_array(arr, step_x=0, step_y=0):
-    result = torch.empty_like(arr)
+def shift_array(grid, step_x=0, step_y=0):
+    result = grid.clone().detach()
     if step_x > 0:
         result[:step_x, :] = 0
-        result[step_x:, :] = arr[:-step_x, :]
+        result[step_x:, :] = grid[:-step_x, :]
     elif step_x < 0:
         result[step_x:, :] = 0
-        result[:step_x, :] = arr[-step_x:, :]
-    arr = result
+        result[:step_x, :] = grid[-step_x:, :]
+    grid = result.clone().detach()
     if step_y > 0:
-        result[:, step_y] = 0
-        result[:, step_y:] = arr[:, -step_y]
+        result[:, :step_y] = 0
+        result[:, step_y:] = grid[:, :-step_y]
     elif step_y < 0:
-        result[:, step_y] = 0
-        result[:, step_y] = arr[: -step_y:]
-    else:
-        result[:] = arr
+        result[:, step_y:] = 0
+        result[:, :step_y] = grid[:, -step_y:]
     return result
+
+
+def enlarge_grid(grid, wide):
+    grid_enlarged = grid #.clone().detach()
+    for i in range(wide):
+        grid_enlarged += shift_array(grid, step_x=1)
+        grid_enlarged += shift_array(grid, step_x=-1)
+    grid = grid_enlarged #.clone().detach()
+    for i in range(wide):
+        grid_enlarged += shift_array(grid, step_y=1)
+        grid_enlarged += shift_array(grid, step_y=-1)
+    return torch.clamp(grid_enlarged, 0, 1)
 
 
 def sample_pdf(system, num, spread=0.3):
@@ -96,37 +106,72 @@ def traj2grid(x_traj, args):
     grid[gridpos_x.clamp(0, args.grid_size[0]-1), gridpos_y.clamp(0, args.grid_size[1]-1)] = 1
     return grid
 
-def check_collision(grid_ego, grid_env, max_coll_sum):
+def check_collision(grid_ego, grid_env, max_coll_sum, return_coll_pos=False):
     collision = False
     coll_grid = grid_ego * grid_env
-    coll_sum = coll_grid.sum()  # coll_max = coll_grid.max()
-    if coll_sum > max_coll_sum:
-        collision = True  # if coll_max > args.coll_max:
-    return collision, coll_sum  # return "coll_max", idx, coll_max
+    coll_sum = coll_grid.sum()
 
-def pred2grid(x, rho, args):
+    if coll_sum > max_coll_sum:
+        collision = True  # if coll
+    if return_coll_pos:
+        coll_pos_prob = 0
+        if collision:
+            coll_pos = coll_grid.nonzero(as_tuple=True)
+            coll_prob = coll_grid[coll_pos[:][0], coll_pos[:][1]]
+            coll_pos_prob = torch.stack((coll_pos[:][0], coll_pos[:][1], coll_prob[:]))
+        return collision, coll_sum, coll_pos_prob
+    return collision, coll_sum
+
+def pred2grid(x, rho, args, return_gridpos=False):
     """average the density of points landing in the same bin and return normalized grid"""
     gridpos_x, gridpos_y = pos2gridpos(args, pos_x=x[:, 0, 0], pos_y=x[:, 1, 0])
     min_xbin = int(gridpos_x.min())
     min_ybin = int(gridpos_y.min())
     max_xbin = int(gridpos_x.max())
     max_ybin = int(gridpos_y.max())
-    gridpos_x = gridpos_x.numpy()
-    gridpos_y = gridpos_y.numpy()
-    num_samples, _, _ = np.histogram2d(gridpos_x, gridpos_y, bins=[max_xbin - min_xbin + 1, max_ybin - min_ybin + 1],
-                   range=[[min_xbin, max_xbin], [min_ybin, max_ybin]])
-    density_sum, _, _ = np.histogram2d(gridpos_x, gridpos_y, bins=[max_xbin - min_xbin + 1, max_ybin - min_ybin + 1],
-                   range=[[min_xbin, max_xbin], [min_ybin, max_ybin]], weights=rho[:, 0,0])
+
+    gridpos = torch.cat((gridpos_x.unsqueeze(-1), gridpos_y.unsqueeze(-1)), dim=1)
+    num_samples, _ = torch.histogramdd(gridpos.type(torch.FloatTensor), bins=[max_xbin - min_xbin + 1, max_ybin - min_ybin + 1],
+                   range=[min_xbin, max_xbin, min_ybin, max_ybin])
+    density_sum, _ = torch.histogramdd(gridpos.type(torch.FloatTensor), bins=[max_xbin - min_xbin + 1, max_ybin - min_ybin + 1],
+                   weight=rho[:, 0,0], range=[min_xbin, max_xbin, min_ybin, max_ybin])
     density_mean = density_sum
     mask = num_samples > 0
     density_mean[mask] /= num_samples[mask]
     grid = torch.zeros((args.grid_size[0], args.grid_size[1], 1))
-    grid[min_xbin:max_xbin+1, min_ybin:max_ybin+1, 0] = torch.from_numpy(density_mean) / density_mean.sum()
+    grid[min_xbin:max_xbin+1, min_ybin:max_ybin+1, 0] = density_mean / density_mean.sum()
+    if return_gridpos:
+        return grid, gridpos
     return grid
 
+def get_closest_free_cell(gridpos, grid_env, args):
+    gridpos = gridpos.long()
+    for i in range(1, min(args.grid_size)):
+        min_x = max(gridpos[0] - i, 0)
+        max_x = min(gridpos[0] + i + 1, args.grid_size[0])
+        min_y = max(gridpos[1] - i, 0)
+        max_y = min(gridpos[1] + i + 1, args.grid_size[1])
 
-def time2index(t, args):
-    return int((t * args.factor_pred).round())
+        if torch.any(grid_env[min_x:max_x, gridpos[1]] == 0):
+            free_cell = (grid_env[min_x:max_x, gridpos[1]] != 0).nonzero(as_tuple=True)
+            return torch.tensor([min_x+free_cell[0][0], gridpos[1]])
+
+        if torch.any(grid_env[min_x:max_x, min_y:max_y] == 0):
+            free_cell = (grid_env[min_x:max_x, min_y:max_y] == 0).nonzero(as_tuple=True)
+            return torch.tensor([min_x+free_cell[0][0], min_y+free_cell[1][0]])
+    return None
+
+def time2idx(t, args, short=True):
+    if short:
+        return int((t / (args.dt_sim * args.factor_pred)).round())
+    else:
+        return int((t / args.dt_sim).round())
+
+def idx2time(idx, args, short=True):
+    if short:
+        return idx * args.dt_sim * args.factor_pred
+    else:
+        return idx * args.dt_sim
 
 def get_mesh_sample_points(system, args):
     x_min = system.XE0_MIN.flatten()

@@ -195,8 +195,8 @@ def get_nn_prediction(model, xe0, xref0, t, u_params, args):
     input_tensor, _ = get_input_tensors(u_params.flatten(), xref0, xe0, t, args)
     output_map, num_outputs = load_outputmap(xref0.shape[0])
 
-    with torch.no_grad():
-        input = input_tensor.to(args.device)
-        output = model(input)
-        xe, rho = get_output_variables(output, output_map, type='exp')
+    #with torch.no_grad():
+    input = input_tensor.to(args.device)
+    output = model(input)
+    xe, rho = get_output_variables(output, output_map, type='exp')
     return xe.unsqueeze(-1), rho.unsqueeze(-1).unsqueeze(-1)

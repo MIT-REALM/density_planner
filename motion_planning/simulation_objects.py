@@ -1,10 +1,13 @@
 import numpy as np
 import torch
-from motion_planning.utils import pos2gridpos, check_collision, gridpos2pos, traj2grid, shift_array, pred2grid, get_mesh_sample_points, time2index, sample_pdf
+from motion_planning.utils import pos2gridpos, check_collision, idx2time, gridpos2pos, traj2grid, shift_array,\
+    pred2grid, get_mesh_sample_points, time2idx, sample_pdf, enlarge_grid, get_closest_free_cell
 from density_training.utils import load_nn, get_nn_prediction
 from data_generation.utils import load_inputmap, load_outputmap
 from plots.plot_functions import plot_ref
 from plots.plot_functions import plot_grid
+import pickle
+
 
 class Environment:
     """Combined grip map of multiple OccupancyObjects"""
@@ -16,6 +19,7 @@ class Environment:
         self.objects = objects
         self.update_grid()
         self.name = name
+        self.grid_enlarged = None
 
     def update_grid(self):
         """forward object occupancies to the current timestep and add all grids together"""
@@ -43,13 +47,18 @@ class Environment:
         self.current_timestep += step_size
         self.update_grid()
 
-    def enlarge_shape(self, shape, timestep=None):
+    def enlarge_shape(self, table=None):
         """enlarge the shape of all obstacles and update the grid to do motion planning for a point"""
-        if timestep is None:
-            timestep = self.current_timestep
-        for obj in self.objects:
-            obj.enlarge_shape(shape, timestep)
-        self.update_grid()
+        if table is None:
+            table = [[0, 10, 25], [10, 30, 20], [30, 50, 10], [50, 101, 5]]
+        grid_enlarged = self.grid.clone().detach()
+        for elements in table:
+            if elements[0] >= self.grid.shape[2]:
+                continue
+            timesteps = torch.arange(elements[0], min(elements[1], self.grid.shape[2]))
+            grid_enlarged[:, :, timesteps] = enlarge_grid(self.grid[:, :, timesteps], elements[2])
+        self.grid_enlarged = grid_enlarged
+
 
 
 class StaticObstacle:
@@ -61,6 +70,7 @@ class StaticObstacle:
         self.name = name
         self.grid = torch.zeros((self.grid_size[0], self.grid_size[1], timestep + 1))
         self.bounds = [None for _ in range(timestep + 1)]
+        self.occupancies = []
         self.add_occupancy(args, pos=coord[0:4], certainty=coord[4], spread=coord[5])
 
     def add_occupancy(self, args, pos, certainty=1, spread=1, pdf_form='square'):
@@ -97,9 +107,9 @@ class StaticObstacle:
         self.bounds += [self.bounds[self.current_timestep]] * step_size
         self.current_timestep += step_size
 
-    def enlarge_shape(self):
-        """enlarge obstacle by the shape of the ego vehicle"""
-        raise(NotImplementedError)
+    def enlarge_shape(self, wide):
+        pass
+
 
 
 class DynamicObstacle(StaticObstacle):
@@ -135,17 +145,18 @@ class MPOptimizer:
             for u1 in self.u1:
                 u_ext = torch.tensor([u0, u1]).reshape((1, -1, 1)).repeat(1, 1, self.num_repeats)
                 self.check_uref(u_ext, self.ego.xref0, i)
+        with open(self.args.path_traj0 + "valid_traj", "wb") as f:
+            pickle.dump(self.valid_traj, f)
 
     def check_uref(self, uref_traj, xref_traj, i):
         distance_to_goal_old = ((xref_traj[0, :2, -1] - self.ego.xrefN[0, :2, 0]) ** 2).sum()
 
         # 1. compute xref
         xref_traj = self.ego.system.extend_xref_traj(xref_traj, uref_traj, self.args.dt_sim)
-        if xref_traj is None:
+        if xref_traj is None:  # = out of admissible state space
             return "invalid"
 
-        # 2. if collision or distance to goal from xrefN bigger than from xref0:
-        #       return "invalid"
+        # 2. check if trajectory is promising
         distance_to_goal = ((xref_traj[0, :2, -1] - self.ego.xrefN[0, :2, 0]) ** 2).sum()
         if distance_to_goal > distance_to_goal_old:
             return "invalid"
@@ -160,8 +171,10 @@ class MPOptimizer:
         i += 1
         if i == self.num_discr:
             cost = distance_to_goal + 0.01 * (uref_traj ** 2).sum()
-            if float(distance_to_goal) < 100:
+            if float(distance_to_goal) < 60:
                 self.valid_traj.append([uref_traj, xref_traj, cost])
+                print("valid trajectory added with cost %.2f" % cost)
+                self.ego.visualize_xref(xref_traj, self.args, show=False, save=True, include_date=True, name="initialTraj")
             return
 
         # 4. extend traj with u0 and u1
@@ -173,16 +186,87 @@ class MPOptimizer:
                 # 5. call check_uref
                 self.check_uref(uref_traj_new, xref_traj, i)
 
-    def check_collision_in_interv(self, xref_traj, i):
-        timestep = i * self.num_repeats
-        for j in range(self.num_repeats // self.args.factor_pred):
-            interv = torch.arange(timestep, timestep + self.args.factor_pred)
-            grid_xref = traj2grid(xref_traj[:, :, interv], self.args)
-            collision, _ = check_collision(grid_xref, self.ego.grid_env[:, :, timestep // self.args.factor_pred], self.args.coll_sum)
-            if collision:
-                return True
-            timestep += self.args.factor_pred
-        return False
+
+    def check_collision_in_interv(self, xref_traj, i_start, i_end=None, enlarged=False, short=False, check_all=False, return_coll_pos=False):
+        if i_end is None:
+            i_end = i_start + 1
+        if np.isinf(i_end) or i_end > self.num_discr:
+            i_end = self.num_discr
+        if enlarged:
+            if self.ego.env.grid_enlarged is None:
+                self.ego.env.enlarge_shape()
+            grid = self.ego.env.grid_enlarged
+        else:
+            grid = self.ego.env.grid
+        num_repeats = self.num_repeats // self.args.factor_pred if short else self.num_repeats
+
+        coll = False
+        coll_time = torch.tensor([])
+        for i in range(i_start, i_end):
+            timestep = i * num_repeats
+            for j in range(num_repeats // self.args.factor_pred):
+                interv = torch.arange(timestep, timestep + self.args.factor_pred)
+                grid_xref = traj2grid(xref_traj[:, :, interv], self.args)
+                collision, _ = check_collision(grid_xref, grid[:, :, timestep // self.args.factor_pred], self.args.coll_sum, return_coll_pos=False)
+                if collision:
+                    if not check_all:
+                        return True
+                    coll = True
+                    coll_time = torch.cat((coll_time, interv))
+                timestep += self.args.factor_pred
+        if not check_all:
+            return False
+        return coll, coll_time
+
+    def optimize_traj(self, u_params, with_density=True):
+        u_params.requires_grad = True
+        costs = []
+        for i in range(self.args.epochs_mp):
+            cost = self.predict_cost(u_params, with_density=with_density)
+            cost.backward()
+            costs.append(cost.item())
+            with torch.no_grad():
+                u_params -= u_params.grad * self.args.lr_mp
+                u_params.clamp(self.ego.system.UREF_MIN, self.ego.system.UREF_MAX)
+                u_params.grad.zero_()
+
+    def predict_cost(self, u_params, with_density=True):
+        uref_traj, xref_traj = self.ego.system.u_params2ref_traj(self.ego.xref0, u_params, self.args, short=True)
+        self.ego.visualize_xref(xref_traj, self.args, name="lr=%.0e, coll_weight=%.0e, \nbounds_weight=%.0e" %
+                                        (self.args.lr_mp, self.args.cost_coll_weight, self.args.cost_bounds_weight))
+        cost = 0
+
+        # penalize leaving the admissible state space
+        out_of_bounds = False
+        if torch.any(xref_traj < self.ego.system.X_MIN):
+            idx_smaller = (xref_traj < self.ego.system.X_MIN).nonzero(as_tuple=True)
+            cost += self.args.cost_bounds_weight * ((xref_traj[idx_smaller] - self.ego.system.X_MIN[0, idx_smaller[1], 0]) ** 2).sum()
+            out_of_bounds = True
+        if torch.any(xref_traj > self.ego.system.X_MAX):
+            idx_bigger = (xref_traj > self.ego.system.X_MAX).nonzero(as_tuple=True)
+            cost += self.args.cost_bounds_weight * ((xref_traj[idx_bigger] - self.ego.system.X_MAX[0, idx_bigger[1], 0]) ** 2).sum()
+            out_of_bounds = True
+
+        # penalize big goal distance and big control effort
+        distance_to_goal = ((xref_traj[0, :2, -1] - self.ego.xrefN[0, :2, 0]) ** 2).sum()
+        cost += distance_to_goal + self.args.cost_uref_weight * (uref_traj ** 2).sum()
+        if out_of_bounds:
+            return cost
+
+        # penalize collisions
+        coll_enlarged, coll_idx = self.check_collision_in_interv(xref_traj, 0, np.inf, enlarged=True, short=True, check_all=True)  # check collision for xref
+
+
+        if coll_enlarged:
+            if with_density:
+                coll_times = idx2time(coll_idx, self.args)
+                results, idx, coll_cost = self.ego.predict_collision(u_params, xref_traj, self.args, t_vec=coll_times)
+            else:
+                gridpos_free = get_closest_free_cell(coll_pos_prob.T[i, :2], self.env.grid[:, :, idx], args)
+
+            if results != 'success':
+                cost += self.args.cost_coll_weight * coll_cost
+        return cost
 
 
 class EgoVehicle:
@@ -192,24 +276,17 @@ class EgoVehicle:
         self.t_vec = t_vec
         self.system = system
         self.name = name
-        self.grid_env = env.grid
+        self.env = env
         self.initialize_predictor(pdf0, args)
 
-    def predict_cost(self, args, u_params):
-        uref_traj, xref_traj = self.system.u_params2ref_traj(self.xref0, u_params, args)
-        results, p0, p1 = self.predict_collision(u_params, xref_traj, args)
-        if results == 'success':
-            cost = (uref_traj ** 2).mean()
-        else:
-            cost = 1e10
-        return cost
 
-    def visualize_xref(self, xref_traj, args, uref_traj=None):
+    def visualize_xref(self, xref_traj, args, uref_traj=None, show=True, save=False, include_date=True, name='Reference Trajectory'):
         if uref_traj is not None:
             plot_ref(xref_traj, uref_traj, 'Reference Trajectory', args, self.system, t=self.t_vec, include_date=True)
         grid = traj2grid(xref_traj, args)
-        grid_env_max, _ = self.grid_env.max(dim=2)
-        plot_grid(torch.clamp(grid + grid_env_max, 0, 1),  args, name='Reference Trajectory in the Environment')
+        grid_env_max, _ = self.env.grid.max(dim=2)
+        plot_grid(torch.clamp(grid + grid_env_max, 0, 1),  args, name=name,
+                  show=show, save=save, include_date=include_date)
 
     def set_start_grid(self, args):  # certainty=None, spread=2, pdf_form='squared'):
         self.grid = pred2grid(self.xref0 + self.xe0, self.rho0, args) #20s for 100iter
@@ -228,21 +305,38 @@ class EgoVehicle:
         self.xe0 = xe0[mask, :, :]
         self.rho0 = (rho0[mask] / rho0.sum()).reshape(-1, 1, 1)
 
-    def predict_collision(self, u_params, xref_traj, args):
+    def predict_collision(self, u_params, xref_traj, args, t_vec=None):
+        if t_vec is None:
+            t_vec = self.t_vec
         # 2. predict x(t) and rho(t) for times t
-        for t in self.t_vec:
-            idx = time2index(t, args)
-            xe_nn, rho_nn = get_nn_prediction(self.model, self.xe0, self.xref0, t, u_params, args)
+        for t in t_vec:
+            idx = time2idx(t, args)
+            xe_nn, rho_nn_fac = get_nn_prediction(self.model, self.xe0, self.xref0, t, u_params, args)
             x_nn = xe_nn + xref_traj[:, :, [idx]]
-            rho_nn *= self.rho0.reshape(-1, 1, 1)
+            rho_nn = rho_nn_fac * self.rho0.reshape(-1, 1, 1)
 
-            # 3. compute marginalized density grid
-            grid_nn = pred2grid(x_nn[:, :, [0]], rho_nn, args)
+            with torch.no_grad():
+                # 3. compute marginalized density grid
+                grid_nn, gridpos_nn = pred2grid(x_nn[:, :, [0]], rho_nn, args, return_gridpos=True)
 
-            # 4. test for collisions
-            collision, coll_sum = check_collision(grid_nn[:, :, 0], self.grid_env[:, :, idx], args.coll_sum)
-            if collision:  # if coll_max > args.coll_max:
-                return "collision", idx, coll_sum  # return "coll_max", idx, coll_max
+                # 4. test for collisions
+                collision, coll_sum, coll_pos_prob = check_collision(grid_nn[:, :, 0], self.env.grid[:, :, idx], args.coll_sum, return_coll_pos=True)
+
+            # compute collision cost penalizing the distance from samples to free space
+            if collision:
+                coll_cost = 0
+                for i in range(coll_pos_prob.shape[1]):
+
+                    # get position of closest free space for collision cell i
+                    gridpos_free = get_closest_free_cell(coll_pos_prob.T[i, :2], self.env.grid[:, :, idx], args)
+                    pos_x, pos_y = gridpos2pos(args, gridpos_free[0], gridpos_free[1])
+
+                    # compute sample indizes which collide with obstacle
+                    coll_idx = (gridpos_nn == coll_pos_prob.T[i, :2]).all(dim=1).nonzero(as_tuple=True)[0]
+                    distance_to_free_cell = (x_nn[coll_idx, 0, 0] - pos_x) ** 2 + (x_nn[coll_idx, 1, 0] - pos_y) ** 2
+                    coll_cost += coll_pos_prob[2, i] * (rho_nn[coll_idx, 0, 0] * distance_to_free_cell).sum()
+
+                return "collision", idx, coll_cost
         return "success", x_nn, rho_nn
 
     def load_predictor(self, args, dim_x):

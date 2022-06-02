@@ -8,35 +8,310 @@ from plots.utils import sample_from
 import scipy
 from motion_planning.utils import pos2gridpos
 
-def plot_density_heatmap(xpos, ypos, rho, name, args, plot_limits=None, save=True, show=True, filename=None, include_date=False):
-    if plot_limits is None:
+
+def plot_density_heatmap(name, args, xe_le=None, rho_le=None, xe_nn=None, rho_nn=None,
+                         save=True, show=True, filename=None, include_date=False):
+    density_mean = {}
+    for str in ["LE", "NN"]:
+        if str == "LE":
+            if xe_le is None:
+                continue
+            xpos = xe_le[:, 0, 0]
+            ypos = xe_le[:, 1, 0]
+            rho = torch.log(rho_le[:, 0, 0])
+        else:
+            if xe_nn is None:
+                continue
+            xpos = xe_nn[:, 0, 0]
+            ypos = xe_nn[:, 1, 0]
+            rho = torch.log(rho_nn[:, 0, 0])
+        range = [[-2.25, 2.25], [-2.25, 2.25]]
+        bins = 45
+        num_samples, _, _ = np.histogram2d(xpos.numpy(), ypos.numpy(), bins=bins,
+                                                 range=range)
+        density_mean[str], xedges, yedges = np.histogram2d(xpos.numpy(), ypos.numpy(), bins=bins,
+                                                 weights=rho.numpy(), range=range)
+        mask = num_samples > 0
+        density_mean[str][mask] /= num_samples[mask]
+    if xe_le is None or xe_nn is None:
         plot_limits = [-np.inf, np.inf]
-    num_samples, _, _ = np.histogram2d(xpos.numpy(), ypos.numpy(), bins=22,
-                                             range=[[-2.1, 2.1], [-2.1, 2.1]])
-    density_mean, xedges, yedges = np.histogram2d(xpos.numpy(), ypos.numpy(), bins=22,
-                                             weights=rho.numpy(), range=[[-2.1, 2.1], [-2.1, 2.1]])
-    mask = num_samples > 0
-    density_mean[mask] /= num_samples[mask]
+        error = np.zeros(4)
+    else:
+        min_rho = np.minimum(density_mean["LE"].min(), density_mean["NN"].min())
+        max_rho = np.maximum(density_mean["LE"].max(), density_mean["NN"].max())
+        plot_limits = [min_rho, max_rho]
+        error = np.abs(density_mean["LE"] - density_mean["NN"])
+
     extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
-    im = plt.imshow(density_mean.T, extent=extent, origin='lower', vmin=plot_limits[0], vmax=plot_limits[1])
-    plt.title("Density Heatmap \n %s" % (name))
-    ticks_y_grid, ticks_y = plt.yticks()
-    plt.xticks(ticks_y_grid[1:-1], ticks_y_grid[1:-1])
-    plt.xlabel("x-xref")
-    plt.ylabel("y-yref")
-    plt.colorbar(im, fraction=0.046, pad=0.04, format="%.2f")
+
+    i = 0
+    fig, ax = plt.subplots(1, 2)
+    fig.set_figwidth(9.5)
+    for i, str in enumerate(["LE", "NN"]):
+        if str == "LE" and xe_le is None:
+            continue
+        if str == "NN" and xe_nn is None:
+            continue
+        im = ax[i].imshow(density_mean[str].T, extent=extent, origin='lower', vmin=plot_limits[0], vmax=plot_limits[1])
+        ax[i].set_title("%s Prediction" % (str))
+        ticks_y_grid = ax[i].get_yticks()
+        #ax[i].set_xticks(ticks_y_grid[1:-1], ticks_y_grid[1:-1])
+        ax[i].set_xlabel("x-xref")
+    ax[0].set_ylabel("y-yref")
+    fig.suptitle("Log-Density Heatmap at %s                \n max density error: %.3f, mean density error: %.4f            "
+                 % (name, error.max(), error.mean()))
+    fig.tight_layout()
+    plt.subplots_adjust(bottom=0.0, right=0.85, top=0.95)
+    cax = plt.axes([0.87, 0.05, 0.02, 0.85])
+    fig.colorbar(im, fraction=0.046, pad=0.04, format="%.2f", cax=cax, shrink=0.6)
+
+    if save:
+        if filename is None:
+            if include_date:
+                filename_new = datetime.now().strftime(
+                    "%Y-%m-%d-%H-%M-%S") + "_heatmap_" + 'randomSeed%d_' % args.random_seed + name + ".jpg"
+            else:
+                filename_new = "heatmap_" + 'randomSeed%d_' % args.random_seed + name + ".jpg"
+            plt.savefig(args.path_plot_densityheat + filename_new)
+        else:
+            plt.savefig(args.path_plot_densityheat + filename)
+    if show:
+        plt.show()
+    plt.clf()
+
+
+def plot_scatter(x_nn, x_le, rho_nn, rho_le, name, args, weighted=False,
+                 save=True, show=True, filename=None, include_date=False):
+    step = int(80 / x_nn.shape[0])
+    colors = np.arange(0, step * x_nn.shape[0], step)
+
+    for j in np.arange(0,x_nn.shape[1], 2):
+        for i in range(x_nn.shape[0]):
+            plt.plot([x_nn[i, j], x_le[i, j]],[x_nn[i, j+1], x_le[i, j+1]], color='gainsboro', zorder=-1)
+
+        if weighted:
+            sizes = 5 * rho_nn ** (1/6)
+        else:
+            sizes = 15 * torch.ones_like(rho_nn)
+        plt.scatter(x_nn[:, j], x_nn[:, j+1], marker='o', c=colors, sizes=sizes, cmap='gist_ncar',
+                    label='NN estimate', zorder=1)
+        plt.scatter(x_le[:, j], x_le[:, j+1], marker='x', c=colors, sizes=sizes, cmap='gist_ncar',
+                    label='LE estimate', zorder=1)  # ,
+        plt.axis('scaled')
+        plt.legend()
+        plt.grid()
+
+        if j == 0:
+            plt.xlabel("x-xref")
+            plt.ylabel("y-yref")
+            lim = 2.1
+        elif j == 2:
+            plt.xlabel("theta-thetaref")
+            plt.ylabel("v-vref")
+            lim = 1.1
+        plt.xlim(-lim, lim)
+        plt.ylim(-lim, lim)
+        ticks_y_grid, ticks_y = plt.yticks()
+        plt.xticks(ticks_y_grid[1:-1], ticks_y_grid[1:-1])
+        error = x_nn - x_le
+        error_dim = torch.sqrt((x_nn[:, j] - x_le[:, j]) ** 2 + (x_nn[:, j+1] - x_le[:, j+1]) ** 2)
+        plt.title("State Predictions at " + name + "\n max state error: %.3f, mean state error: %.4f, \n max eucl-distance: %.3f, mean eucl-distance: %.4f" %
+                  (torch.max(torch.abs(error)), torch.mean(torch.abs(error)), torch.max(torch.abs(error_dim)), torch.mean(torch.abs(error_dim))))
+        plt.tight_layout()
+        if save:
+            if filename is None:
+                if include_date:
+                    filename_new = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_Scatter_" + 'dims%d-%d_' % (j, j+1) + 'randomSeed%d_' % args.random_seed + name + ".jpg"
+                else:
+                    filename_new = "Scatter_" + 'dims%d-%d_' % (j, j+1) + 'randomSeed%d_' % args.random_seed + name + ".jpg"
+                plt.savefig(args.path_plot_scatter + filename_new)
+            else:
+                plt.savefig(args.path_plot_scatter + filename)
+        if show:
+            plt.show()
+        plt.clf()
+
+
+def plot_losscurves(result, name, args, type="Loss",
+                    save=True, show=True, filename=None, include_date=False):
+    colors = ['g', 'r', 'c', 'b', 'm', 'y']
+    if type == "Loss":
+        if "train_loss" in result:
+            for i, (key, val) in enumerate((result['train_loss']).items()):
+                if not 'max' in key:
+                    plt.plot(val, color=colors[i], linestyle='-', label="train " + key)
+        if "test_loss" in result:
+            for i, (key, val) in enumerate(result['test_loss'].items()):
+                if not 'max' in key:
+                    plt.plot(val, color=colors[i], linestyle=':', label="test " + key)
+        plt.title("Loss Curves for Config \n %s" % (name))
+        plt.ylabel("Loss")
+        #plt.ylim(0, 0.02)
+        plt.yscale('log')
+
+    elif type == "maxError":
+        if "train_loss" in result:
+            i = 0
+            for key, val in (result['train_loss']).items():
+                if 'max' in key:
+                    if val[0].ndim > 0:
+                        for j in range(val[0].shape[0]):
+                            plt.plot([val[k][j] for k in range(len(val))],
+                                     color=colors[i], linestyle='-', label="train " + key +"[%d]" % j)
+                            i += 1
+                    else:
+                        plt.plot(val, color=colors[i], linestyle='-', label="train " + key)
+                        i += 1
+        if "test_loss" in result:
+            i = 0
+            for key, val in (result['train_loss']).items():
+                if 'max' in key:
+                    if val[0].ndim > 0:
+                        for j in range(val[0].shape[0]):
+                            plt.plot([val[k][j] for k in range(len(val))],
+                                     color=colors[i], linestyle=':', label="test " + key +"[%d]" % j)
+                            i += 1
+                    else:
+                        plt.plot(val, color=colors[i], linestyle=':', label="test " + key)
+                        i += 1
+        plt.title("Maximum Error for Config \n %s" % (name))
+        plt.ylabel("Maximum Error")
+        #plt.ylim(0, 10)
+        plt.yscale('log')
+    plt.legend()
+    plt.grid()
+    plt.xlabel("Episodes")
     plt.tight_layout()
     if save:
         if filename is None:
             if include_date:
-                filename = datetime.now().strftime(
-                    "%Y-%m-%d-%H-%M-%S") + "_heatmap_" + 'randomSeed%d_' % args.random_seed + name + ".jpg"
+                filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_%Curve_" % type + name + ".jpg"
             else:
-                filename = "heatmap_" + 'randomSeed%d_' % args.random_seed + name + ".jpg"
-        plt.savefig(args.path_plot_densityheat + filename)
+                filename = "%Curve_" % type + name + ".jpg"
+        plt.savefig(args.path_plot_loss + filename)
     if show:
         plt.show()
     plt.clf()
+
+
+def plot_ref(xref_traj, uref_traj, name, args, system, t=None, x_traj=None,
+             save=True, show=True, filename=None, include_date=False):
+    # xref_traj[0, 2, :] = (xref_traj[0, 2, :] + np.pi) % (2 * np.pi) - np.pi
+    # x_traj[:, 2, :] = (x_traj[:, 2, :] + np.pi) % (2 * np.pi) - np.pi
+    #xref_traj = system.project_angle(xref_traj)
+    if t is None:
+        t = args.dt_sim * torch.arange(0, xref_traj.shape[2])
+    fig, ax = plt.subplots(5, 1, gridspec_kw={'height_ratios': [4, 1, 1, 1, 1]})
+    fig.set_figheight(13)
+
+    if x_traj is not None:
+        #x_traj = system.project_angle(x_traj)
+        for i in range(x_traj.shape[0]):
+            if i == 1:
+                ax[0].plot(x_traj[i, 0, :], x_traj[i, 1, :], 'slategrey', label='Sample Trajectories')
+            else:
+                ax[0].plot(x_traj[i, 0, :], x_traj[i, 1, :], 'slategrey')
+            tracking_error = torch.sqrt((x_traj[i, 0, :]-xref_traj[0,0,:]) ** 2 + (x_traj[i, 1, :]-xref_traj[0,1,:]) ** 2)
+            ax[1].plot(t, tracking_error, 'slategrey')
+            ax[2].plot(t, x_traj[i, 2, :], 'slategrey')
+            ax[3].plot(t, x_traj[0, 3, :], 'slategrey')
+
+    ax[0].plot(xref_traj[0,0,:], xref_traj[0,1,:], 'firebrick', label='Reference Trajectory')
+    ax[0].grid()
+    ax[0].set_xlabel("x-position")
+    ax[0].set_ylabel("y-position")
+    ax[0].set_xlim(system.X_MIN[0, 0, 0] - 0.1, system.X_MAX[0, 0, 0] + 0.1)
+    ax[0].set_ylim(system.X_MIN[0, 1, 0] - 0.1, system.X_MAX[0, 1, 0] + 0.1)
+    ax[0].legend()
+    ax[0].set_title("Reference Trajectories of type " + args.input_type + "\n" + name)
+
+    ax[1].plot(t, torch.zeros_like(t), 'firebrick')
+    ax[1].grid()
+    ax[1].set_xlabel("Time")
+    ax[1].set_ylabel("Tracking Error")
+    ax[1].set_ylim(0, torch.sqrt(system.XE0_MAX[0, 0, 0] ** 2 + system.XE0_MAX[0, 1, 0] ** 2) + 1)
+
+    ax[2].plot(t, xref_traj[0, 2, :], 'firebrick')
+    ax[2].grid()
+    ax[2].set_xlabel("Time")
+    ax[2].set_ylabel("Heading angle")
+    ax[2].set_ylim(system.X_MIN[0, 2, 0] - 0.1, system.X_MAX[0, 2, 0] + 0.1)
+
+    ax[3].plot(t, xref_traj[0, 3, :], 'firebrick')
+    ax[3].grid()
+    ax[3].set_xlabel("Time")
+    ax[3].set_ylabel("Velocity")
+    ax[3].set_ylim(system.X_MIN[0, 3, 0] - 0.1, system.X_MAX[0, 3, 0] + 0.1)
+
+    ax[4].plot(t[:uref_traj.shape[2]], uref_traj[0, 0, :], label='Angular velocity')
+    ax[4].plot(t[:uref_traj.shape[2]], uref_traj[0, 1, :], label='Longitudinal acceleration')
+    ax[4].grid()
+    ax[4].set_xlabel("Time")
+    ax[4].set_ylabel("Reference Inputs")
+    ax[4].set_ylim(system.UREF_MIN[0, :, 0].min() - 0.1, system.UREF_MAX[0, :, 0].max() + 0.1)
+    ax[4].legend()
+
+
+    fig.tight_layout()
+    if save:
+        if filename is None:
+            if include_date:
+                filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_References_" + name + ".jpg"
+            else:
+                filename = "References_" + name + ".jpg"
+        plt.savefig(args.path_plot_references + args.input_type + '/' +filename)
+    if show:
+        plt.show()
+    plt.clf()
+
+
+def plot_grid(object, args, timestep=None, name=None,
+              save=True, show=True, filename=None, include_date=False):
+    if torch.is_tensor(object):
+        if object.dim() == 3:
+            if timestep is None:
+                grid = object[:, :, -1]
+                str_timestep = f"\n at timestep={object.shape[2]-1}"
+            else:
+                grid = object[:, :, timestep]
+                str_timestep = f"\n at timestep={timestep}"
+        else:
+            grid = object
+            str_timestep = ""
+        if name is None:
+            name = "grid"
+    else:
+        if timestep is None:
+            timestep = object.current_timestep
+        str_timestep = f"\n at timestep={timestep}"
+        grid = object.grid[:, :, timestep]
+        if name is None:
+            name = object.name
+    x_wide = max((args.environment_size[1] - args.environment_size[0]) / 10, 3)
+    y_wide = (args.environment_size[3] - args.environment_size[2]) / 10
+    plt.figure(figsize=(x_wide, y_wide))
+    plt.pcolormesh(grid.T, cmap='binary')
+    plt.axis('scaled')
+
+    ticks_x = np.concatenate((np.arange(0, args.environment_size[1]+1, 10), np.arange(-10, args.environment_size[0]-1, -10)), 0)
+    ticks_y = np.concatenate((np.arange(0, args.environment_size[3]+1, 10), np.arange(-10, args.environment_size[2]-1, -10)), 0)
+    ticks_x_grid, ticks_y_grid = pos2gridpos(args, ticks_x, ticks_y)
+    plt.xticks(ticks_x_grid, ticks_x)
+    plt.yticks(ticks_y_grid, ticks_y)
+
+    plt.title(f"{name}" + str_timestep)
+    plt.tight_layout()
+    if save:
+        if filename is None:
+            if include_date:
+                filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_Grid_" + name + ".jpg"
+            else:
+                filename = "Grid_" + name + ".jpg"
+        plt.savefig(args.path_plot_grid + filename)
+    if show:
+        plt.show()
+    plt.clf()
+
 
 
 # def plot_density_heatmap2(x, rho, name, args, plot_limits=None, combine="mean", save=True, show=True, filename=None, include_date=False):
@@ -121,217 +396,3 @@ def plot_density_heatmap(xpos, ypos, rho, name, args, plot_limits=None, save=Tru
 #         if show:
 #             plt.show()
 #         plt.clf()
-
-
-def plot_losscurves(result, name, args, save=True, show=True, filename=None, type="Loss", include_date=False):
-    colors = ['g', 'r', 'c', 'b', 'm', 'y']
-    if type == "Loss":
-        if "train_loss" in result:
-            for i, (key, val) in enumerate((result['train_loss']).items()):
-                if not 'max' in key:
-                    plt.plot(val, color=colors[i], linestyle='-', label="train " + key)
-        if "test_loss" in result:
-            for i, (key, val) in enumerate(result['test_loss'].items()):
-                if not 'max' in key:
-                    plt.plot(val, color=colors[i], linestyle=':', label="test " + key)
-        plt.title("Loss Curves for Config \n %s" % (name))
-        plt.ylabel("Loss")
-        #plt.ylim(0, 0.02)
-        plt.yscale('log')
-
-    elif type == "maxError":
-        if "train_loss" in result:
-            i = 0
-            for key, val in (result['train_loss']).items():
-                if 'max' in key:
-                    if val[0].ndim > 0:
-                        for j in range(val[0].shape[0]):
-                            plt.plot([val[k][j] for k in range(len(val))],
-                                     color=colors[i], linestyle='-', label="train " + key +"[%d]" % j)
-                            i += 1
-                    else:
-                        plt.plot(val, color=colors[i], linestyle='-', label="train " + key)
-                        i += 1
-        if "test_loss" in result:
-            i = 0
-            for key, val in (result['train_loss']).items():
-                if 'max' in key:
-                    if val[0].ndim > 0:
-                        for j in range(val[0].shape[0]):
-                            plt.plot([val[k][j] for k in range(len(val))],
-                                     color=colors[i], linestyle=':', label="test " + key +"[%d]" % j)
-                            i += 1
-                    else:
-                        plt.plot(val, color=colors[i], linestyle=':', label="test " + key)
-                        i += 1
-        plt.title("Maximum Error for Config \n %s" % (name))
-        plt.ylabel("Maximum Error")
-        #plt.ylim(0, 10)
-        plt.yscale('log')
-    plt.legend()
-    plt.grid()
-    plt.xlabel("Episodes")
-    plt.tight_layout()
-    if save:
-        if filename is None:
-            if include_date:
-                filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_%Curve_" % type + name + ".jpg"
-            else:
-                filename = "%Curve_" % type + name + ".jpg"
-        plt.savefig(args.path_plot_loss + filename)
-    if show:
-        plt.show()
-    plt.clf()
-
-
-def plot_scatter(x_nn, x_le, rho_nn, rho_le, name, args, save=True, show=True, filename=None, include_date=False, weighted=False):
-    step = int(80 / x_nn.shape[0])
-    colors = np.arange(0, step * x_nn.shape[0], step)
-
-    for j in np.arange(0,x_nn.shape[1], 2):
-        for i in range(x_nn.shape[0]):
-            plt.plot([x_nn[i, j], x_le[i, j]],[x_nn[i, j+1], x_le[i, j+1]], color='gainsboro', zorder=-1)
-
-        if weighted:
-            sizes = 5 * rho_nn ** (1/6)
-        else:
-            sizes = 15 * torch.ones_like(rho_nn)
-        plt.scatter(x_nn[:, j], x_nn[:, j+1], marker='o', c=colors, sizes=sizes, cmap='gist_ncar',
-                    label='NN estimate', zorder=1)
-        plt.scatter(x_le[:, j], x_le[:, j+1], marker='x', c=colors, sizes=sizes, cmap='gist_ncar',
-                    label='LE estimate', zorder=1)  # ,
-        plt.axis('scaled')
-        plt.legend()
-        plt.grid()
-
-        if j == 0:
-            plt.xlabel("x-xref")
-            plt.ylabel("y-yref")
-            lim = 2.1
-        elif j == 2:
-            plt.xlabel("theta-thetaref")
-            plt.ylabel("v-vref")
-            lim = 1.1
-        plt.xlim(-lim, lim)
-        plt.ylim(-lim, lim)
-        ticks_y_grid, ticks_y = plt.yticks()
-        plt.xticks(ticks_y_grid[1:-1], ticks_y_grid[1:-1])
-        error = x_nn - x_le
-        error_dim = torch.sqrt((x_nn[:, j] - x_le[:, j]) ** 2 + (x_nn[:, j+1] - x_le[:, j+1]) ** 2)
-        plt.title(name + "\n Max state error: %.3f, Mean state error: %.4f, \n Max eucl-distance: %.3f, Mean eucl-distance: %.4f" %
-                  (torch.max(torch.abs(error)), torch.mean(torch.abs(error)), torch.max(torch.abs(error_dim)), torch.mean(torch.abs(error_dim))))
-        plt.tight_layout()
-        if save:
-            if filename is None:
-                if include_date:
-                    filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_Scatter_" + 'dims%d-%d_' % (j, j+1) + '_randomSeed%d_' % args.random_seed + name + ".jpg"
-                else:
-                    filename = "Scatter_" + 'dims%d-%d_' % (j, j+1) + '_randomSeed%d_' % args.random_seed + name + ".jpg"
-            plt.savefig(args.path_plot_scatter + filename)
-        if show:
-            plt.show()
-        plt.clf()
-
-
-def plot_ref(xref_traj, uref_traj, name, args, system, t=None, x_traj=None, save=True, show=True, filename=None, include_date=False):
-    # xref_traj[0, 2, :] = (xref_traj[0, 2, :] + np.pi) % (2 * np.pi) - np.pi
-    # x_traj[:, 2, :] = (x_traj[:, 2, :] + np.pi) % (2 * np.pi) - np.pi
-    #xref_traj = system.project_angle(xref_traj)
-    if t is None:
-        t = args.dt_sim * torch.arange(0, xref_traj.shape[2])
-    fig, ax = plt.subplots(5, 1, gridspec_kw={'height_ratios': [4, 1, 1, 1, 1]})
-    fig.set_figheight(13)
-
-    if x_traj is not None:
-        #x_traj = system.project_angle(x_traj)
-        for i in range(x_traj.shape[0]):
-            if i == 1:
-                ax[0].plot(x_traj[i, 0, :], x_traj[i, 1, :], 'slategrey', label='Sample Trajectories')
-            else:
-                ax[0].plot(x_traj[i, 0, :], x_traj[i, 1, :], 'slategrey')
-            tracking_error = torch.sqrt((x_traj[i, 0, :]-xref_traj[0,0,:]) ** 2 + (x_traj[i, 1, :]-xref_traj[0,1,:]) ** 2)
-            ax[1].plot(t, tracking_error, 'slategrey')
-            ax[2].plot(t, x_traj[i, 2, :], 'slategrey')
-            ax[3].plot(t, x_traj[0, 3, :], 'slategrey')
-
-    ax[0].plot(xref_traj[0,0,:], xref_traj[0,1,:], 'firebrick', label='Reference Trajectory')
-    ax[0].grid()
-    ax[0].set_xlabel("x-position")
-    ax[0].set_ylabel("y-position")
-    ax[0].set_xlim(system.X_MIN[0, 0, 0] - 0.1, system.X_MAX[0, 0, 0] + 0.1)
-    ax[0].set_ylim(system.X_MIN[0, 1, 0] - 0.1, system.X_MAX[0, 1, 0] + 0.1)
-    ax[0].legend()
-    ax[0].set_title("Reference Trajectories of type " + args.input_type + "\n" + name)
-
-    ax[1].plot(t, torch.zeros_like(t), 'firebrick')
-    ax[1].grid()
-    ax[1].set_xlabel("Time")
-    ax[1].set_ylabel("Tracking Error")
-    ax[1].set_ylim(0, torch.sqrt(system.XE0_MAX[0, 0, 0] ** 2 + system.XE0_MAX[0, 1, 0] ** 2) + 1)
-
-    ax[2].plot(t, xref_traj[0, 2, :], 'firebrick')
-    ax[2].grid()
-    ax[2].set_xlabel("Time")
-    ax[2].set_ylabel("Heading angle")
-    ax[2].set_ylim(system.X_MIN[0, 2, 0] - 0.1, system.X_MAX[0, 2, 0] + 0.1)
-
-    ax[3].plot(t, xref_traj[0, 3, :], 'firebrick')
-    ax[3].grid()
-    ax[3].set_xlabel("Time")
-    ax[3].set_ylabel("Velocity")
-    ax[3].set_ylim(system.X_MIN[0, 3, 0] - 0.1, system.X_MAX[0, 3, 0] + 0.1)
-
-    ax[4].plot(t[:uref_traj.shape[2]], uref_traj[0, 0, :], label='Angular velocity')
-    ax[4].plot(t[:uref_traj.shape[2]], uref_traj[0, 1, :], label='Longitudinal acceleration')
-    ax[4].grid()
-    ax[4].set_xlabel("Time")
-    ax[4].set_ylabel("Reference Inputs")
-    ax[4].set_ylim(system.UREF_MIN[0, :, 0].min() - 0.1, system.UREF_MAX[0, :, 0].max() + 0.1)
-    ax[4].legend()
-
-
-    fig.tight_layout()
-    if save:
-        if filename is None:
-            if include_date:
-                filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_References_" + name + ".jpg"
-            else:
-                filename = "References_" + name + ".jpg"
-        plt.savefig(args.path_plot_references + args.input_type + '/' +filename)
-    if show:
-        plt.show()
-    plt.clf()
-
-
-def plot_grid(object, args, timestep=None, name=None):
-    if torch.is_tensor(object):
-        if object.dim() == 3:
-            if timestep is None:
-                grid = object[:, :, -1]
-            else:
-                grid = object[:, :, timestep]
-        else:
-            grid = object
-        if name is None:
-            name = "grid"
-    else:
-        if timestep is None:
-            timestep = object.current_timestep
-        grid = object.grid[:, :, timestep]
-        if name is None:
-            name = object.name
-    x_wide = max((args.environment_size[1] - args.environment_size[0]) / 10, 3)
-    y_wide = (args.environment_size[3] - args.environment_size[2]) / 10
-    plt.figure(figsize=(x_wide, y_wide))
-    plt.pcolormesh(grid.T, cmap='binary')
-    plt.axis('scaled')
-
-    ticks_x = np.concatenate((np.arange(0, args.environment_size[1]+1, 10), np.arange(-10, args.environment_size[0]-1, -10)), 0)
-    ticks_y = np.concatenate((np.arange(0, args.environment_size[3]+1, 10), np.arange(-10, args.environment_size[2]-1, -10)), 0)
-    ticks_x_grid, ticks_y_grid = pos2gridpos(args, ticks_x, ticks_y)
-    plt.xticks(ticks_x_grid, ticks_x)
-    plt.yticks(ticks_y_grid, ticks_y)
-
-    plt.title(f"{name} at timestep={timestep}")
-    plt.tight_layout()
-    plt.show()

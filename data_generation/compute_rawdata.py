@@ -64,9 +64,9 @@ if __name__ == "__main__":
     args = hyperparams.parse_args()
     #os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus
 
-    samples_x = 20  # [15, 15, 5, 5] ' number of sampled initial conditions x0
-    samples_t = 10
-    iteration_number = [100, 500]
+    samples_x = args.samplesX_rawdata  # [15, 15, 5, 5] ' number of sampled initial conditions x0
+    samples_t = args.samplesT_rawdata
+    iteration_number = [args.iterations_rawdata, args.size_rawdata]
     system = Car()
     random_seed = False
     print("Starting data generation")

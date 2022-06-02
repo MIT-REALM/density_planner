@@ -179,7 +179,7 @@ class ControlAffineSystem(ABC):
 
         # cut trajectories at minimum time where state limits are exceeded
         N_sim_cut = int(limits_exceeded.min())
-        uref_traj = uref_traj[:, :, :N_sim_cut]
+        uref_traj = uref_traj[:, :, :N_sim_cut-1]
         xref_traj = xref_traj[:, :, :N_sim_cut]
         return xref_traj, uref_traj
 
@@ -219,21 +219,18 @@ class ControlAffineSystem(ABC):
         N_sim = args.N_sim
 
         # parametrization by discretized input signals
-        if args.input_type == "discr10":
-            N_u = 10
-            length_u = N_sim // N_u #length of each input signal
+        if "discr" in args.input_type:
+            if args.input_type == "discr10":
+                N_u = 10
+            elif args.input_type == "discr5":
+                N_u = 5
+            length_u = args.N_sim_max // N_u #length of each input signal
             if u_params is None:
-                uref_traj = torch.zeros(1, self.DIM_U, N_sim)
-                for j in range(self.DIM_U):
-                    N_nonZero = torch.randint(0, N_u, (1,)) # number of non-zero input signals
-                    indizes_nonZero = torch.randint(0, N_u, (N_nonZero,))
-                    indizes_nonZero = list(set(indizes_nonZero.tolist()))
-                    for i in indizes_nonZero:
-                        interv_end = min((i + 1) * length_u, N_sim)
-                        uref_traj[0, j, i * length_u: interv_end] = (self.UREF_MAX[0,j,0] - self.UREF_MIN[0,j,0]) * torch.rand((1,)) + self.UREF_MIN[0,j,0]
-                u_params = uref_traj[0, :, :-1:length_u]
-            else:
-                uref_traj = torch.repeat_interleave(u_params.unsqueeze(0), length_u, dim=2)
+                u_params = 2 * torch.randn((1, self.DIM_U, N_u))
+                u_params = u_params.clamp(self.UREF_MIN, self.UREF_MAX)
+            elif u_params.dim() == 2:
+                u_params = u_params.unsqueeze(0)
+            uref_traj = torch.repeat_interleave(u_params, length_u, dim=2)
 
         # parametrization by polynomials of degree 3
         elif args.input_type == "polyn3":
@@ -256,7 +253,7 @@ class ControlAffineSystem(ABC):
         elif args.input_type == "sins5":
             num_sins = 5
             t = torch.arange(0, args.dt_sim * N_sim, args.dt_sim)
-            T_end = t[-1]
+            T_end = args.dt_sim * (args.N_sim_max - 1)
             if u_params is None:
                 u_params = (self.UREF_MAX - self.UREF_MIN)[0, :, :] * torch.rand(self.DIM_U, num_sins) + self.UREF_MIN[0,:,:]
             else:
@@ -274,7 +271,7 @@ class ControlAffineSystem(ABC):
             elif args.input_type == "sincos2":
                 num_sins = 2
             t = torch.arange(0, args.dt_sim * N_sim - 0.001, args.dt_sim)
-            T_end = t[-1]
+            T_end = args.dt_sim * (args.N_sim_max - 1)
             if u_params is None:
                 u_params = (self.UREF_MAX - self.UREF_MIN)[0, :, :] * torch.rand(self.DIM_U, 2 * num_sins) + self.UREF_MIN[0,:,:]
             else:
@@ -293,8 +290,8 @@ class ControlAffineSystem(ABC):
             else:
                 raise(NotImplementedError)
             uref_traj = torch.zeros(1, self.DIM_U, N_sim)
-            start = torch.round(N_sim * u_params[0, :])
-            length = torch.round((N_sim - start) * u_params[1, :])
+            start = torch.round(args.N_sim_max * u_params[0, :])
+            length = torch.round((args.N_sim_max - start) * u_params[1, :])
             amplitude = (2 * u_params[2, :] - 1) * self.USIN_AMPL
             wide = u_params[3, :] * self.USIN_WIDE
             for j in range(self.DIM_U):
@@ -321,12 +318,12 @@ class ControlAffineSystem(ABC):
                 raise(NotImplementedError)
             uref_traj = torch.zeros(1, self.DIM_U, N_sim)
             for i in range(number):
-                start = torch.round(N_sim * u_params[i, 0, :])
-                length = torch.round((N_sim - start) * u_params[i, 1, :])
+                start = torch.round(args.N_sim_max * u_params[i, 0, :])
+                length = torch.round((args.N_sim_max - start) * u_params[i, 1, :])
                 amplitude = (self.UREF_MAX - self.UREF_MIN).flatten() * u_params[i, 2, :] + self.UREF_MIN.flatten()
                 for j in range(self.DIM_U):
                     uref_traj[0, j, int(start[j]):int(start[j] + length[j])] = amplitude[j]
-        return uref_traj, u_params
+        return uref_traj[:, :, :N_sim-1], u_params
 
     def sample_xref0(self):
         return (self.XREF0_MAX - self.XREF0_MIN) * torch.rand(1, self.DIM_X, 1) + self.XREF0_MIN
@@ -352,10 +349,13 @@ class ControlAffineSystem(ABC):
                 return None
         return xref_traj
 
-    def u_params2ref_traj(self, xref0, u_params, args):
+    def u_params2ref_traj(self, xref0, u_params, args, short=True):
         uref_traj, _ = self.sample_uref_traj(args, u_params=u_params)
         xref_traj = self.compute_xref_traj(xref0, uref_traj, args)
-        return uref_traj[:, :, ::args.factor_pred], xref_traj[:, :, ::args.factor_pred]
+        if short:
+            return uref_traj[:, :, ::args.factor_pred], xref_traj[:, :, ::args.factor_pred]
+        else:
+            return uref_traj, xref_traj
 
 
     def sample_x0(self, xref0, sample_size):
@@ -394,10 +394,10 @@ class ControlAffineSystem(ABC):
             batch_size x 1 x N_sim: tensor of the densities at the corresponding states
         """
 
-        x_traj = x0.repeat(1, 1, N_sim)
-        rho_traj = rho0.repeat(1, 1, N_sim)
+        x_traj = x0.repeat(1, 1, uref.shape[2]+1)
+        rho_traj = rho0.repeat(1, 1, uref.shape[2]+1)
 
-        for i in range(uref.shape[2]-1):
+        for i in range(uref.shape[2]):
             if computeDensity:
                 rho_traj[:, 0, i + 1] = self.get_next_rho(x_traj[:, :, [i]], xref[:, :, [i]], uref[:, :, [i]],
                                                       rho_traj[:, 0, i], dt)
@@ -426,7 +426,7 @@ class ControlAffineSystem(ABC):
             x0 = self.sample_x0(xref0, sample_size)  # get random initial states
             rho0 = torch.ones(x0.shape[0], 1, 1)  # equal initial density
             x_traj, rho_traj = self.compute_density(x0, xref_traj, uref_traj, rho0,
-                                                      xref_traj.shape[2], args.dt_sim)  # compute x and rho trajectories
+                                                      xref_traj.shape[2], args.dt_sim, cutting=False)  # compute x and rho trajectories
             if rho_traj.dim() < 2 or x_traj.shape[2] < 0.8 * args.N_sim:  # start again if x trajectories shorter than N_sim
                 continue
             valid = True
