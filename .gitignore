@@ -1,8 +1,5 @@
 data
-plots/losscurves
-plots/scatter
-plots/density_heatmaps
-plots/references
+plots/*
 scretch.py
 .idea
 __pycache__

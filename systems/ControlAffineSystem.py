@@ -426,7 +426,7 @@ class ControlAffineSystem(ABC):
             x0 = self.sample_x0(xref0, sample_size)  # get random initial states
             rho0 = torch.ones(x0.shape[0], 1, 1)  # equal initial density
             x_traj, rho_traj = self.compute_density(x0, xref_traj, uref_traj, rho0,
-                                                      xref_traj.shape[2], args.dt_sim, cutting=False)  # compute x and rho trajectories
+                                                      xref_traj.shape[2], args.dt_sim, cutting=True)  # compute x and rho trajectories
             if rho_traj.dim() < 2 or x_traj.shape[2] < 0.8 * args.N_sim:  # start again if x trajectories shorter than N_sim
                 continue
             valid = True

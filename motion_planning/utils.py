@@ -111,16 +111,14 @@ def check_collision(grid_ego, grid_env, max_coll_sum, return_coll_pos=False):
     coll_grid = grid_ego * grid_env
     coll_sum = coll_grid.sum()
 
+    coll_pos_prob = None
     if coll_sum > max_coll_sum:
         collision = True  # if coll
-    if return_coll_pos:
-        coll_pos_prob = 0
-        if collision:
+        if return_coll_pos:
             coll_pos = coll_grid.nonzero(as_tuple=True)
             coll_prob = coll_grid[coll_pos[:][0], coll_pos[:][1]]
             coll_pos_prob = torch.stack((coll_pos[:][0], coll_pos[:][1], coll_prob[:]))
-        return collision, coll_sum, coll_pos_prob
-    return collision, coll_sum
+    return collision, coll_sum, coll_pos_prob
 
 def pred2grid(x, rho, args, return_gridpos=False):
     """average the density of points landing in the same bin and return normalized grid"""
@@ -153,7 +151,7 @@ def get_closest_free_cell(gridpos, grid_env, args):
         max_y = min(gridpos[1] + i + 1, args.grid_size[1])
 
         if torch.any(grid_env[min_x:max_x, gridpos[1]] == 0):
-            free_cell = (grid_env[min_x:max_x, gridpos[1]] != 0).nonzero(as_tuple=True)
+            free_cell = (grid_env[min_x:max_x, gridpos[1]] == 0).nonzero(as_tuple=True)
             return torch.tensor([min_x+free_cell[0][0], gridpos[1]])
 
         if torch.any(grid_env[min_x:max_x, min_y:max_y] == 0):
@@ -161,13 +159,34 @@ def get_closest_free_cell(gridpos, grid_env, args):
             return torch.tensor([min_x+free_cell[0][0], min_y+free_cell[1][0]])
     return None
 
+def get_closest_obs_cell(gridpos, grid_env, args):
+    gridpos = gridpos.long()
+    for i in range(1, args.max_obsDist):
+        min_x = max(gridpos[0] - i, 0)
+        max_x = min(gridpos[0] + i + 1, args.grid_size[0])
+        min_y = max(gridpos[1] - i, 0)
+        max_y = min(gridpos[1] + i + 1, args.grid_size[1])
+
+        if torch.any(grid_env[min_x:max_x, gridpos[1]] != 0):
+            obs_cell = (grid_env[min_x:max_x, gridpos[1]] != 0).nonzero(as_tuple=True)
+            return torch.tensor([min_x+obs_cell[0][0], gridpos[1]])
+
+        if torch.any(grid_env[min_x:max_x, min_y:max_y] != 0):
+            obs_cell = (grid_env[min_x:max_x, min_y:max_y] != 0).nonzero(as_tuple=True)
+            return torch.tensor([min_x+obs_cell[0][0], min_y+obs_cell[1][0]])
+    return None
+
 def time2idx(t, args, short=True):
+    if isinstance(t, list):
+        t = torch.from_numpy(np.array(t))
     if short:
         return int((t / (args.dt_sim * args.factor_pred)).round())
     else:
         return int((t / args.dt_sim).round())
 
 def idx2time(idx, args, short=True):
+    if isinstance(idx, list):
+        idx = torch.from_numpy(np.array(idx))
     if short:
         return idx * args.dt_sim * args.factor_pred
     else:

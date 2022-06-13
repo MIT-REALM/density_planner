@@ -12,7 +12,7 @@ from datetime import datetime
 
 
 if __name__ == "__main__":
-    sample_size = 100
+    sample_size = 10000
     args = hyperparams.parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus
     args.device = "cpu" # "cuda" if torch.cuda.is_available() else "cpu"
@@ -26,9 +26,9 @@ if __name__ == "__main__":
     torch.manual_seed(args.random_seed)
     bs = args.batch_size
     system = Car()
-    for k in range(20):
-        xref_traj, rho_traj, uref_traj, u_params, xe_traj, t_vec = system.get_valid_trajectories(sample_size, args)
-        plot_ref(xref_traj, uref_traj, 'test', args, system, t=t_vec, x_traj=xe_traj[:50, :, :]+xref_traj, include_date=True)
+    #for k in range(20):
+    xref_traj, rho_traj, uref_traj, u_params, xe_traj, t_vec = system.get_valid_trajectories(sample_size, args)
+    #    plot_ref(xref_traj, uref_traj, 'test', args, system, t=t_vec, x_traj=xe_traj[:50, :, :]+xref_traj, include_date=True)
     #x_traj = xe_traj + xref_traj
 
     # NN prediction
@@ -61,10 +61,11 @@ if __name__ == "__main__":
         #                      save=True, show=True, filename=None)
         # plot_density_heatmap2(xe_traj[:, :, i], rho_traj[:, 0, i], "time=%.2fs_LE" % t, args, plot_limits=plot_limits,
         #                      save=True, show=False, filename=None)
-        plot_density_heatmap("Time=%.2fs" % t, args, xe_le=xe_traj[:, :, [i]], rho_le=rho_traj[:, :, [i]],
+        with torch.no_grad():
+            plot_density_heatmap("Time=%.2fs" % t, args, xe_le=xe_traj[:, :, [i]], rho_le=rho_traj[:, :, [i]],
                               xe_nn=xe_nn[:, :, [i]], rho_nn=rho_nn[:, :, [i]],
                               save=True, show=False, filename=None)
-        plot_scatter(xe_nn[:50,:,i], xe_traj[:50, :, i], rho_nn[:50,0,i], rho_traj[:50, 0, i],
+            plot_scatter(xe_nn[:50,:,i], xe_traj[:50, :, i], rho_nn[:50,0,i], rho_traj[:50, 0, i],
                             "Time=%.2fs" % t, args, save=True, show=False, filename=None, weighted=False)
 
 

@@ -77,6 +77,7 @@ if __name__ == "__main__":
 
     if args.num_jobs == 1:
         compute_data(iteration_number, samples_x, system, args, samples_t=samples_t, save=True, plot=False)
+
     else:
         input_list = []
         for i in range(args.num_jobs):
@@ -84,6 +85,13 @@ if __name__ == "__main__":
         pool = Pool(processes=args.num_workers)
         outputs = pool.map(worker_job, input_list)
 
+
+    samples_x = args.samplesX_rawdata  # [15, 15, 5, 5] ' number of sampled initial conditions x0
+    samples_t = 15
+    args.N_sim = 401
+    iteration_number = [100, args.size_rawdata]
+
+    compute_data(iteration_number, samples_x, system, args, samples_t=samples_t, save=True, plot=False)
     #compute_data(iteration_number, 100, system, args, samples_t=0, save=True,
     #               plot=False) #samples_t=0... no sample times inbetween, just final value after N_sim-1 timesteps saved
 

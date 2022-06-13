@@ -1,3 +1,4 @@
+import os.path
 from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
@@ -6,7 +7,9 @@ from scipy.spatial import Delaunay
 from scipy.interpolate import LinearNDInterpolator
 from plots.utils import sample_from
 import scipy
-from motion_planning.utils import pos2gridpos
+from motion_planning.utils import pos2gridpos, traj2grid
+from matplotlib import cm
+from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 
 
 def plot_density_heatmap(name, args, xe_le=None, rho_le=None, xe_nn=None, rho_nn=None,
@@ -193,9 +196,36 @@ def plot_losscurves(result, name, args, type="Loss",
         plt.show()
     plt.clf()
 
+def plot_cost(costs_dict, args, plot_log=True, name="", save=True, show=True, filename=None, include_date=True, folder=None):
+    plt.figure(figsize=(6.4,4.8))
+    plt.title("Cost Curves for Motion Planning \n %s" % (name))
+    for key, val in costs_dict.items():
+        if key == "cost_sum":
+            plt.plot(val, linestyle='-', label="sum")
+        else:
+            plt.plot(val, linestyle=':', label=key)
+    plt.ylabel("Costs")
+    if plot_log:
+        plt.yscale('log')
+    plt.legend()
+    plt.grid()
+    plt.xlabel("Episodes")
+    plt.tight_layout()
+    if save:
+        if folder is None:
+            folder = args.path_plot_cost
+        if filename is None:
+            if include_date:
+                filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_Curve_" + name + ".jpg"
+            else:
+                filename = "Curve_" + name + ".jpg"
+        plt.savefig(folder + filename)
+    if show:
+        plt.show()
+    plt.clf()
 
 def plot_ref(xref_traj, uref_traj, name, args, system, t=None, x_traj=None,
-             save=True, show=True, filename=None, include_date=False):
+             save=True, show=True, filename=None, include_date=False, folder=None):
     # xref_traj[0, 2, :] = (xref_traj[0, 2, :] + np.pi) % (2 * np.pi) - np.pi
     # x_traj[:, 2, :] = (x_traj[:, 2, :] + np.pi) % (2 * np.pi) - np.pi
     #xref_traj = system.project_angle(xref_traj)
@@ -254,19 +284,21 @@ def plot_ref(xref_traj, uref_traj, name, args, system, t=None, x_traj=None,
 
     fig.tight_layout()
     if save:
+        if folder is None:
+            folder = args.path_plot_references
         if filename is None:
             if include_date:
                 filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_References_" + name + ".jpg"
             else:
                 filename = "References_" + name + ".jpg"
-        plt.savefig(args.path_plot_references + args.input_type + '/' +filename)
+        plt.savefig(folder + args.input_type + '/' +filename)
     if show:
         plt.show()
     plt.clf()
 
 
-def plot_grid(object, args, timestep=None, name=None,
-              save=True, show=True, filename=None, include_date=False):
+def plot_grid(object, args, timestep=None, cmap='binary', name=None,
+              save=True, show=True, filename=None, include_date=False, folder=None):
     if torch.is_tensor(object):
         if object.dim() == 3:
             if timestep is None:
@@ -290,7 +322,7 @@ def plot_grid(object, args, timestep=None, name=None,
     x_wide = max((args.environment_size[1] - args.environment_size[0]) / 10, 3)
     y_wide = (args.environment_size[3] - args.environment_size[2]) / 10
     plt.figure(figsize=(x_wide, y_wide))
-    plt.pcolormesh(grid.T, cmap='binary')
+    plt.pcolormesh(grid.T, cmap=cmap, norm=None)
     plt.axis('scaled')
 
     ticks_x = np.concatenate((np.arange(0, args.environment_size[1]+1, 10), np.arange(-10, args.environment_size[0]-1, -10)), 0)
@@ -302,12 +334,14 @@ def plot_grid(object, args, timestep=None, name=None,
     plt.title(f"{name}" + str_timestep)
     plt.tight_layout()
     if save:
+        if folder is None:
+            folder = args.path_plot_grid
         if filename is None:
             if include_date:
                 filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_Grid_" + name + ".jpg"
             else:
                 filename = "Grid_" + name + ".jpg"
-        plt.savefig(args.path_plot_grid + filename)
+        plt.savefig(folder + filename)
     if show:
         plt.show()
     plt.clf()
