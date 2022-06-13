@@ -71,6 +71,11 @@ if __name__ == '__main__':
         #u_params_opt = torch.tensor([[[0.9989, -0.7407, -0.3733, -0.0974, -0.0172],
         #     [-0.2134, 0.1232, 0.3187, 0.2029, 0.0679]]], requires_grad=True) #optimized from zero traj, no collision
 
+    # with open("plots/motion/2022-06-13-14-04-00_mp_random/2022-06-13-14-04-02_opt/results", "rb") as f:
+    #     res = pickle.load(f)
+    # u_params = res[0]
+    # ego.animate_traj(u_params, name="finalTraj")
+
     ### 3. optimize best trajectories with density predictions
     if args.mp_opt_density:
         u_params = opt.optimize_traj(u_params, with_density=True)

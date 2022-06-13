@@ -145,6 +145,8 @@ class MPOptimizer:
                                self.ego.args.du_search[0])
         self.u1 = torch.arange(self.ego.system.UREF_MIN[0, 1, 0] + 1, self.ego.system.UREF_MAX[0, 1, 0] - 1 + 1e-5,
                                self.ego.args.du_search[1])
+        self.beta1 = 0.9
+        self.beta2 = 0.999
 
     def search_good_traj(self, num_traj=None, plot=False):
         i = 0
@@ -253,6 +255,8 @@ class MPOptimizer:
         costs_dict = []
         self.coll_pos = []
         self.other_costs = False
+        self.rms = 0
+        self.momentum = 0
 
         if with_density:
             name = "_optDensity"
@@ -265,16 +269,17 @@ class MPOptimizer:
 
         for i in range(self.ego.args.epochs_mp):
             cost, cost_dict = self.predict_cost(u_params, iter=i, with_density=with_density)
-            if i > 10 and self.other_costs and cost_dict["cost_coll"] / self.ego.args.cost_coll_weight < 1e-5 and \
+            if i > 10 and self.other_costs and cost_dict["cost_coll"] / self.ego.args.cost_coll_weight < 1e-8 and \
                     cost_dict["cost_goal"] / self.ego.args.cost_goal_weight < 4:
                 break
             cost.backward()
             costs.append(cost.item())
             costs_dict.append(cost_dict)
             with torch.no_grad():
-                lr = self.ego.args.lr_mp * (20 / (i + 20))
-                u_params -= torch.clamp(u_params.grad * lr,
-                                        -self.ego.args.max_gradient, self.ego.args.max_gradient)
+                u_update = self.optimizer_step(u_params.grad, i)
+                if with_density:
+                    u_update *= self.ego.args.mp_lrfactor_density
+                u_params -= torch.clamp(u_update, -self.ego.args.max_gradient, self.ego.args.max_gradient)
                 u_params.clamp(self.ego.system.UREF_MIN, self.ego.system.UREF_MAX)
                 u_params.grad.zero_()
         costs_dict = listDict2dictList(costs_dict)
@@ -283,10 +288,28 @@ class MPOptimizer:
             pickle.dump([u_params, costs_dict], f)
         return u_params
 
+    def optimizer_step(self, grad, iter):
+        if self.ego.args.mp_lr_step != 0:
+            lr = self.ego.args.mp_lr * (self.ego.args.mp_lr_step / (iter + self.ego.args.mp_lr_step))
+        else:
+            lr = self.ego.args.mp_lr
+
+        grad = torch.clamp(grad, -1e15, 1e15)
+        if self.ego.args.mp_optimizer == "GD":
+            step = lr * grad
+        elif self.ego.args.mp_optimizer == "Adam":
+            i = iter + 1
+            self.momentum = self.beta1 * self.momentum + (1 - self.beta1) * grad
+            self.rms = self.beta2 * self.rms + (1 - self.beta2) * (grad ** 2)
+            momentum_corr = self.momentum / (1 - self.beta1 ** i)
+            rms_corr = self.rms / (1 - self.beta2 ** i)
+            step = lr * (momentum_corr / (torch.sqrt(rms_corr) + 1e-8))
+        return step
+
     def predict_cost(self, u_params, iter=0, with_density=True):
         uref_traj, xref_traj = self.ego.system.u_params2ref_traj(self.ego.xref0, u_params, self.ego.args, short=True)
         #self.ego.animate_traj(self.ego.env.grid_enlarged, xref_traj, self.ego.args, name='test')
-        name = "iter%d, lr=%.0e, \n w_goal=%.0e, w_u=%.0e\n w_coll=%.0e, w_bounds=%.0e" % (iter, self.ego.args.lr_mp, self.ego.args.cost_goal_weight,
+        name = "iter%d, lr=%.0e, \n w_goal=%.0e, w_u=%.0e\n w_coll=%.0e, w_bounds=%.0e" % (iter, self.ego.args.mp_lr, self.ego.args.cost_goal_weight,
             self.ego.args.cost_uref_weight, self.ego.args.cost_coll_weight, self.ego.args.cost_bounds_weight)
         self.ego.visualize_xref(xref_traj, name="iter%d" % iter, save=True, show=False, folder=self.ego.path_log_opt)
 
@@ -380,6 +403,7 @@ class MPOptimizer:
 
                 #4. penalize big distances
                 cost_coll += coll_pos_prob[2, i] * (rho_coll * distance_to_free_cell).sum()
+            cost_coll /= cost_coll.item()
         return cost_coll
 
     def compute_dist_free_cell(self, x, coll_pos, grid_env):

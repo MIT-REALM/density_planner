@@ -199,6 +199,7 @@ def get_mesh_sample_points(system, args):
     positions = get_mesh_pos(N, x_min=x_min, x_max=x_max)
     return N, positions
 
+
 #
 # def create_example_grid():
 #     gridsize = (100, 100)

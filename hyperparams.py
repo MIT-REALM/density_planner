@@ -72,15 +72,15 @@ def parse_args():
     #parser.add_argument('--patience', type=int, default=0)
 
     # motion planning options
+    parser.add_argument('--mp_name', type=str, default="notEnlarged")
     parser.add_argument('--mp_init', type=str, default="random") # how to find the initial trajectory
     parser.add_argument('--mp_search_numtraj', type=int, default=100) # number of trajectories which have to be found
     parser.add_argument('--mp_anim_initial', type=bool, default=False)
     parser.add_argument('--mp_anim_final', type=bool, default=False)
     parser.add_argument('--mp_opt_normal', type=bool, default=True)
     parser.add_argument('--mp_opt_density', type=bool, default=True)
-    parser.add_argument('--mp_enlarged', type=bool, default=True) # optimize reference trajectory with enlarged grid?
-    parser.add_argument('--mp_name', type=str, default="smallerLR")
-
+    parser.add_argument('--mp_enlarged', type=bool, default=False) # optimize reference trajectory with enlarged grid?
+    parser.add_argument('--mp_optimizer', type=str, default="Adam")
 
     # motion planning parameter
     parser.add_argument('--environment_size', type=list, default=[-12, 12, -30, 30])
@@ -93,9 +93,13 @@ def parse_args():
 
     # optimization
     parser.add_argument('--du_search', type=list, default=[0.5, 0.5])
-    parser.add_argument('--lr_mp', type=float, default=0.1)
-    parser.add_argument('--cost_goal_weight', type=float, default=2e-4)
-    parser.add_argument('--cost_coll_weight', type=float, default=1e-1)
+    parser.add_argument('--mp_lr', type=float, default=0.5)
+    parser.add_argument('--mp_lrfactor_density', type=float, default=0.5)
+    parser.add_argument('--mp_lr_step', type=int, default=20)
+    parser.add_argument('--mp_beta1', type=int, default=0.9)
+    parser.add_argument('--mp_beta2', type=int, default=0.999)
+    parser.add_argument('--cost_goal_weight', type=float, default=1e-2)
+    parser.add_argument('--cost_coll_weight', type=float, default=1e-2)
     parser.add_argument('--cost_uref_weight', type=float, default=1e-4)
     parser.add_argument('--cost_bounds_weight', type=float, default=1e-7)
     parser.add_argument('--cost_obsDist_weight', type=float, default=1e-5)
