@@ -12,7 +12,7 @@ from datetime import datetime
 
 
 if __name__ == "__main__":
-    sample_size = 10000
+    sample_size = 50
     args = hyperparams.parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus
     args.device = "cpu" # "cuda" if torch.cuda.is_available() else "cpu"
@@ -26,9 +26,9 @@ if __name__ == "__main__":
     torch.manual_seed(args.random_seed)
     bs = args.batch_size
     system = Car()
-    #for k in range(20):
-    xref_traj, rho_traj, uref_traj, u_params, xe_traj, t_vec = system.get_valid_trajectories(sample_size, args)
-    #    plot_ref(xref_traj, uref_traj, 'test', args, system, t=t_vec, x_traj=xe_traj[:50, :, :]+xref_traj, include_date=True)
+    for k in range(40):
+        xref_traj, rho_traj, uref_traj, u_params, xe_traj, t_vec = system.get_valid_trajectories(sample_size, args)
+        plot_ref(xref_traj, uref_traj, 'dist0.7', args, system, t=t_vec, x_traj=xe_traj[:50, :, :]+xref_traj, include_date=True)
     #x_traj = xe_traj + xref_traj
 
     # NN prediction

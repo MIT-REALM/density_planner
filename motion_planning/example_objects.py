@@ -17,8 +17,8 @@ def create_environment(object_str_list, args, name="environment", timestep=0):
 
 def create_street(args):
     static_obstacles = {
-        "left": np.array([args.environment_size[0], -10, args.environment_size[2], args.environment_size[3], 1, 1]), #(x1, x2, y1, y2, certainty, spread)
-        "right": np.array([10, args.environment_size[1], args.environment_size[2], args.environment_size[3], 1, 1])}
+        "left": np.array([args.environment_size[0], -7, args.environment_size[2], args.environment_size[3], 1, 20]), #(x1, x2, y1, y2, certainty, spread)
+        "right": np.array([7, args.environment_size[1], args.environment_size[2], args.environment_size[3], 1, 20])}
     objs = []
     for key, value in static_obstacles.items():
         objs.append(StaticObstacle(args, coord=value, name="street "+key, timestep=0))
@@ -46,16 +46,21 @@ def create_crossing4w(args):
     return objs
 
 def create_obstacleBottom(args):
-    obs = np.array([0, 5, -20, -15, 1, 1])
+    obs = np.array([0, 3, -22, -17, 1, 20])
     obj = StaticObstacle(args, name="obstacleBottom", coord=obs)
     return obj
 
 def create_pedLR(args):
-    ped = np.array([-11, -9, -11, -9, 0.8, 20])
+    ped = np.array([-7, -6, -5, -4, 0.8, 30])
     obj = DynamicObstacle(args, name="pedLR", coord=ped, velocity_x=1)
     return obj
 
 def create_pedRL(args):
-    ped = np.array([9, 11, -21, -19, 0.8, 20])
+    ped = np.array([7, 8, -13, -12, 0.8, 30])
     obj = DynamicObstacle(args, name="pedLR", coord=ped, velocity_x=-1)
+    return obj
+
+def create_bikerBT(args):
+    ped = np.array([-5, -4.9, -20, -18, 0.8, 30])
+    obj = DynamicObstacle(args, name="bikerBT", coord=ped, velocity_y=2)
     return obj

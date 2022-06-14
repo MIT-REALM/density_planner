@@ -13,45 +13,42 @@ class Controller:
         xe = x - xref
         # xe = self.project_angle(xe)
         # x = self.project_angle(x)
-        u = self.controller(x[:, :4, :], xe[:, :4, :], uref)  # .squeeze(0)
+        u = self.controller(x, xe, uref)  # .squeeze(0)
         return u.clip(self.U_MIN, self.U_MAX)
 
 
-class Car(ControlAffineSystem):
-    DIM_X = 5
-    DIM_STATES = 4
+class CarIdeal(ControlAffineSystem):
+    DIM_X = 4
     DIM_U = 2
 
     small_SS = False
-    d_max = 0.7
-    state_dist = 0   # disturbed state
     if small_SS:
-        X_MIN = torch.tensor([-5., -5., -np.pi, 1, -d_max]).reshape(1, -1, 1)
-        X_MAX = torch.tensor([5., 5., np.pi, 2, d_max]).reshape(1, -1, 1)
-        XE_MIN = torch.tensor([-1, -1, -1, -1, -d_max]).reshape(1, -1, 1)
-        XE_MAX = torch.tensor([1, 1, 1, 1, d_max]).reshape(1, -1, 1)
+        X_MIN = torch.tensor([-5., -5., -np.pi, 1]).reshape(1, -1, 1)
+        X_MAX = torch.tensor([5., 5., np.pi, 2]).reshape(1, -1, 1)
+        XE_MIN = torch.tensor([-1, -1, -1, -1]).reshape(1, -1, 1)
+        XE_MAX = torch.tensor([1, 1, 1, 1]).reshape(1, -1, 1)
         UREF_MIN = torch.tensor([-3., -3.]).reshape(1, -1, 1)
         UREF_MAX = torch.tensor([3., 3.]).reshape(1, -1, 1)
-        XREF0_MIN = torch.tensor([-2., -2., -1., 1.5, 0]).reshape(1, -1, 1)
-        XREF0_MAX = torch.tensor([2., 2., 1., 1.5, 0]).reshape(1, -1, 1)
-        XE0_MIN = torch.tensor([-1, -1, -1, -1, -d_max]).reshape(1, -1, 1)
-        XE0_MAX = torch.tensor([1, 1, 1, 1, d_max]).reshape(1, -1, 1)
+        XREF0_MIN = torch.tensor([-2., -2., -1., 1.5]).reshape(1, -1, 1)
+        XREF0_MAX = torch.tensor([2., 2., 1., 1.5]).reshape(1, -1, 1)
+        XE0_MIN = torch.tensor([-1, -1, -1, -1]).reshape(1, -1, 1)
+        XE0_MAX = torch.tensor([1, 1, 1, 1]).reshape(1, -1, 1)
     else: #ext SS
-        X_MIN = torch.tensor([-50., -50., -np.pi+0.2, 0, -d_max]).reshape(1, -1, 1)
-        X_MAX = torch.tensor([50., 50., 3 * np.pi-0.2, 10, d_max]).reshape(1, -1, 1)
-        XE_MIN = torch.tensor([-2, -2, -1, -1, -d_max]).reshape(1, -1, 1)
-        XE_MAX = torch.tensor([2, 2, 1, 1, d_max]).reshape(1, -1, 1)
+        X_MIN = torch.tensor([-50., -50., -np.pi, 0]).reshape(1, -1, 1)
+        X_MAX = torch.tensor([50., 50., 3 * np.pi, 10]).reshape(1, -1, 1)
+        XE_MIN = torch.tensor([-2, -2, -1, -1]).reshape(1, -1, 1)
+        XE_MAX = torch.tensor([2, 2, 1, 1]).reshape(1, -1, 1)
         UREF_MIN = torch.tensor([-3., -3.]).reshape(1, -1, 1)
         UREF_MAX = torch.tensor([3., 3.]).reshape(1, -1, 1)
 
         #for initialization
-        XREF0_MIN = torch.tensor([-30., -10., 0, 1, 0]).reshape(1, -1, 1)
-        XREF0_MAX = torch.tensor([30., 10., 2*np.pi, 8, 0]).reshape(1, -1, 1)
-        XE0_MIN = torch.tensor([-2, -2, -1, -1, -d_max]).reshape(1, -1, 1)
-        XE0_MAX = torch.tensor([2, 2, 1, 1, d_max]).reshape(1, -1, 1)
+        XREF0_MIN = torch.tensor([-30., -10., 0, 1]).reshape(1, -1, 1)
+        XREF0_MAX = torch.tensor([30., 10., 2*np.pi, 8]).reshape(1, -1, 1)
+        XE0_MIN = torch.tensor([-2, -2, -1, -1]).reshape(1, -1, 1)
+        XE0_MAX = torch.tensor([2, 2, 1, 1]).reshape(1, -1, 1)
 
-    X_MIN_MP = torch.tensor([-9.9, -29.9, -np.pi + 0.1, 0.1, -d_max]).reshape(1, -1, 1)
-    X_MAX_MP = torch.tensor([9.9, 29.9, 3 * np.pi - 0.1, 9.9, d_max]).reshape(1, -1, 1)
+    X_MIN_MP = torch.tensor([-9.9, -29.9, -np.pi + 0.1, 0.1]).reshape(1, -1, 1)
+    X_MAX_MP = torch.tensor([9.9, 29.9, 3 * np.pi - 0.1, 9.9]).reshape(1, -1, 1)
     #'for startMiddle'
     # XREF0_MIN = torch.tensor([-10., -10., -np.pi, 1]).reshape(1, -1, 1)
     # XREF0_MAX = torch.tensor([10., 10., np.pi, 6]).reshape(1, -1, 1)
@@ -125,23 +122,23 @@ class Car(ControlAffineSystem):
         # a: bs x n x 1
         bs = x.shape[0]
 
-        x, y, theta, v, d = [x[:, i, 0] for i in range(Car.DIM_X)]
+        x, y, theta, v = [x[:, i, 0] for i in range(Car.DIM_X)]
         a = torch.zeros(bs, Car.DIM_X, 1).type(x.type())
         a[:, 0, 0] = v * torch.cos(theta)
         a[:, 1, 0] = v * torch.sin(theta)
-        a[:, Car.state_dist, 0] += d
+        a[:, 2, 0] = 0
+        a[:, 3, 0] = 0
         return a
 
     def dadx_func(self, x: torch.Tensor) -> torch.Tensor:
         bs = x.shape[0]
-        x, y, theta, v, d = [x[:, i, 0] for i in range(Car.DIM_X)]
+        x, y, theta, v = [x[:, i, 0] for i in range(Car.DIM_X)]
         dadx = torch.zeros(bs, Car.DIM_X, Car.DIM_X).type(x.type())
 
         dadx[:, 0, 2] = - v * torch.sin(theta)
         dadx[:, 0, 3] = torch.cos(theta)
         dadx[:, 1, 2] = v * torch.cos(theta)
         dadx[:, 1, 3] = torch.sin(theta)
-        dadx[:, Car.state_dist, 4] = 1
         return dadx
 
     def b_func(self, x: torch.Tensor) -> torch.Tensor:

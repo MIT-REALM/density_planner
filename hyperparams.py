@@ -11,7 +11,7 @@ def parse_args():
     parser.add_argument('--dt_sim', type=int, default=0.01)
     parser.add_argument('--N_sim_max', type=int, default=1001)
     parser.add_argument('--factor_pred', type=int, default=10)
-    parser.add_argument('--random_seed', type=int, default=1)
+    parser.add_argument('--random_seed', type=int, default=0)
 
     # data generation
     parser.add_argument('--samplesX_rawdata', type=int, default=20)
@@ -26,7 +26,7 @@ def parse_args():
     parser.add_argument('--num_jobs', type=int, default=1)
 
     # data paths
-    parser.add_argument('--path_rawdata', type=str, default="data/rawdata/2022-06-01_filesVal_discr5/")  # directory for the density data
+    parser.add_argument('--path_rawdata', type=str, default="data/rawdata/2022-06-13_filesVal_dist")  # directory for the density data
     parser.add_argument('--path_dataset', type=str, default="data/dataset/")  # directory for the density data
     parser.add_argument('--path_nn', type=str, default="data/trained_nn/")  # directory for saving and loading the trained NN
     parser.add_argument('--path_traj0', type=str, default="data/initial_traj/")
@@ -34,9 +34,9 @@ def parse_args():
     parser.add_argument('--nameend_rawdata', type=str,
                         default=".pickle")  # ending of the file used for creating the data set / dataloader
     parser.add_argument('--nameend_TrainDataset', type=str,
-                        default="files180_Train_discr5.pickle")
+                        default="files18_Train_dist.pickle")
     parser.add_argument('--nameend_ValDataset', type=str,
-                        default="files45_Val_discr5.pickle")
+                        default="files6_Val_dist.pickle")
     parser.add_argument('--nameend_nn', type=str,
                         default="CAR_dt10ms_Nsim100_Nu10_iter1000.pickle")
     parser.add_argument('--name_pretrained_nn', type=str,
@@ -60,7 +60,7 @@ def parse_args():
     parser.add_argument('--device', type=str, default="cpu")
     parser.add_argument('--nn_type', type=str, default="MLP")
     parser.add_argument('--batch_size', type=int, default=256) # 256
-    parser.add_argument('--epochs', type=int, default=300)
+    parser.add_argument('--epochs', type=int, default=500)
     parser.add_argument('--activation', type=str, default="relu")
     parser.add_argument('--number_units', type=int, default=100)
     parser.add_argument('--number_layers', type=int, default=5)
@@ -83,7 +83,7 @@ def parse_args():
     parser.add_argument('--mp_optimizer', type=str, default="Adam")
 
     # motion planning parameter
-    parser.add_argument('--environment_size', type=list, default=[-12, 12, -30, 30])
+    parser.add_argument('--environment_size', type=list, default=[-12, 12, -30, 10])
     parser.add_argument('--grid_wide', type=float, default=0.1)
     #parser.add_argument('--grid_size', type=list, default=[240, 600])
     parser.add_argument('--sampling', type=str, default='grid')

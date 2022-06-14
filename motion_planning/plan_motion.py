@@ -3,6 +3,7 @@ from motion_planning.simulation_objects import Environment, EgoVehicle, MPOptimi
 from motion_planning.example_objects import create_environment, create_crossing4w, create_pedRL, create_street, create_turnR, create_pedLR
 import hyperparams
 import torch
+from plots.plot_functions import plot_grid
 from systems.sytem_CAR import Car
 import pickle
 import logging
@@ -14,8 +15,14 @@ if __name__ == '__main__':
     torch.manual_seed(args.random_seed)
 
     # 0. create environment
-    env = create_environment(["street", "obstacleBottom", "pedLR"], args)
+    env = create_environment(["street", "obstacleBottom", "pedLR", "pedRL", "bikerBT"], args)
+    plot_grid(env, args)
     env.forward_occupancy(step_size=100)
+    plot_grid(env, args, timestep=20)
+    plot_grid(env, args, timestep=40)
+    plot_grid(env, args, timestep=60)
+    plot_grid(env, args, timestep=80)
+    plot_grid(env, args)
     env.enlarge_shape()
 
     xref0 = torch.tensor([0, -25, 1.5, 3]).reshape(1, -1, 1).type(torch.FloatTensor)

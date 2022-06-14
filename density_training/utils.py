@@ -145,7 +145,6 @@ def evaluate(dataloader, model, args, optimizer=None, mode="val"):
         raise NotImplemented('Mode not defined')
 
     total_loss, total_loss_xe, total_loss_rho_w = 0, 0, 0
-    max_loss_xe = torch.zeros(len(dataloader), 4)
     max_loss_rho_w = torch.zeros(len(dataloader))
 
     for batch, (input, target) in enumerate(dataloader):
@@ -155,6 +154,8 @@ def evaluate(dataloader, model, args, optimizer=None, mode="val"):
         output = model(input)
         xe_nn, rho_log_nn = get_output_variables(output, dataloader.dataset.output_map)
         xe_true, rho_true = get_output_variables(target, dataloader.dataset.output_map)
+        if batch == 0:
+            max_loss_xe = torch.zeros(len(dataloader), xe_nn.shape[1])
 
         loss_xe, loss_rho_w = loss_function(xe_nn, xe_true, rho_log_nn, rho_true, args)
         loss = loss_xe + loss_rho_w

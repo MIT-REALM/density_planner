@@ -445,8 +445,14 @@ class EgoVehicle:
         self.name = name
         self.env = env
         self.args = args
-        foldername = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_mp_" + args.mp_name + "/"
-        self.path_log = os.path.join(args.path_plot_motion, foldername)
+        self.initialize_logging()
+        if pdf0 is None:
+            pdf0 = sample_pdf(self.system, 5)
+        self.initialize_predictor(pdf0)
+
+    def initialize_logging(self):
+        foldername = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_mp_" + self.args.mp_name + "/"
+        self.path_log = os.path.join(self.args.path_plot_motion, foldername)
         os.makedirs(self.path_log)
         shutil.copyfile('hyperparams.py', self.path_log + 'hyperparams.py')
         shutil.copyfile('motion_planning/simulation_objects.py', self.path_log + 'simulation_objects.py')
@@ -454,9 +460,19 @@ class EgoVehicle:
         self.path_log_search = None
         self.path_log_opt = None
         self.path_log_mp = None
-        if pdf0 is None:
-            pdf0 = sample_pdf(self.system, 5)
-        self.initialize_predictor(pdf0)
+
+    def initialize_predictor(self, pdf0):
+        self.model = self.load_predictor(self.system.DIM_X)
+        if self.args.sampling == 'random':
+            xe0 = torch.rand(self.sample_size, self.system.DIM_X, 1) * (
+                    self.system.XE0_MAX - self.system.XE0_MIN) + self.system.XE0_MIN
+        else:
+            _, xe0 = get_mesh_sample_points(self.system, self.args)
+            xe0 = xe0.unsqueeze(-1)
+        rho0 = pdf0(xe0)
+        mask = rho0 > 0
+        self.xe0 = xe0[mask, :, :]
+        self.rho0 = (rho0[mask] / rho0.sum()).reshape(-1, 1, 1)
 
     def visualize_xref(self, xref_traj, uref_traj=None, show=True, save=False, include_date=True,
                        name='Reference Trajectory', folder=None):
@@ -511,19 +527,6 @@ class EgoVehicle:
     def set_start_grid(self):  # certainty=None, spread=2, pdf_form='squared'):
         self.grid = pred2grid(self.xref0 + self.xe0, self.rho0, self.args)  # 20s for 100iter
         # self.grid = pdf2grid(pdf0, self.xref0, self.system, args) #65s for 100iter
-
-    def initialize_predictor(self, pdf0):
-        self.model = self.load_predictor(self.system.DIM_X)
-        if self.args.sampling == 'random':
-            xe0 = torch.rand(self.sample_size, self.system.DIM_X, 1) * (
-                    self.system.XE0_MAX - self.system.XE0_MIN) + self.system.XE0_MIN
-        else:
-            _, xe0 = get_mesh_sample_points(self.system, self.args)
-            xe0 = xe0.unsqueeze(-1)
-        rho0 = pdf0(xe0)
-        mask = rho0 > 0
-        self.xe0 = xe0[mask, :, :]
-        self.rho0 = (rho0[mask] / rho0.sum()).reshape(-1, 1, 1)
 
     def find_collision_xref(self, xref_traj, i_start_x, i_end_x=None, enlarged=False, short=False, check_all=False,
                             return_coll_pos=False, add=0):
