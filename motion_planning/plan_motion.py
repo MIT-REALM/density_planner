@@ -1,101 +1,73 @@
 from motion_planning.utils import sample_pdf, pred2grid
-from motion_planning.simulation_objects import Environment, EgoVehicle, MPOptimizer
+from motion_planning.simulation_objects import Environment, EgoVehicle
 from motion_planning.example_objects import create_environment, create_crossing4w, create_pedRL, create_street, create_turnR, create_pedLR
 import hyperparams
 import torch
 from plots.plot_functions import plot_grid
 from systems.sytem_CAR import Car
 import pickle
+import os
 import logging
 import sys
+from motion_planning.optimization_objects import MotionPlanner
 
 
 if __name__ == '__main__':
     args = hyperparams.parse_args()
+    #os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus
+    args.device ="cpu"  #"cuda" if torch.cuda.is_available() else
+
     torch.manual_seed(args.random_seed)
 
     # 0. create environment
-    env = create_environment(["street", "obstacleBottom", "pedLR", "pedRL", "bikerBT"], args)
-    plot_grid(env, args)
-    env.forward_occupancy(step_size=100)
-    plot_grid(env, args, timestep=20)
-    plot_grid(env, args, timestep=40)
-    plot_grid(env, args, timestep=60)
-    plot_grid(env, args, timestep=80)
-    plot_grid(env, args)
-    env.enlarge_shape()
+    objects = ["obstacleBottom", "pedLR", "pedRL", "bikerBT"]
+    env = create_environment(args, timestep=100)
+    plot_grid(env, args, timestep=0, save=False)
+    plot_grid(env, args, timestep=20, save=False)
+    plot_grid(env, args, timestep=40, save=False)
+    plot_grid(env, args, timestep=60, save=False)
+    plot_grid(env, args, timestep=80, save=False)
+    plot_grid(env, args, save=False)
 
-    xref0 = torch.tensor([0, -25, 1.5, 3]).reshape(1, -1, 1).type(torch.FloatTensor)
-    xrefN = torch.tensor([0, 0, 4, 1]).reshape(1, -1, 1) #, [10, 5, 10, 6]]).reshape(2, -1, 1)
+    xref0 = torch.tensor([0, -28, 1.5, 3, 0]).reshape(1, -1, 1).type(torch.FloatTensor)
+    xrefN = torch.tensor([0, 8, 4, 1, 0]).reshape(1, -1, 1) #, [10, 5, 10, 6]]).reshape(2, -1, 1)
 
     ego = EgoVehicle(xref0, xrefN, env, args)
-    opt = MPOptimizer(ego)
+    opt = MotionPlanner(ego)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s",
             handlers=[
-                logging.FileHandler(ego.path_log + '/logfile.txt'),
+                logging.FileHandler(opt.path_log + '/logfile.txt'),
                 logging.StreamHandler(sys.stdout)])
     logging.info("Starting motion planning %s" % args.mp_name)
 
     ### 1. get initial trajectory
-    if args.mp_init == "search":
-        opt.search_good_traj(num_traj=args.mp_search_numtraj)
-        logging.info("search finished with %d valid reference trajectories" % len(opt.found_traj))
-        u_params = opt.found_traj[0][0]
-    elif args.mp_init == "search_best":
-        u_params, cost = opt.find_best_traj(load=False)
-        logging.info("best reference trajectory found with cost %.2f" % cost)
-    elif args.mp_init == "load":
-        with open(args.path_traj0 + "found_traj", "rb") as f:
-            valid_traj = pickle.load(f)
-        logging.info("%d valid reference trajectories loaded" % len(valid_traj))
-        u_params = valid_traj[0][0]
-    elif args.mp_init == "load_best":
-        u_params, cost = opt.find_best_traj(load=True)
-        logging.info("best reference trajectory found with cost %.2f" % cost)
-    elif args.mp_init == "best":
-        u_params = torch.tensor([[[0.5000, 0.0000, -0.5000, -0.5000, 0.5000],
-             [0.0000, -0.5000, 0.5000, 0.5000, 0.0000]]]) #best found trajectory
-    elif args.mp_init == "zeros":
-        u_params = torch.zeros((1, 2, 5))
-        logging.info("zeros reference trajectory")
-    elif args.mp_init == "random":
-        u_params = 0.5 * torch.randn((1, 2, 5))
-        u_params = u_params.clamp(ego.system.UREF_MIN, ego.system.UREF_MAX)
-        logging.info("random reference trajectory")
+    if args.mp_find_traj:
+        logging.info("Optimizing %d Random Trajectories" % args.mp_numtraj)
+        opt.find_traj()
+        logging.info("Optimization finished")
+        u_params, cost_min = opt.find_best()
+        logging.info("Best Trajectory with cost %.4f:" % cost_min)
+        logging.info(u_params)
+        u_params = u_params.detach()
+    # best of 7
+    elif args.input_type == "discr10":
+        logging.info("Loading good parameters for input type discr10")
+        u_params = torch.tensor([[[0.7080, -0.2266, 0.1678, -0.5573, -0.0683, -0.3008, 0.2324,
+                -0.2033, -0.0517, 0.2307],
+                [-0.1680, -0.2446, -0.3030, 0.8033, -0.3640, 0.1204, 0.4263,
+                0.1605, -0.3789, 0.6836]]]) # cost=0.0094
+    elif args.input_type == "discr5":
+        logging.info("Loading good parameters for input type discr5")
+        u_params = torch.tensor([[[ 0.0562,  0.7262, -0.7681, -0.0185, -0.2678],
+         [-1.4503,  0.6820,  1.4877,  0.4498, -0.0598]]]) # cost=0.0128
+
+    ### 2. optimize best trajectories with density predictions
+    logging.info("Improving input parameters with density prediction")
+    u_params, cost = opt.improve_traj(u_params)
+    logging.info("Optimization finished with cost %.4f" % cost)
     logging.info(u_params)
 
-    if args.mp_anim_initial:
-        ego.animate_traj(u_params, name="initialTraj")
-    else:
-        uref_traj, xref_traj = ego.system.u_params2ref_traj(ego.xref0, u_params, args, short=True)
-        ego.visualize_xref(xref_traj, save=True, show=False, name="initialTraj_%s" % args.mp_init, folder=ego.path_log)
-
-    ### 2. optimize valid trajectories without considering the density
-    if args.mp_opt_normal:
-        u_params = opt.optimize_traj(u_params, with_density=False)
-        logging.info("reference trajectory was optimized:")
-        logging.info(u_params)
-        #u_params_opt = torch.tensor([[[0.9989, -0.7407, -0.3733, -0.0974, -0.0172],
-        #     [-0.2134, 0.1232, 0.3187, 0.2029, 0.0679]]], requires_grad=True) #optimized from zero traj, no collision
-
-    # with open("plots/motion/2022-06-13-14-04-00_mp_random/2022-06-13-14-04-02_opt/results", "rb") as f:
-    #     res = pickle.load(f)
-    # u_params = res[0]
-    # ego.animate_traj(u_params, name="finalTraj")
-
-    ### 3. optimize best trajectories with density predictions
-    if args.mp_opt_density:
-        u_params = opt.optimize_traj(u_params, with_density=True)
-        logging.info("trajectory was optimized with density estimates:")
-        logging.info(u_params)
-
-    if args.mp_anim_final:
-        ego.animate_traj(u_params, name="finalTraj")
-    else:
-        uref_traj, xref_traj = ego.system.u_params2ref_traj(ego.xref0, u_params, args, short=True)
-        ego.visualize_xref(xref_traj, save=True, show=False, name="finalTraj", folder=ego.path_log)
-
-    logging.info("finished")
+    logging.info("Finished")
 
 '''
 gradients wrt u_params:

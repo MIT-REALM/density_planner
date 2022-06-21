@@ -87,8 +87,9 @@ def plot_scatter(x_nn, x_le, rho_nn, rho_le, name, args, weighted=False,
                  save=True, show=True, filename=None, include_date=False):
     step = int(80 / x_nn.shape[0])
     colors = np.arange(0, step * x_nn.shape[0], step)
+    num_plots = 1
 
-    for j in np.arange(0,x_nn.shape[1], 2):
+    for j in np.arange(0, num_plots*2, 2):
         for i in range(x_nn.shape[0]):
             plt.plot([x_nn[i, j], x_le[i, j]],[x_nn[i, j+1], x_le[i, j+1]], color='gainsboro', zorder=-1)
 
@@ -197,32 +198,41 @@ def plot_losscurves(result, name, args, type="Loss",
     plt.clf()
 
 def plot_cost(costs_dict, args, plot_log=True, name="", save=True, show=True, filename=None, include_date=True, folder=None):
-    plt.figure(figsize=(6.4,4.8))
-    plt.title("Cost Curves for Motion Planning \n %s" % (name))
-    for key, val in costs_dict.items():
-        if key == "cost_sum":
-            plt.plot(val, linestyle='-', label="sum")
-        else:
-            plt.plot(val, linestyle=':', label=key)
-    plt.ylabel("Costs")
-    if plot_log:
-        plt.yscale('log')
-    plt.legend()
-    plt.grid()
-    plt.xlabel("Episodes")
-    plt.tight_layout()
-    if save:
-        if folder is None:
-            folder = args.path_plot_cost
-        if filename is None:
-            if include_date:
-                filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_Curve_" + name + ".jpg"
+    num_plots = len(costs_dict["cost_sum"][0])
+    for i in range(num_plots):
+        plt.figure(figsize=(6.4, 4.8))
+        plt.title("Cost Curve %d for Motion Planning \n %s" % (i, name))
+        for key, val in costs_dict.items():
+            if (val[0]).dim() == 0:
+                cost = [val[k].item() for k in range(len(val))]
             else:
-                filename = "Curve_" + name + ".jpg"
-        plt.savefig(folder + filename)
-    if show:
-        plt.show()
-    plt.clf()
+                cost = [val[k][i].item() for k in range(len(val))]
+            if key == "cost_sum":
+                plt.plot(cost, linestyle='-', label="sum")
+            else:
+                plt.plot(cost, linestyle=':', label=key)
+        plt.ylabel("Costs")
+        if plot_log:
+            plt.yscale('log')
+        plt.legend()
+        plt.grid()
+        plt.xlabel("Episodes")
+        plt.tight_layout()
+        if save:
+            if folder is None:
+                folder = args.path_plot_cost
+            if filename is None:
+                if include_date:
+                    fname = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_Curve%d_" % i + name + ".jpg"
+                else:
+                    fname = "Curve%d_" % i + name + ".jpg"
+            else:
+                fname = filename
+            plt.savefig(folder + fname)
+            plt.close()
+        if show:
+            plt.show()
+        plt.clf()
 
 def plot_ref(xref_traj, uref_traj, name, args, system, t=None, x_traj=None,
              save=True, show=True, filename=None, include_date=False, folder=None):
@@ -299,6 +309,8 @@ def plot_ref(xref_traj, uref_traj, name, args, system, t=None, x_traj=None,
 
 def plot_grid(object, args, timestep=None, cmap='binary', name=None,
               save=True, show=True, filename=None, include_date=False, folder=None):
+    if save:
+        plt.close("all")
     if torch.is_tensor(object):
         if object.dim() == 3:
             if timestep is None:
@@ -321,7 +333,7 @@ def plot_grid(object, args, timestep=None, cmap='binary', name=None,
             name = object.name
     x_wide = max((args.environment_size[1] - args.environment_size[0]) / 10, 3)
     y_wide = (args.environment_size[3] - args.environment_size[2]) / 10
-    plt.figure(figsize=(x_wide, y_wide))
+    plt.figure(figsize=(x_wide, y_wide), dpi=200)
     plt.pcolormesh(grid.T, cmap=cmap, norm=None)
     plt.axis('scaled')
 
@@ -341,8 +353,8 @@ def plot_grid(object, args, timestep=None, cmap='binary', name=None,
                 filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_Grid_" + name + ".jpg"
             else:
                 filename = "Grid_" + name + ".jpg"
-        plt.savefig(folder + filename)
-    if show:
+        plt.savefig(folder + filename, dpi=200)
+    else:
         plt.show()
     plt.clf()
 

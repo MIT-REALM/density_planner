@@ -47,10 +47,10 @@ def loss_function(xe_nn, xe_true, rho_log_nn, rho_true, args):
     #     rho_log_nn = rho_log_nn[torch.logical_not(mask)]
     #     rho_true = rho_true[torch.logical_not(mask)]
     #if not mask.all():
-    mask = torch.logical_or(rho_true > 1e30, torch.isnan(rho_true))
+    mask = torch.logical_or(rho_true.abs() > 1e30, torch.isnan(rho_true))
     if mask.any():
         rho_true[mask] = 1e30
-    rho_log_true = torch.log(rho_true)
+    rho_log_true = torch.log(rho_true.abs())
     # weight = rho_log_true.abs() #clone???
     # mask = (weight < 0.01)
     # if mask.any():
@@ -200,7 +200,7 @@ def get_nn_prediction(model, xe0, xref0, t, u_params, args):
     #     u_params = torch.cat((u_params[:, :], torch.zeros(u_params.shape[0], 10 - u_params.shape[1])), 1)
 
     input_tensor, _ = get_input_tensors(u_params.flatten(), xref0, xe0, t, args)
-    output_map, num_outputs = load_outputmap()
+    output_map, num_outputs = load_outputmap(dim_x=xe0.shape[1])
 
     #with torch.no_grad():
     input = input_tensor.to(args.device)

@@ -34,7 +34,7 @@ def load_inputmap(dim_x, args):
     return input_map, num_inputs
 
 
-def load_outputmap(dim_x=4):
+def load_outputmap(dim_x=5):
     num_outputs = dim_x + 1
     output_map = {'xe': torch.arange(0, dim_x),
                   'rho': dim_x}

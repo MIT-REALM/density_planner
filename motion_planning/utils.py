@@ -2,7 +2,8 @@ import numpy as np
 import torch
 from scipy.stats import multivariate_normal
 from systems.utils import get_mesh_pos
-
+from datetime import datetime
+import os
 
 class MultivariateGaussians():
     def __init__(self, means, cov_diags, weights, x_min, x_max):
@@ -50,22 +51,28 @@ def gridpos2pos(args, pos_x=None, pos_y=None):
     return pos_x, pos_y
 
 
-def shift_array(grid, step_x=0, step_y=0):
-    result = grid.clone().detach()
+def shift_array(grid, step_x=0, step_y=0, fill=0):
+    result = torch.zeros_like(grid)
+
     if step_x > 0:
-        result[:step_x, :] = 0
+        result[:step_x, :] = fill
         result[step_x:, :] = grid[:-step_x, :]
     elif step_x < 0:
-        result[step_x:, :] = 0
+        result[step_x:, :] = fill
         result[:step_x, :] = grid[-step_x:, :]
-    grid = result.clone().detach()
+    else:
+        result = grid
+
+    result_new = torch.zeros_like(grid)
     if step_y > 0:
-        result[:, :step_y] = 0
-        result[:, step_y:] = grid[:, :-step_y]
+        result_new[:, :step_y] = fill
+        result_new[:, step_y:] = result[:, :-step_y]
     elif step_y < 0:
-        result[:, step_y:] = 0
-        result[:, :step_y] = grid[:, -step_y:]
-    return result
+        result_new[:, step_y:] = fill
+        result_new[:, :step_y] = result[:, -step_y:]
+    else:
+        result_new = result
+    return result_new
 
 
 def enlarge_grid(grid, wide):
@@ -79,6 +86,10 @@ def enlarge_grid(grid, wide):
         grid_enlarged += shift_array(grid, step_y=-1)
     return torch.clamp(grid_enlarged, 0, 1)
 
+def compute_gradient(grid, step=1):
+    grid_gradientX = (shift_array(grid, step_x=step, fill=1) - shift_array(grid, step_x=-step, fill=1)) / (2 * step)
+    grid_gradientY = (shift_array(grid, step_y=step, fill=1) - shift_array(grid, step_y=-step, fill=1)) / (2 * step)
+    return grid_gradientX, grid_gradientY
 
 def sample_pdf(system, num, spread=0.3):
     weights = torch.rand(num)
@@ -101,7 +112,7 @@ def sample_pdf(system, num, spread=0.3):
 #--> pred2grid is 3times faster
 
 def traj2grid(x_traj, args):
-    gridpos_x, gridpos_y = pos2gridpos(args, pos_x=x_traj[0, 0, :], pos_y=x_traj[0, 1, :])
+    gridpos_x, gridpos_y = pos2gridpos(args, pos_x=x_traj[:, 0, :], pos_y=x_traj[:, 1, :])
     grid = torch.zeros((args.grid_size[0], args.grid_size[1]))
     grid[gridpos_x.clamp(0, args.grid_size[0]-1), gridpos_y.clamp(0, args.grid_size[1]-1)] = 1
     return grid
@@ -199,30 +210,7 @@ def get_mesh_sample_points(system, args):
     positions = get_mesh_pos(N, x_min=x_min, x_max=x_max)
     return N, positions
 
-
-#
-# def create_example_grid():
-#     gridsize = (100, 100)
-#     ntimesteps = 20
-#     obstacles = (
-#         (70, 75, 40, 45, 0.8, 20, "Ped1"), (0, 20, 0, 100, 1, 1, "static1"),
-#         (80, 100, 0, 100, 1, 1, "static2"))  # (x1, x2, y1, y2, certainty, spread)
-#     grid = Environment(gridsize=gridsize)
-#
-#     for coord in obstacles:
-#         obj = OccupancyObject(gridsize=gridsize, name=coord[6],  pos=coord[0:4], certainty=coord[4], spread=coord[5], timestep=0)
-#         grid.add_object(obj)
-#
-#     grid.objects[1].forward_occupancy(0,5)
-#     grid.objects[1].plot_grid(5)
-#     grid.plot_grid(5)
-#
-#     return grid
-#
-# def create_example_vehicle():
-#     start = (60, 2)
-#     goal = (70, 100)
-#     T = 0.2
-#     vehicle = Vehicle(start, goal, T)
-#
-#     return vehicle
+def make_path(path0, name):
+    path = path0 + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_" + name + "/"
+    os.makedirs(path)
+    return path

@@ -50,8 +50,8 @@ class Car(ControlAffineSystem):
         XE0_MIN = torch.tensor([-2, -2, -1, -1, -d_max]).reshape(1, -1, 1)
         XE0_MAX = torch.tensor([2, 2, 1, 1, d_max]).reshape(1, -1, 1)
 
-    X_MIN_MP = torch.tensor([-9.9, -29.9, -np.pi + 0.1, 0.1, -d_max]).reshape(1, -1, 1)
-    X_MAX_MP = torch.tensor([9.9, 29.9, 3 * np.pi - 0.1, 9.9, d_max]).reshape(1, -1, 1)
+    X_MIN_MP = torch.tensor([-9.9, -29.9, -np.pi + 0.1, 0.1]).reshape(1, -1, 1)
+    X_MAX_MP = torch.tensor([9.9, 29.9, 3 * np.pi - 0.1, 9.9]).reshape(1, -1, 1)
     #'for startMiddle'
     # XREF0_MIN = torch.tensor([-10., -10., -np.pi, 1]).reshape(1, -1, 1)
     # XREF0_MAX = torch.tensor([10., 10., np.pi, 6]).reshape(1, -1, 1)
@@ -125,22 +125,22 @@ class Car(ControlAffineSystem):
         # a: bs x n x 1
         bs = x.shape[0]
 
-        x, y, theta, v, d = [x[:, i, 0] for i in range(Car.DIM_X)]
+        #x, y, theta, v, d = [x[:, i, 0] for i in range(Car.DIM_X)]
         a = torch.zeros(bs, Car.DIM_X, 1).type(x.type())
-        a[:, 0, 0] = v * torch.cos(theta)
-        a[:, 1, 0] = v * torch.sin(theta)
-        a[:, Car.state_dist, 0] += d
+        a[:, 0, 0] = x[:, 3, 0] * torch.cos(x[:, 2, 0])
+        a[:, 1, 0] = x[:, 3, 0] * torch.sin(x[:, 2, 0])
+        a[:, Car.state_dist, 0] += x[:, 4, 0]
         return a
 
     def dadx_func(self, x: torch.Tensor) -> torch.Tensor:
         bs = x.shape[0]
-        x, y, theta, v, d = [x[:, i, 0] for i in range(Car.DIM_X)]
+        #x, y, theta, v, d = [x[:, i, 0] for i in range(Car.DIM_X)]
         dadx = torch.zeros(bs, Car.DIM_X, Car.DIM_X).type(x.type())
 
-        dadx[:, 0, 2] = - v * torch.sin(theta)
-        dadx[:, 0, 3] = torch.cos(theta)
-        dadx[:, 1, 2] = v * torch.cos(theta)
-        dadx[:, 1, 3] = torch.sin(theta)
+        dadx[:, 0, 2] = - x[:, 3, 0] * torch.sin(x[:, 2, 0])
+        dadx[:, 0, 3] = torch.cos(x[:, 2, 0])
+        dadx[:, 1, 2] = x[:, 3, 0] * torch.cos(x[:, 2, 0])
+        dadx[:, 1, 3] = torch.sin(x[:, 2, 0])
         dadx[:, Car.state_dist, 4] = 1
         return dadx
 
