@@ -134,6 +134,8 @@ def check_collision(grid_ego, grid_env, max_coll_sum, return_coll_pos=False):
 def pred2grid(x, rho, args, return_gridpos=False):
     """average the density of points landing in the same bin and return normalized grid"""
     gridpos_x, gridpos_y = pos2gridpos(args, pos_x=x[:, 0, 0], pos_y=x[:, 1, 0])
+    gridpos_x = torch.clamp(gridpos_x, 0, args.grid_size[0])
+    gridpos_y = torch.clamp(gridpos_y, 0, args.grid_size[1])
     min_xbin = int(gridpos_x.min())
     min_ybin = int(gridpos_y.min())
     max_xbin = int(gridpos_x.max())

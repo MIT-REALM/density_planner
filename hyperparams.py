@@ -98,7 +98,7 @@ def parse_args():
     # ego vehicle
     parser.add_argument('--mp_gaussians', type=int, default=5)
     parser.add_argument('--mp_sampling', type=str, default='random')
-    parser.add_argument('--mp_sample_size', type=int, default=1000) #if sampling == 'random'
+    parser.add_argument('--mp_sample_size', type=int, default=5000) #if sampling == 'random'
 
     # motion planning parameter
     parser.add_argument('--environment_size', type=list, default=[-12, 12, -30, 10])

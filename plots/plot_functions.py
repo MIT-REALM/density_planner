@@ -13,7 +13,7 @@ from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 
 
 def plot_density_heatmap(name, args, xe_le=None, rho_le=None, xe_nn=None, rho_nn=None,
-                         save=True, show=True, filename=None, include_date=False):
+                         save=True, show=True, filename=None, include_date=False, folder=None):
     density_mean = {}
     for str in ["LE", "NN"]:
         if str == "LE":
@@ -48,34 +48,50 @@ def plot_density_heatmap(name, args, xe_le=None, rho_le=None, xe_nn=None, rho_nn
     extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
 
     i = 0
-    fig, ax = plt.subplots(1, 2)
+    if not (xe_le is None or xe_nn is None):
+        num_plots = 2
+    else:
+        num_plots = 1
+    fig, ax = plt.subplots(1, num_plots)
     fig.set_figwidth(9.5)
     for i, str in enumerate(["LE", "NN"]):
         if str == "LE" and xe_le is None:
             continue
         if str == "NN" and xe_nn is None:
             continue
-        im = ax[i].imshow(density_mean[str].T, extent=extent, origin='lower', vmin=plot_limits[0], vmax=plot_limits[1])
-        ax[i].set_title("%s Prediction" % (str))
-        ticks_y_grid = ax[i].get_yticks()
-        #ax[i].set_xticks(ticks_y_grid[1:-1], ticks_y_grid[1:-1])
-        ax[i].set_xlabel("x-xref")
-    ax[0].set_ylabel("y-yref")
-    fig.suptitle("Log-Density Heatmap at %s                \n max density error: %.3f, mean density error: %.4f            "
+        if num_plots ==1:
+            axis = ax
+            axis.set_ylabel("y-yref")
+        else:
+            axis = ax[i]
+            ax[0].set_ylabel("y-yref")
+        im = axis.imshow(density_mean[str].T, extent=extent, origin='lower', vmin=plot_limits[0], vmax=plot_limits[1])
+        axis.set_title("%s Prediction" % (str))
+        #ticks_y_grid = axis.get_yticks()
+        #axis.set_xticks(ticks_y_grid[1:-1], ticks_y_grid[1:-1])
+        axis.set_xlabel("x-xref")
+    if num_plots == 2:
+        fig.suptitle("Log-Density Heatmap at %s                \n max density error: %.3f, mean density error: %.4f            "
                  % (name, error.max(), error.mean()))
+    else:
+        fig.suptitle(
+            "Log-Density Heatmap %s" % name)
     fig.tight_layout()
-    plt.subplots_adjust(bottom=0.0, right=0.85, top=0.95)
+    if num_plots == 2:
+        plt.subplots_adjust(bottom=0.0, right=0.85, top=0.95)
     cax = plt.axes([0.87, 0.05, 0.02, 0.85])
     fig.colorbar(im, fraction=0.046, pad=0.04, format="%.2f", cax=cax, shrink=0.6)
 
     if save:
+        if folder is None:
+            folder = args.path_plot_densityheat
         if filename is None:
             if include_date:
                 filename_new = datetime.now().strftime(
                     "%Y-%m-%d-%H-%M-%S") + "_heatmap_" + 'randomSeed%d_' % args.random_seed + name + ".jpg"
             else:
                 filename_new = "heatmap_" + 'randomSeed%d_' % args.random_seed + name + ".jpg"
-            plt.savefig(args.path_plot_densityheat + filename_new)
+            plt.savefig(folder + filename_new)
         else:
             plt.savefig(args.path_plot_densityheat + filename)
     if show:
@@ -301,7 +317,7 @@ def plot_ref(xref_traj, uref_traj, name, args, system, t=None, x_traj=None,
                 filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_References_" + name + ".jpg"
             else:
                 filename = "References_" + name + ".jpg"
-        plt.savefig(folder + args.input_type + '/' +filename)
+        plt.savefig(folder + filename)
     if show:
         plt.show()
     plt.clf()
