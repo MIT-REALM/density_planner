@@ -3,84 +3,59 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from systems.utils import get_density_map
 from scipy.spatial import Delaunay
 from scipy.interpolate import LinearNDInterpolator
 from plots.utils import sample_from
 import scipy
+import matplotlib.colors as pltcol
 from motion_planning.utils import pos2gridpos, traj2grid
 from matplotlib import cm
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 
 
-def plot_density_heatmap(name, args, xe_le=None, rho_le=None, xe_nn=None, rho_nn=None,
-                         save=True, show=True, filename=None, include_date=False, folder=None):
+def plot_density_heatmap(name, args, xe_dict, rho_dict, save=True, show=True, filename=None,
+                         include_date=False, folder=None, log_density=False):
     density_mean = {}
-    for str in ["LE", "NN"]:
-        if str == "LE":
-            if xe_le is None:
-                continue
-            xpos = xe_le[:, 0, 0]
-            ypos = xe_le[:, 1, 0]
-            rho = torch.log(rho_le[:, 0, 0])
-        else:
-            if xe_nn is None:
-                continue
-            xpos = xe_nn[:, 0, 0]
-            ypos = xe_nn[:, 1, 0]
-            rho = torch.log(rho_nn[:, 0, 0])
-        range = [[-2.25, 2.25], [-2.25, 2.25]]
-        bins = 45
-        num_samples, _, _ = np.histogram2d(xpos.numpy(), ypos.numpy(), bins=bins,
-                                                 range=range)
-        density_mean[str], xedges, yedges = np.histogram2d(xpos.numpy(), ypos.numpy(), bins=bins,
-                                                 weights=rho.numpy(), range=range)
-        mask = num_samples > 0
-        density_mean[str][mask] /= num_samples[mask]
-    if xe_le is None or xe_nn is None:
-        plot_limits = [-np.inf, np.inf]
-        error = np.zeros(4)
-    else:
-        min_rho = np.minimum(density_mean["LE"].min(), density_mean["NN"].min())
-        max_rho = np.maximum(density_mean["LE"].max(), density_mean["NN"].max())
-        plot_limits = [min_rho, max_rho]
-        error = np.abs(density_mean["LE"] - density_mean["NN"])
+    num_plots = len(xe_dict)
+    min_rho = np.inf
+    max_rho = 0
 
-    extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
+    for key in xe_dict:
+        density_mean[key], extent = get_density_map(xe_dict[key][:, :2, 0], rho_dict[key][:, 0, 0], args, type=key,
+                                                    log_density=log_density)
+        mask = density_mean[key] > 0
+        if density_mean[key][mask].min() < min_rho:
+            min_rho = density_mean[key][mask].min()
+        if density_mean[key].max() > max_rho:
+            max_rho = density_mean[key].max()
 
-    i = 0
-    if not (xe_le is None or xe_nn is None):
-        num_plots = 2
-    else:
-        num_plots = 1
     fig, ax = plt.subplots(1, num_plots)
-    fig.set_figwidth(9.5)
-    for i, str in enumerate(["LE", "NN"]):
-        if str == "LE" and xe_le is None:
-            continue
-        if str == "NN" and xe_nn is None:
-            continue
-        if num_plots ==1:
+    #fig.set_figwidth(9.5)
+    for i, key in enumerate(xe_dict):
+        if num_plots == 1:
             axis = ax
             axis.set_ylabel("y-yref")
         else:
             axis = ax[i]
             ax[0].set_ylabel("y-yref")
-        im = axis.imshow(density_mean[str].T, extent=extent, origin='lower', vmin=plot_limits[0], vmax=plot_limits[1])
-        axis.set_title("%s Prediction" % (str))
-        #ticks_y_grid = axis.get_yticks()
-        #axis.set_xticks(ticks_y_grid[1:-1], ticks_y_grid[1:-1])
+        cmap = plt.cm.get_cmap('magma').reversed()
+        im = axis.imshow(density_mean[key].T, extent=extent[0]+extent[1], origin='lower', cmap=cmap,
+                         norm=pltcol.LogNorm(vmin=min_rho, vmax=max_rho))#vmin=plot_limits[0], vmax=plot_limits[1])
+        fig.colorbar(im, ax=axis, orientation='horizontal', format="%.0e")
+        axis.set_title("%s Prediction" % (key))
         axis.set_xlabel("x-xref")
-    if num_plots == 2:
-        fig.suptitle("Log-Density Heatmap at %s                \n max density error: %.3f, mean density error: %.4f            "
-                 % (name, error.max(), error.mean()))
-    else:
-        fig.suptitle(
-            "Log-Density Heatmap %s" % name)
+
+    # if num_plots == 2:
+    #     fig.suptitle("Density Heatmap at %s                \n max density error: %.3f, mean density error: %.4f            "
+    #              % (name, error.max(), error.mean()))
+    fig.suptitle("Density Heatmap %s" % name)
     fig.tight_layout()
-    if num_plots == 2:
-        plt.subplots_adjust(bottom=0.0, right=0.85, top=0.95)
-    cax = plt.axes([0.87, 0.05, 0.02, 0.85])
-    fig.colorbar(im, fraction=0.046, pad=0.04, format="%.2f", cax=cax, shrink=0.6)
+    #
+    # if num_plots == 2:
+    #     plt.subplots_adjust(bottom=0.0, right=0.85, top=0.95)
+    #cax = plt.axes([0.87, 0.05, 0.02, 0.85])
+    #fig.colorbar(im, fraction=0.046, pad=0.04, format="%.0e", cax=cax, shrink=0.6)
 
     if save:
         if folder is None:

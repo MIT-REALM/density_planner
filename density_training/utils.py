@@ -11,6 +11,8 @@ class NeuralNetwork(nn.Module):
 
         if args.activation == "relu":
             self.activation = nn.ReLU()
+        elif args.activation == "tanh":
+            self.activation = nn.Tanh()
         else:
             raise NotImplemented('NotImplemented')
         self.type = args.nn_type
@@ -40,28 +42,12 @@ class NeuralNetwork(nn.Module):
         return x
 
 
-def loss_function(xe_nn, xe_true, rho_log_nn, rho_true, args):
-    loss_xe = ((xe_nn - xe_true) ** 2).mean()
-    # if mask.any():
-    #     loss_rho = ((rho_log_nn[mask] - rho_true[mask]) ** 2).mean()
-    #     rho_log_nn = rho_log_nn[torch.logical_not(mask)]
-    #     rho_true = rho_true[torch.logical_not(mask)]
-    #if not mask.all():
-    mask = torch.logical_or(rho_true.abs() > 1e30, torch.isnan(rho_true))
-    if mask.any():
-        rho_true[mask] = 1e30
-    rho_log_true = torch.log(rho_true.abs())
-    # weight = rho_log_true.abs() #clone???
-    # mask = (weight < 0.01)
-    # if mask.any():
-    #     weight[mask] = 0.01
-    loss_rho = ((rho_log_nn - rho_log_true) ** 2).mean()
-
-    return loss_xe, args.rho_loss_weight * loss_rho
 
 
 def load_dataloader(args):
     train_data = densityDataset(args, mode="Train")
+    # if args.equation == "FPE":
+    #     args.batch_size = 1
     train_dataloader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
     #train_data.data = train_data.data[0:500]
     val_data = densityDataset(args, mode="Val")
@@ -133,65 +119,6 @@ def load_nn(num_inputs, num_outputs, args, load_pretrained=None):
         raise NotImplemented('NotImplemented')
 
     return model, optimizer
-
-
-def evaluate(dataloader, model, args, optimizer=None, mode="val"):
-
-    if mode == "train" and optimizer is not None:
-        model.train()
-    elif mode == "val":
-        model.eval()
-    else:
-        raise NotImplemented('Mode not defined')
-
-    total_loss, total_loss_xe, total_loss_rho_w = 0, 0, 0
-    max_loss_rho_w = torch.zeros(len(dataloader))
-
-    for batch, (input, target) in enumerate(dataloader):
-        input, target = input.to(args.device), target.to(args.device)
-
-        # Compute prediction error
-        output = model(input)
-        xe_nn, rho_log_nn = get_output_variables(output, dataloader.dataset.output_map)
-        xe_true, rho_true = get_output_variables(target, dataloader.dataset.output_map)
-        if batch == 0:
-            max_loss_xe = torch.zeros(len(dataloader), xe_nn.shape[1])
-
-        loss_xe, loss_rho_w = loss_function(xe_nn, xe_true, rho_log_nn, rho_true, args)
-        loss = loss_xe + loss_rho_w
-        total_loss_xe += loss_xe.item()
-        total_loss_rho_w += loss_rho_w.item()
-        max_loss_xe[batch, :], _ = torch.max(torch.abs(xe_nn-xe_true), dim=0)
-        max_loss_rho_w[batch] = args.rho_loss_weight * torch.max(torch.abs(rho_log_nn-torch.log(rho_true)))
-        total_loss += loss.item()
-
-        if mode == "train":
-            # Backpropagation
-            # if args.optimizer == "LBFGS":
-            #     def closure():
-            #         output = model(input)
-            #         xe_nn, rho_nn = get_output_variables(output, dataloader.dataset.output_map, type='exp')
-            #         xe_true, rho_true = get_output_variables(target, dataloader.dataset.output_map)
-            #         loss_xe, loss_rho_w = loss_function(xe_nn, xe_true, rho_nn, rho_true, args)
-            #         loss = loss_xe + loss_rho_w
-            #         loss.backward()
-            #         return loss
-            #
-            #     optimizer.step(closure)
-            # else:
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-    maxMax_loss_xe, _ = torch.max(max_loss_xe, dim=0)
-    loss_all = {
-        "loss": total_loss / len(dataloader),
-        "loss_xe": total_loss_xe / len(dataloader),
-        "loss_rho_w": total_loss_rho_w / len(dataloader),
-        "max_error_xe": maxMax_loss_xe.detach().numpy(),
-        "max_error_rho_w": (torch.max(max_loss_rho_w)).detach().numpy()
-        }
-    return loss_all
 
 
 def get_nn_prediction(model, xe0, xref0, t, u_params, args):

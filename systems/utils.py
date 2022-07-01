@@ -116,6 +116,40 @@ def listDict2dictList(list_dict):
             dict_list[key].append(val)
     return dict_list
 
+
+def get_density_map(x, rho, args, log_density=False, type="LE", bins=None, bin_wide=None):
+    if bins is None:
+        bins = args.bin_number[:x.shape[1]]
+    if bin_wide is None:
+        bin_wide = args.bin_wide
+
+    if type != "MC" and log_density:
+        rho -= rho.max()
+        rho = torch.exp(rho)
+    else:
+        rho /= rho.max()
+
+    range_bins = [[-b * bin_wide / 2, b * bin_wide / 2] for b in bins]
+    density_mean, _ = np.histogramdd(x.numpy(), bins=bins, weights=rho.numpy(), range=range_bins)
+    mask = density_mean > 0
+    if type != "MC":
+        num_samples, _ = np.histogramdd(x.numpy(), bins=bins, range=range_bins)
+        density_mean[mask] /= num_samples[mask]
+    density_mean[mask] = density_mean[mask] / density_mean[mask].sum()
+    #extent = [[edges_k[0], edges_k[-1]] for edges_k in edges] = range_bins
+    return density_mean, range_bins
+
+def sample_binpos(sample_size, bin_numbers, bin_wide=None):
+    binpos = torch.zeros(sample_size, len(bin_numbers))
+    xepos = None
+    s = int(sample_size/2)
+    for i, b in enumerate(bin_numbers):
+        binpos[:s, i] = torch.randint(0, b, (s,))
+        binpos[s:, i] = torch.randint(int(b/4), int(np.ceil(3*b/4)), (s,))  # get more samples in the middle
+    if bin_wide is not None:
+        xepos = binpos * bin_wide - 0.5 * bin_wide * (torch.tensor(bin_numbers) - 1)
+    return binpos.long(), xepos
+
 # def read_settings(path: str):
 #     with open(os.path.join(path, 'settings.yaml')) as f:
 #         settings = yaml.load(f, Loader=yaml.FullLoader)

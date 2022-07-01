@@ -1,11 +1,159 @@
 import torch
+from systems.sytem_CAR import Car
 import os
 import hyperparams
 from datetime import datetime
 from plots.plot_functions import plot_losscurves
-from systems.utils import listDict2dictList
-from density_training.utils import NeuralNetwork, load_nn, load_args, load_dataloader, loss_function, evaluate, create_configs
+from systems.utils import listDict2dictList, sample_binpos
+from data_generation.utils import get_input_tensors
+from density_training.utils import NeuralNetwork, load_nn, load_args, load_dataloader, get_output_variables, create_configs
+from motion_planning.utils import time2idx
 
+def evaluate_le(dataloader, model, args, optimizer=None, mode="val"):
+
+    if mode == "train" and optimizer is not None:
+        model.train()
+    elif mode == "val":
+        model.eval()
+    else:
+        raise NotImplemented('Mode not defined')
+
+    total_loss, total_loss_xe, total_loss_rho_w = 0, 0, 0
+    max_loss_rho_w = torch.zeros(len(dataloader))
+
+    for batch, (input, target) in enumerate(dataloader):
+        input, target = input.to(args.device), target.to(args.device)
+
+        # Compute prediction error
+        output = model(input)
+        xe_nn, rho_log_nn = get_output_variables(output, dataloader.dataset.output_map)
+        xe_true, rho_true = get_output_variables(target, dataloader.dataset.output_map)
+        if batch == 0:
+            max_loss_xe = torch.zeros(len(dataloader), xe_nn.shape[1])
+
+        loss_xe, loss_rho_w = loss_function_le(xe_nn, xe_true, rho_log_nn, rho_true, args)
+        loss = loss_xe + loss_rho_w
+        total_loss_xe += loss_xe.item()
+        total_loss_rho_w += loss_rho_w.item()
+        max_loss_xe[batch, :], _ = torch.max(torch.abs(xe_nn-xe_true), dim=0)
+        max_loss_rho_w[batch] = args.rho_loss_weight * torch.max(torch.abs(rho_log_nn-torch.log(rho_true)))
+        total_loss += loss.item()
+
+        if mode == "train":
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+    maxMax_loss_xe, _ = torch.max(max_loss_xe, dim=0)
+    loss_all = {
+        "loss": total_loss / len(dataloader),
+        "loss_xe": total_loss_xe / len(dataloader),
+        "loss_rho_w": total_loss_rho_w / len(dataloader),
+        "max_error_xe": maxMax_loss_xe.detach().numpy(),
+        "max_error_rho_w": (torch.max(max_loss_rho_w)).detach().numpy()
+        }
+    return loss_all
+
+
+def loss_function_le(xe_nn, xe_true, rho_log_nn, rho_log_true, args):
+    loss_xe = ((xe_nn - xe_true) ** 2).mean()
+    # if mask.any():
+    #     loss_rho = ((rho_log_nn[mask] - rho_true[mask]) ** 2).mean()
+    #     rho_log_nn = rho_log_nn[torch.logical_not(mask)]
+    #     rho_true = rho_true[torch.logical_not(mask)]
+    #if not mask.all():
+    mask = torch.logical_or(rho_log_true.abs() > 1e30, torch.isnan(rho_log_true))
+    if mask.any():
+        rho_log_true[mask] = 1e30
+    #rho_log_true = torch.log(rho_true.abs())
+    loss_rho = ((rho_log_nn - rho_log_true) ** 2).mean()
+
+    return loss_xe, args.rho_loss_weight * loss_rho
+
+def evaluate_fpe(dataloader, model, args, optimizer=None, mode="val"):
+
+    if mode == "train" and optimizer is not None:
+        model.train()
+    elif mode == "val":
+        model.eval()
+    else:
+        raise NotImplemented('Mode not defined')
+
+    total_loss_fpe = 0
+    total_loss_mc = 0
+    system = Car(args)
+    #dt = args.dt_sim * args.factor_pred
+
+    for batch, (u_params, xref0, t, density_map, xref_traj, uref_traj) in enumerate(dataloader):
+        # u_params = u_params.to(args.device)
+        # xref0 = xref0.to(args.device)
+        # xref_traj = xref_traj.to(args.device)
+        # uref_traj = uref_traj.to(args.device)
+        #t_vec = t_vec[0]#.to(args.device)
+        i = torch.randint(0, t.shape[1], (1,)).item()
+        bs = t.shape[0]
+        # if batch % 10 == 0:
+        #     print("batch%d" % batch)
+
+        for s in ["MC", "FPE"]:
+            iter_loss = torch.tensor([0.]).to(args.device)
+            #for i, t in enumerate(t_vec):
+            if s == "FPE":
+                # compute loss of FPE
+                xe_t = system.sample_xe(bs)
+                # xe_t = xe_t.to(args.device)
+                x_t = (xe_t + xref_traj[:, :, [i]])
+
+                f = system.f_func(x_t, xref_traj[:, :, [i]], uref_traj[:, :, [i]], noise=False)
+                divf = system.divf_func(x_t, xref_traj[:, :, [i]], uref_traj[:, :, [i]])
+
+                input, input_map = get_input_tensors(u_params, xref0, xe_t, t[:, i], args)
+                input = input.to(args.device)
+                input.requires_grad = True
+                rho_nn = model(input)
+                loss_fpe = loss_function_fpe(rho_nn, input, input_map, f.to(args.device), divf.to(args.device))
+                iter_loss += loss_fpe
+            else:
+                # compute loss of mc comparison
+                binpos_mc, xe_mc = sample_binpos(bs, args.bin_number, args.bin_wide)
+                k = torch.arange(0, bs)
+                rho_mc = density_map[k, binpos_mc[k, 0], binpos_mc[k, 1], binpos_mc[k, 2], binpos_mc[k, 3], i].to(args.device)
+                # xe_mc = xe_mc.to(args.device)
+                input, _ = get_input_tensors(u_params, xref0, xe_mc, t[:, i], args)
+                input = input.to(args.device)
+                rho_nn = model(input)
+                loss_mc = loss_function_fpemc(rho_nn, rho_mc)
+                iter_loss += loss_mc
+
+            #iter_loss = 1e4 * iter_loss / len(t_vec)
+            if s == "FPE":
+                total_loss_mc += loss_fpe.item()
+            else:
+                total_loss_fpe += loss_mc.item()
+            if mode == "train":
+                optimizer.zero_grad()
+                iter_loss.backward()
+                optimizer.step()
+    total_loss = {
+        "loss_fpe": 1e3 * total_loss_fpe / len(dataloader),
+        "loss_mc": 1e5 * total_loss_mc / len(dataloader)
+    }
+    return total_loss
+
+def loss_function_fpe(rho_nn, input, input_map, f, divf):
+    drhodinput = torch.autograd.grad(rho_nn.sum(), input, create_graph=True)[0]
+    drhodt = drhodinput[:, input_map["t"]]
+    drhodx = drhodinput[:, input_map["xe0"]]
+    ddrhodxdinput = torch.autograd.grad(drhodx.sum(), input, create_graph=True)[0]
+    ddrhodxdx = ddrhodxdinput[:, input_map["xe0"]].sum(dim=1)
+    dfrhodx = (f.squeeze(-1) * drhodx).sum(dim=1) + divf * rho_nn.squeeze(-1)
+
+    loss_fpe = ((drhodt + dfrhodx - ddrhodxdx) ** 2).mean()
+    return loss_fpe
+
+def loss_function_fpemc(rho_nn, rho_mc):
+    loss_mc = ((rho_nn.squeeze(-1) - rho_mc) ** 2).mean()
+    return loss_mc
 
 if __name__ == "__main__":
     args = hyperparams.parse_args()
@@ -29,18 +177,26 @@ if __name__ == "__main__":
 
         train_dataloader, validation_dataloader = load_dataloader(args)
         args = load_args(config, args)
-        model, optimizer = load_nn(len(train_dataloader.dataset.data[0][0]), len(train_dataloader.dataset.data[0][1]),
-                                   args)
+        model, optimizer = load_nn(train_dataloader.dataset.num_inputs, train_dataloader.dataset.num_outputs, args)
+            #len(train_dataloader.dataset.data[0][0]), len(train_dataloader.dataset.data[0][1]), args)
 
         patience = 0
         test_loss_best = float('Inf')
         test_loss = []
         train_loss = []
         for epoch in range(args.epochs):
-            train_loss.append(evaluate(train_dataloader, model, args, optimizer=optimizer, mode="train"))
-            test_loss.append(evaluate(validation_dataloader, model, args, mode="val"))
-            print(f"Epoch {epoch},    Train loss: {(train_loss[-1]['loss']):.3f}  (x: {(train_loss[-1]['loss_xe']):.5f}),    Test loss: {(test_loss[-1]['loss']):.5f}  (x: {(test_loss[-1]['loss_xe']):.5f})")
+            if args.equation == "LE":
+                loss_train = evaluate_le(train_dataloader, model, args, optimizer=optimizer, mode="train")
+                loss_test = evaluate_le(validation_dataloader, model, args, mode="val")
+                print(f"Epoch {epoch},    Train loss: {(loss_train['loss']):.3f}  (x: {(loss_train['loss_xe']):.5f}),    Test loss: {(loss_test['loss']):.5f}  (x: {(loss_test['loss_xe']):.5f})")
+            else:
+                loss_train = evaluate_fpe(train_dataloader, model, args, optimizer=optimizer, mode="train")
+                loss_test = evaluate_fpe(validation_dataloader, model, args, mode="val")
+                print(f"Epoch {epoch},    Train loss fpe: {(loss_train['loss_fpe']):.5f}  (mc: {(loss_train['loss_mc']):.6f}),    Test loss fpe: {(loss_test['loss_fpe']):.5f}  (mc: {(loss_test['loss_mc']):.6f})")
 
+
+            train_loss.append(loss_train)
+            test_loss.append(loss_test)
             # if test_loss[-1]["loss"] > test_loss_best:
             #     patience += 1
             # else:

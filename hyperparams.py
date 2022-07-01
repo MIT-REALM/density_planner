@@ -14,11 +14,12 @@ def parse_args():
     parser.add_argument('--random_seed', type=int, default=1)
 
     # data generation
-    parser.add_argument('--samplesX_rawdata', type=int, default=20)
+    parser.add_argument('--samplesX_rawdata', type=int, default=500) #20)
     parser.add_argument('--samplesT_rawdata', type=int, default=20)
-    parser.add_argument('--size_rawdata', type=int, default=500)
+    parser.add_argument('--size_rawdata', type=int, default=100)
     parser.add_argument('--iterations_rawdata', type=int, default=500)
-
+    parser.add_argument('--bin_number', type=int, default=[10, 10, 5, 5])
+    parser.add_argument('--bin_wide', type=int, default=0.2)
 
     # processing
     parser.add_argument('--gpus', type=str, default="3")
@@ -26,7 +27,7 @@ def parse_args():
     parser.add_argument('--num_jobs', type=int, default=1)
 
     # data paths
-    parser.add_argument('--path_rawdata', type=str, default="data/rawdata/2022-06-17_filesVal_discr10/")  # directory for the density data
+    parser.add_argument('--path_rawdata', type=str, default="data/rawdata/2022-06-30_filesMC_discr5_bins20_4Dmap/Train")  # directory for the density data
     parser.add_argument('--path_dataset', type=str, default="data/dataset/")  # directory for the density data
     parser.add_argument('--path_nn', type=str, default="data/trained_nn/")  # directory for saving and loading the trained NN
     parser.add_argument('--path_traj0', type=str, default="data/initial_traj/")
@@ -34,16 +35,15 @@ def parse_args():
     parser.add_argument('--nameend_rawdata', type=str,
                         default=".pickle")  # ending of the file used for creating the data set / dataloader
     parser.add_argument('--nameend_TrainDataset', type=str,
-                        default="files54_Train_discr10.pickle")
+                        default="files34_Train_mc.pickle")
     parser.add_argument('--nameend_ValDataset', type=str,
-                        default="files13_Val_discr10.pickle")
+                        default="files5_Val_mc.pickle")
     parser.add_argument('--nameend_nn', type=str,
                         default="CAR_dt10ms_Nsim100_Nu10_iter1000.pickle")
     parser.add_argument('--name_pretrained_nn', type=str,
                         default="data/trained_nn/2022-06-17-16-09-02_NN_discr5_moreD5l_lr0.0001_numHidd5_sizeHidd100_rhoLoss0.01.pt")
                         #default="data/trained_nn/2022-06-20-08-33-00_NN_discr10_middleD4l_lr0.0001_numHidd4_sizeHidd100_rhoLoss0.01.pt")
     #2022-05-26-16-19-09_NN_normal_lr0.0001_numHidd4_sizeHidd100_rhoLoss0.01.pt") #
-    parser.add_argument('--load_pretrained_nn', type=bool, default=False)
     #parser.add_argument('--load_dataset', type=bool, default=True)
 
     # plot
@@ -59,19 +59,26 @@ def parse_args():
 
     # NN parameter
     parser.add_argument('--run_name', type=str, default="all")
+    parser.add_argument('--load_pretrained_nn', type=bool, default=False)
+    parser.add_argument('--equation', type=str, default="FPE")
+    parser.add_argument('--batch_size', type=int, default=512) # 256
     parser.add_argument('--device', type=str, default="cpu")
     parser.add_argument('--nn_type', type=str, default="MLP")
-    parser.add_argument('--batch_size', type=int, default=256) # 256
     parser.add_argument('--epochs', type=int, default=1000)
-    parser.add_argument('--activation', type=str, default="relu")
+    parser.add_argument('--activation', type=str, default="tanh")
     parser.add_argument('--number_units', type=int, default=100)
     parser.add_argument('--number_layers', type=int, default=5)
-    parser.add_argument('--rho_loss_weight', type=float, default=0.01)
     parser.add_argument('--optimizer', type=str, default="Adam") # Adam or LFBGS
     parser.add_argument('--learning_rate', type=float, default=0.0001)  # 2 e-5
     parser.add_argument('--lr_step', type=int, default=1)
     parser.add_argument('--weight_decay', type=float, default=0)  #1e-6 L2 regularization
-    #parser.add_argument('--patience', type=int, default=0)
+
+    # FPE NN
+    parser.add_argument('--fpe_iterations', type=int, default=10000) # 256
+    #parser.add_argument('--fpe_batch_size', type=int, default=256)
+
+    # LE NN
+    parser.add_argument('--rho_loss_weight', type=float, default=0.01)
 
     # motion planning options
     parser.add_argument('--mp_name', type=str, default="discr5")
