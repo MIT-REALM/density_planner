@@ -127,10 +127,14 @@ def get_nn_prediction(model, xe0, xref0, t, u_params, args):
     #     u_params = torch.cat((u_params[:, :], torch.zeros(u_params.shape[0], 10 - u_params.shape[1])), 1)
 
     input_tensor, _ = get_input_tensors(u_params.flatten(), xref0, xe0, t, args)
-    output_map, num_outputs = load_outputmap(dim_x=xe0.shape[1])
+    output_map, num_outputs = load_outputmap(dim_x=xe0.shape[1], args=args)
 
     #with torch.no_grad():
     input = input_tensor.to(args.device)
     output = model(input)
-    xe, rho = get_output_variables(output, output_map, type='exp')
-    return xe.unsqueeze(-1), rho.unsqueeze(-1).unsqueeze(-1)
+    if args.equation == "LE":
+        xe, rho = get_output_variables(output, output_map, type='exp')
+        return xe.unsqueeze(-1), rho.unsqueeze(-1).unsqueeze(-1)
+    else:
+        rho = output.unsqueeze(-1)
+        return xe0.unsqueeze(-1), rho

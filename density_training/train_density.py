@@ -90,53 +90,50 @@ def evaluate_fpe(dataloader, model, args, optimizer=None, mode="val"):
         # xref_traj = xref_traj.to(args.device)
         # uref_traj = uref_traj.to(args.device)
         #t_vec = t_vec[0]#.to(args.device)
-        i = torch.randint(0, t.shape[1], (1,)).item()
         bs = t.shape[0]
-        # if batch % 10 == 0:
-        #     print("batch%d" % batch)
+        k = torch.arange(0, bs)
+        for j in range(10):
+            xe_t = system.sample_xe(bs)
+            binpos_mc, xe_mc = sample_binpos(bs, args.bin_number, args.bin_wide)
+            for jj in range(10):
+                i = torch.randint(0, t.shape[1], (1,)).item()
+                for s in ["MC", "FPE"]:
+                    iter_loss = torch.tensor([0.]).to(args.device)
+                    #for i, t in enumerate(t_vec):
+                    if s == "FPE":
+                        # compute loss of FPE
+                        # xe_t = xe_t.to(args.device)
+                        x_t = (xe_t + xref_traj[:, :, [i]])
 
-        for s in ["MC", "FPE"]:
-            iter_loss = torch.tensor([0.]).to(args.device)
-            #for i, t in enumerate(t_vec):
-            if s == "FPE":
-                # compute loss of FPE
-                xe_t = system.sample_xe(bs)
-                # xe_t = xe_t.to(args.device)
-                x_t = (xe_t + xref_traj[:, :, [i]])
+                        f = system.f_func(x_t, xref_traj[:, :, [i]], uref_traj[:, :, [i]], noise=False)
+                        divf = system.divf_func(x_t, xref_traj[:, :, [i]], uref_traj[:, :, [i]])
 
-                f = system.f_func(x_t, xref_traj[:, :, [i]], uref_traj[:, :, [i]], noise=False)
-                divf = system.divf_func(x_t, xref_traj[:, :, [i]], uref_traj[:, :, [i]])
+                        input, input_map = get_input_tensors(u_params, xref0, xe_t, t[:, i], args)
+                        input = input.to(args.device)
+                        input.requires_grad = True
+                        rho_nn = model(input)
+                        loss_fpe = loss_function_fpe(rho_nn, input, input_map, f.to(args.device), divf.to(args.device))
+                        iter_loss += loss_fpe
+                    else:
+                        # compute loss of mc comparison
+                        rho_mc = density_map[k, binpos_mc[k, 0], binpos_mc[k, 1], binpos_mc[k, 2], binpos_mc[k, 3], i].to(args.device)
+                        # xe_mc = xe_mc.to(args.device)
+                        input, _ = get_input_tensors(u_params, xref0, xe_mc, t[:, i], args)
+                        input = input.to(args.device)
+                        rho_nn = model(input)
+                        loss_mc = loss_function_fpemc(rho_nn, rho_mc)
+                        iter_loss += loss_mc
 
-                input, input_map = get_input_tensors(u_params, xref0, xe_t, t[:, i], args)
-                input = input.to(args.device)
-                input.requires_grad = True
-                rho_nn = model(input)
-                loss_fpe = loss_function_fpe(rho_nn, input, input_map, f.to(args.device), divf.to(args.device))
-                iter_loss += loss_fpe
-            else:
-                # compute loss of mc comparison
-                binpos_mc, xe_mc = sample_binpos(bs, args.bin_number, args.bin_wide)
-                k = torch.arange(0, bs)
-                rho_mc = density_map[k, binpos_mc[k, 0], binpos_mc[k, 1], binpos_mc[k, 2], binpos_mc[k, 3], i].to(args.device)
-                # xe_mc = xe_mc.to(args.device)
-                input, _ = get_input_tensors(u_params, xref0, xe_mc, t[:, i], args)
-                input = input.to(args.device)
-                rho_nn = model(input)
-                loss_mc = loss_function_fpemc(rho_nn, rho_mc)
-                iter_loss += loss_mc
-
-            #iter_loss = 1e4 * iter_loss / len(t_vec)
-            if s == "FPE":
+                    #iter_loss = 1e4 * iter_loss / len(t_vec)
+                    if mode == "train":
+                        optimizer.zero_grad()
+                        iter_loss.backward()
+                        optimizer.step()
                 total_loss_mc += loss_fpe.item()
-            else:
                 total_loss_fpe += loss_mc.item()
-            if mode == "train":
-                optimizer.zero_grad()
-                iter_loss.backward()
-                optimizer.step()
     total_loss = {
-        "loss_fpe": 1e3 * total_loss_fpe / len(dataloader),
-        "loss_mc": 1e5 * total_loss_mc / len(dataloader)
+        "loss_fpe": total_loss_fpe / len(dataloader),
+        "loss_mc": total_loss_mc / len(dataloader)
     }
     return total_loss
 
@@ -168,8 +165,13 @@ if __name__ == "__main__":
     for i, config in enumerate(configs):
 
         print(f"_____Configuration {i}:______")
-        name = run_name + f", learning_rate={config['learning_rate']}, num_hidden={config['num_hidden']}, size_hidden={config['size_hidden']}, weight_decay={config['weight_decay']}, optimizer={config['optimizer']}, rho_loss_weight={config['rho_loss_weight']}"
-        short_name = run_name + f"_lr{config['learning_rate']}_numHidd{config['num_hidden']}_sizeHidd{config['size_hidden']}_rhoLoss{config['rho_loss_weight']}"
+        if args.equation == "LE":
+            name = run_name + f", learning_rate={config['learning_rate']}, num_hidden={config['num_hidden']}, size_hidden={config['size_hidden']}, weight_decay={config['weight_decay']}, optimizer={config['optimizer']}, rho_loss_weight={config['rho_loss_weight']}"
+            short_name = run_name + f"_lr{config['learning_rate']}_numHidd{config['num_hidden']}_sizeHidd{config['size_hidden']}_rhoLoss{config['rho_loss_weight']}"
+        else:
+            name = run_name + f", fpe, learning_rate={config['learning_rate']}, lrstep{args.lr_step}, lrstepe{args.lr_step_epoch}, num_hidden={config['num_hidden']}, size_hidden={config['size_hidden']}, weight_decay={config['weight_decay']}"
+            short_name = run_name + f"_fpe_lr{config['learning_rate']}_lrstep{args.lr_step}_lrstepe{args.lr_step_epoch}_numHidd{config['num_hidden']}_sizeHidd{config['size_hidden']}"
+
         nn_name = args.path_nn + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_NN_" + short_name + '.pt'
         lossPlot_name = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_lossCurve_" + short_name + ".jpg"
         maxErrorPlot_name = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_maxErrorCurve_" + short_name + ".jpg"
@@ -204,7 +206,7 @@ if __name__ == "__main__":
             #     test_loss_best = test_loss[-1]["loss"]
             # if args.patience and patience >= args.patience:
             #     break
-            if epoch > 2000 and epoch % 1000 == 19:
+            if epoch % args.lr_step_epoch == args.lr_step_epoch - 1: #epoch > 2000 and
                 for g in optimizer.param_groups:
                     g['lr'] = g['lr'] / args.lr_step
 
@@ -222,7 +224,7 @@ if __name__ == "__main__":
                 #plot_losscurves(result, "t%d_" % (epoch) + short_name, args, filename=maxErrorPlot_name, type="maxError")
                 plot_losscurves(result, "t%d_" % (epoch) + short_name, args, filename=lossPlot_name)
 
-            if epoch % 100 == 99:
+            if epoch % 50 == 49:
                 torch.save([model.state_dict(), args, result], nn_name)
         #print(f"Best test loss after epoch {epoch}: {test_loss_best} \n")
         torch.save([model.state_dict(), args, result], nn_name)

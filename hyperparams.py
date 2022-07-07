@@ -14,12 +14,12 @@ def parse_args():
     parser.add_argument('--random_seed', type=int, default=1)
 
     # data generation
-    parser.add_argument('--samplesX_rawdata', type=int, default=500) #20)
+    parser.add_argument('--samplesX_rawdata', type=int, default=20)
     parser.add_argument('--samplesT_rawdata', type=int, default=20)
     parser.add_argument('--size_rawdata', type=int, default=100)
     parser.add_argument('--iterations_rawdata', type=int, default=500)
     parser.add_argument('--bin_number', type=int, default=[10, 10, 5, 5])
-    parser.add_argument('--bin_wide', type=int, default=0.2)
+    parser.add_argument('--bin_width', type=int, default=0.2)
 
     # processing
     parser.add_argument('--gpus', type=str, default="3")
@@ -35,13 +35,13 @@ def parse_args():
     parser.add_argument('--nameend_rawdata', type=str,
                         default=".pickle")  # ending of the file used for creating the data set / dataloader
     parser.add_argument('--nameend_TrainDataset', type=str,
-                        default="files34_Train_mc.pickle")
+                        default="files104_Train_mc.pickle")
     parser.add_argument('--nameend_ValDataset', type=str,
-                        default="files5_Val_mc.pickle")
+                        default="files19_Val_mc.pickle")
     parser.add_argument('--nameend_nn', type=str,
                         default="CAR_dt10ms_Nsim100_Nu10_iter1000.pickle")
     parser.add_argument('--name_pretrained_nn', type=str,
-                        default="data/trained_nn/2022-06-17-16-09-02_NN_discr5_moreD5l_lr0.0001_numHidd5_sizeHidd100_rhoLoss0.01.pt")
+                        default="data/trained_nn/2022-07-02-06-39-32_NN_fpe_fpe_lr1e-07_lrstep2_lrstepe15_numHidd5_sizeHidd150.pt")
                         #default="data/trained_nn/2022-06-20-08-33-00_NN_discr10_middleD4l_lr0.0001_numHidd4_sizeHidd100_rhoLoss0.01.pt")
     #2022-05-26-16-19-09_NN_normal_lr0.0001_numHidd4_sizeHidd100_rhoLoss0.01.pt") #
     #parser.add_argument('--load_dataset', type=bool, default=True)
@@ -64,13 +64,14 @@ def parse_args():
     parser.add_argument('--batch_size', type=int, default=512) # 256
     parser.add_argument('--device', type=str, default="cpu")
     parser.add_argument('--nn_type', type=str, default="MLP")
-    parser.add_argument('--epochs', type=int, default=1000)
+    parser.add_argument('--epochs', type=int, default=200)
     parser.add_argument('--activation', type=str, default="tanh")
-    parser.add_argument('--number_units', type=int, default=100)
+    parser.add_argument('--number_units', type=int, default=150)
     parser.add_argument('--number_layers', type=int, default=5)
     parser.add_argument('--optimizer', type=str, default="Adam") # Adam or LFBGS
-    parser.add_argument('--learning_rate', type=float, default=0.0001)  # 2 e-5
-    parser.add_argument('--lr_step', type=int, default=1)
+    parser.add_argument('--learning_rate', type=float, default=1e-7)  # 2 e-5
+    parser.add_argument('--lr_step', type=int, default=2)
+    parser.add_argument('--lr_step_epoch', type=int, default=15)
     parser.add_argument('--weight_decay', type=float, default=0)  #1e-6 L2 regularization
 
     # FPE NN

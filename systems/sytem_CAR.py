@@ -36,7 +36,7 @@ class Car(ControlAffineSystem):
 
         # limits for visualization and storage of density values
         if args is not None:
-            bin_lim = torch.tensor(args.bin_number) * args.bin_wide / 2
+            bin_lim = torch.tensor(args.bin_number) * args.bin_width / 2
             self.XE_MIN = torch.tensor([-bin_lim[0], -bin_lim[1], -bin_lim[2], -bin_lim[3]]).reshape(1, -1, 1)
             self.XE_MAX = torch.tensor([bin_lim[0], bin_lim[1], bin_lim[2], bin_lim[3]]).reshape(1, -1, 1)
         else:

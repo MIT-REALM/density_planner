@@ -7,6 +7,7 @@ from systems.utils import jacobian
 import math
 from plots.plot_functions import plot_scatter, plot_density_heatmap, plot_ref
 import numpy as np
+import matplotlib.pyplot as plt
 
 class ControlAffineSystem(ABC):
     """
@@ -369,8 +370,14 @@ class ControlAffineSystem(ABC):
         else:
             return uref_traj, xref_traj
 
-    def sample_xe(self, sample_size):
-        xe = torch.rand(sample_size, self.DIM_X, 1) * (self.XE_MAX - self.XE_MIN) + self.XE_MIN
+    def sample_xe(self, param):
+        if isinstance(param, int):
+            xe = torch.rand(param, self.DIM_X, 1) * (self.XE_MAX - self.XE_MIN) + self.XE_MIN
+        else:
+            args = param
+            xe_min = self.XE_MIN + 0.5 * args.bin_width
+            xe_max = self.XE_MAX - 0.5 * args.bin_width
+            xe = get_mesh_pos(args.bin_number).unsqueeze(-1) * (xe_max - xe_min) + xe_min
         return xe
 
     def sample_x0(self, xref0, sample_size):
@@ -450,7 +457,7 @@ class ControlAffineSystem(ABC):
             else:
                 rho0 = torch.ones(x0.shape[0], 1, 1)  # equal initial density
             x_traj, rho_traj = self.compute_density(x0, xref_traj, uref_traj, rho0, xref_traj.shape[2],
-                                                      args.dt_sim, cutting=True, log_density=log_density, getDensity=getDensity)  # compute x and rho trajectories
+                                                      args.dt_sim, cutting=True, log_density=log_density, computeDensity=getDensity)  # compute x and rho trajectories
             if rho_traj.dim() < 2 or x_traj.shape[2] < 0.8 * args.N_sim:  # start again if x trajectories shorter than N_sim
                 continue
             valid = True
@@ -464,6 +471,79 @@ class ControlAffineSystem(ABC):
             plot_ref(xref_traj, uref_traj, 'test', args, self, x_traj=xe_traj + xref_traj, t=t, include_date=True)
         return xref_traj[:, :, ::args.factor_pred], rho_traj[:, :, ::args.factor_pred], uref_traj[:, :, ::args.factor_pred], \
                u_params, xe_traj[:, :, ::args.factor_pred], t[::args.factor_pred]
+
+    def solve_fpe(self):
+        dt = 1e-3
+        nt = 1e4
+        Lx = 2 * np.pi
+        Ly = 2 * np.pi
+        nx = 64
+        ny = 64
+        dx = Lx / nx
+        dy = Ly / ny
+        nu = 1e-1
+
+        x, y = torch.meshgrid(torch.arange(0, Lx, dx), torch.arange(0, Ly, dy))
+        u = torch.exp(-2 * (x - Lx / 2) ** 2 - 2 * (y - Ly / 2) ** 2)
+
+        # wavenumbers for derivative
+        kkx = torch.cat((torch.arange(0, nx / 2 + 1), torch.arange(- nx / 2 + 1, 0)))
+        kky = torch.cat((torch.arange(0, ny / 2 + 1), torch.arange(- ny / 2 + 1, 0)))
+        kx, ky = torch.meshgrid(kkx, kky)
+        dealias = torch.logical_and(torch.abs(kx) < 2 / 3 * nx / 2, torch.abs(ky) < 2 / 3 * ny / 2)
+        a = torch.zeros(3, 3)
+        a[0, 0] = 1 / 3
+        a[1, 0] = -1
+        a[1, 1] = 2
+        a[2, 0] = 0
+        a[2, 1] = 3 / 4
+        a[2, 2] = 1 / 4
+
+        u_hat = torch.fft.fft2(u)
+        u_hat = u_hat * dealias
+
+        t = 0
+
+        for istep in range(int(nt)):
+
+            # numerical solution
+            uo_hat = u_hat
+
+            F1u = self.rhs_fpe(u_hat, dt, kx, ky, dealias, nu)
+            u_hat = uo_hat + dt * a[0, 0] * F1u
+
+            F2u = self.rhs_fpe(u_hat, dt, kx, ky, dealias, nu)
+            u_hat = uo_hat + dt * (a[1, 0] * F1u + a[1, 1] * F2u)
+
+            F3u = self.rhs_fpe(u_hat, dt, kx, ky, dealias, nu)
+            u_hat = uo_hat + dt * (a[2, 0] * F1u + a[2, 1] * F2u + a[2, 2] * F3u)
+
+            u = torch.real(torch.fft.ifft2(u_hat))
+            t = t + dt
+
+            if istep > 9000 and istep % 100 == 0:
+                plt.imshow(u)
+                plt.show()
+
+    def rhs_fpe(self, u_hat, dt, kx, ky, dealias, nu):
+        # to physical space
+        u_hat = u_hat * dealias
+        u = torch.real(torch.fft.ifft2(u_hat))
+
+        # compute u ^ 2 and back to Fourier
+        u2 = u ** 2
+        u2_hat = torch.fft.fft2(u2)
+
+        # compute derivatives of u ^ 2 in Fourier
+        u2x_hat = 1j * kx * u2_hat
+        u2y_hat = 1j * ky * u2_hat
+
+        # compute RHS
+        rhs_hat = -u2x_hat - u2y_hat - nu * (kx ** 2 + ky ** 2) * u_hat
+
+        # avoid contamination by high frequencies
+        rhs_hat = rhs_hat * dealias
+        return rhs_hat
 
     @abstractmethod
     def a_func(self, x: torch.Tensor) -> torch.Tensor:
