@@ -21,8 +21,8 @@ class Car(ControlAffineSystem):
     DIM_X = 4
     DIM_U = 2
     DIST = torch.zeros(1, 4, 2)
-    DIST[0, 0, 0] = 1
-    DIST[0, 1, 1] = 1
+    # DIST[0, 0, 0] = 0.4
+    # DIST[0, 1, 1] = 0.4
 
     def __init__(self, args=None):
         self.init_limits(args)
@@ -35,13 +35,13 @@ class Car(ControlAffineSystem):
         self.X_MAX = torch.tensor([50., 50., 3 * np.pi - 0.2, 10]).reshape(1, -1, 1)
 
         # limits for visualization and storage of density values
-        if args is not None:
-            bin_lim = torch.tensor(args.bin_number) * args.bin_width / 2
-            self.XE_MIN = torch.tensor([-bin_lim[0], -bin_lim[1], -bin_lim[2], -bin_lim[3]]).reshape(1, -1, 1)
-            self.XE_MAX = torch.tensor([bin_lim[0], bin_lim[1], bin_lim[2], bin_lim[3]]).reshape(1, -1, 1)
-        else:
-            self.XE_MIN = torch.tensor([-2, -2, -1, -1]).reshape(1, -1, 1)
-            self.XE_MAX = torch.tensor([2, 2, 1, 1]).reshape(1, -1, 1)
+        # if args is not None:
+        #     bin_lim = torch.tensor(args.bin_number) * args.bin_width / 2
+        #     self.XE_MIN = torch.tensor([-bin_lim[0], -bin_lim[1], -bin_lim[2], -bin_lim[3]]).reshape(1, -1, 1)
+        #     self.XE_MAX = torch.tensor([bin_lim[0], bin_lim[1], bin_lim[2], bin_lim[3]]).reshape(1, -1, 1)
+        # else:
+        self.XE_MIN = torch.tensor([-2, -2, -1, -1]).reshape(1, -1, 1)
+        self.XE_MAX = torch.tensor([2, 2, 1, 1]).reshape(1, -1, 1)
 
         # actuator limits
         self.UREF_MIN = torch.tensor([-3., -3.]).reshape(1, -1, 1)
@@ -56,8 +56,8 @@ class Car(ControlAffineSystem):
         else:
             self.XREF0_MIN = torch.tensor([-10., -30., 0, 1]).reshape(1, -1, 1)
             self.XREF0_MAX = torch.tensor([10., 30., 2 * np.pi, 8]).reshape(1, -1, 1)
-        self.XE0_MIN = 0.5 * self.XE_MIN
-        self.XE0_MAX = 0.5 * self.XE_MAX
+        self.XE0_MIN = 0.2 * self.XE_MIN
+        self.XE0_MAX = 0.2 * self.XE_MAX
 
         # limits for trajectory validity for motion planning
         self.X_MIN_MP = torch.tensor([-9.9, -29.9, -np.pi + 0.2, 0.1]).reshape(1, -1, 1)

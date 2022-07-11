@@ -13,8 +13,29 @@ from motion_planning.utils import pos2gridpos, traj2grid
 from matplotlib import cm
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 
+def plot_density_heatmap_fpe(name, rho, args, save=True, show=True, filename=None,
+                         include_date=False, folder=None):
+    plt.imshow(rho)
+    plt.title(name)
+    plt.ylabel("y-yref")
+    plt.xlabel("x-xref")
+    if save:
+        if folder is None:
+            folder = args.path_plot_densityheat
+        if filename is None:
+            if include_date:
+                filename_new = datetime.now().strftime(
+                    "%Y-%m-%d-%H-%M-%S") + "_heatmapFPE_" + 'randomSeed%d_' % args.random_seed + name + ".jpg"
+            else:
+                filename_new = "heatmapFPE_" + 'randomSeed%d_' % args.random_seed + name + ".jpg"
+            plt.savefig(folder + filename_new)
+        else:
+            plt.savefig(args.path_plot_densityheat + filename)
+    if show:
+        plt.show()
+    plt.clf()
 
-def plot_density_heatmap(name, args, xe_dict, rho_dict, save=True, show=True, filename=None,
+def plot_density_heatmap(name, args, xe_dict, rho_dict, system=None, save=True, show=True, filename=None,
                          include_date=False, folder=None, log_density=False):
     density_mean = {}
     num_plots = len(xe_dict)
@@ -23,7 +44,7 @@ def plot_density_heatmap(name, args, xe_dict, rho_dict, save=True, show=True, fi
 
     for key in xe_dict:
         density_mean[key], extent = get_density_map(xe_dict[key][:, :2, 0], rho_dict[key][:, 0, 0], args, type=key,
-                                                    log_density=log_density)
+                                                    log_density=log_density, system=system)
         mask = density_mean[key] > 0
         if density_mean[key][mask].min() < min_rho:
             min_rho = density_mean[key][mask].min()
@@ -40,7 +61,10 @@ def plot_density_heatmap(name, args, xe_dict, rho_dict, save=True, show=True, fi
             axis = ax[i]
             ax[0].set_ylabel("y-yref")
         cmap = plt.cm.get_cmap('magma').reversed()
-        im = axis.imshow(density_mean[key].T, extent=extent[0]+extent[1], origin='lower', cmap=cmap,
+        if key == "FPE":
+            im = axis.imshow(density_mean[key].T, extent=extent[0] + extent[1], origin='lower', cmap=cmap)
+        else:
+            im = axis.imshow(density_mean[key].T, extent=extent[0]+extent[1], origin='lower', cmap=cmap,
                          norm=pltcol.LogNorm(vmin=min_rho, vmax=max_rho))#vmin=plot_limits[0], vmax=plot_limits[1])
         fig.colorbar(im, ax=axis, orientation='horizontal', format="%.0e")
         axis.set_title("%s Prediction" % (key))

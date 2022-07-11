@@ -8,6 +8,7 @@ from plots.plot_functions import plot_density_heatmap, plot_ref
 from multiprocessing.pool import Pool
 import time
 import os
+from data_generation.pde_solver import Solver_PDE
 
 def compute_data(iteration_number, samples_x, system, args,samples_t=None, save=True, plot=True):
     results_all = []
@@ -119,6 +120,7 @@ def compute_fpedata(iteration_number, sample_size, samples_t, system, args, save
     results_all = []
     bins = args.bin_number
     rho_mc = torch.ones(sample_size) / sample_size
+    solver = Solver_PDE(system, args)
 
     for j in range(iteration_number[0]):
         for i in range(iteration_number[1]):
@@ -130,10 +132,8 @@ def compute_fpedata(iteration_number, sample_size, samples_t, system, args, save
                                                             uref_traj)  # cut trajectory where state limits are exceeded
                 if xref_traj.shape[2] > 0.5 * args.N_sim:  # start again if reference trajectory is shorter than 0.9 * N_sim
                     break
-            x0 = system.sample_x0(xref0, sample_size)
-            solve_fpe(u_params, xref)
+            solver.solve_fpe(uref_traj, xref_traj)
 
-            xe_mc = x_mc - xref_traj
             indizes = torch.randint(0, xref_traj.shape[2]-1, (int(samples_t * 1.2),))
             indizes = list(set(indizes.tolist()))[:samples_t]
             while len(indizes) < samples_t:
@@ -180,7 +180,7 @@ if __name__ == "__main__":
     samples_t = 50 #args.samplesT_rawdata
     iteration_number = [args.iterations_rawdata, args.size_rawdata]
     system = Car(args)
-    system.solve_fpe()
+
     random_seed = False
     print("Starting data generation")
     if random_seed:
@@ -189,8 +189,11 @@ if __name__ == "__main__":
         args.random_seed = None
     if args.equation == "LE":
         compute_data(iteration_number, samples_x, system, args, samples_t=samples_t, save=True, plot=False)
-    else:
+    elif args.equation == "FPE-MC":
         compute_mcdata(iteration_number, sample_size, samples_t, system, args)
+    elif args.equation == "FPE-Fourier":
+        with torch.no_grad():
+            compute_fpedata(iteration_number, sample_size, samples_t, system, args)
 
     # else:
     #     input_list = []

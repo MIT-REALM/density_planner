@@ -117,11 +117,11 @@ def listDict2dictList(list_dict):
     return dict_list
 
 
-def get_density_map(x, rho, args, log_density=False, type="LE", bins=None, bin_width=None):
+def get_density_map(x, rho, args, log_density=False, type="LE", bins=None, bin_width=None, system=None):
     if bins is None:
         bins = args.bin_number[:x.shape[1]]
     if bin_width is None:
-        bin_width = args.bin_width
+        bin_width = (system.XE_MAX - system.XE_MIN)[0, :x.shape[1], 0] / bins
 
     if type != "MC" and log_density:
         rho -= rho.max()
@@ -129,7 +129,7 @@ def get_density_map(x, rho, args, log_density=False, type="LE", bins=None, bin_w
     else:
         rho /= rho.max()
 
-    range_bins = [[-b * bin_width / 2, b * bin_width / 2] for b in bins]
+    range_bins = [[-bins[i] * bin_width[i] / 2, bins[i] * bin_width[i] / 2] for i in range(len(bins))]
     density_mean, _ = np.histogramdd(x.numpy(), bins=bins, weights=rho.numpy(), range=range_bins)
     mask = density_mean > 0
     if type != "MC":

@@ -76,6 +76,9 @@ class ControlAffineSystem(ABC):
             f = f + noise
         return f
 
+    def fref_func(self, xref: torch.Tensor, uref: torch.Tensor) -> torch.Tensor:
+        return self.a_func(xref) + torch.bmm(self.b_func(xref).type(torch.FloatTensor), uref)
+
     def dudx_func(self, x: torch.Tensor, xref: torch.Tensor, uref: torch.Tensor) -> torch.Tensor:
         """
         Return the Jacobian of the input at the states x
@@ -140,7 +143,7 @@ class ControlAffineSystem(ABC):
         return x + self.f_func(x, xref, uref) * dt
 
     def get_next_xref(self, xref: torch.Tensor, uref: torch.Tensor, dt) -> torch.Tensor:
-        return xref + (self.a_func(xref) + torch.bmm(self.b_func(xref).type(torch.FloatTensor), uref)) * dt
+        return xref + self.fref_func(xref, uref) * dt
 
     def get_next_rho(self, x: torch.Tensor, xref: torch.Tensor, uref: torch.Tensor, rho: torch.Tensor,
                      dt: int) -> torch.Tensor:
@@ -472,78 +475,7 @@ class ControlAffineSystem(ABC):
         return xref_traj[:, :, ::args.factor_pred], rho_traj[:, :, ::args.factor_pred], uref_traj[:, :, ::args.factor_pred], \
                u_params, xe_traj[:, :, ::args.factor_pred], t[::args.factor_pred]
 
-    def solve_fpe(self):
-        dt = 1e-3
-        nt = 1e4
-        Lx = 2 * np.pi
-        Ly = 2 * np.pi
-        nx = 64
-        ny = 64
-        dx = Lx / nx
-        dy = Ly / ny
-        nu = 1e-1
 
-        x, y = torch.meshgrid(torch.arange(0, Lx, dx), torch.arange(0, Ly, dy))
-        u = torch.exp(-2 * (x - Lx / 2) ** 2 - 2 * (y - Ly / 2) ** 2)
-
-        # wavenumbers for derivative
-        kkx = torch.cat((torch.arange(0, nx / 2 + 1), torch.arange(- nx / 2 + 1, 0)))
-        kky = torch.cat((torch.arange(0, ny / 2 + 1), torch.arange(- ny / 2 + 1, 0)))
-        kx, ky = torch.meshgrid(kkx, kky)
-        dealias = torch.logical_and(torch.abs(kx) < 2 / 3 * nx / 2, torch.abs(ky) < 2 / 3 * ny / 2)
-        a = torch.zeros(3, 3)
-        a[0, 0] = 1 / 3
-        a[1, 0] = -1
-        a[1, 1] = 2
-        a[2, 0] = 0
-        a[2, 1] = 3 / 4
-        a[2, 2] = 1 / 4
-
-        u_hat = torch.fft.fft2(u)
-        u_hat = u_hat * dealias
-
-        t = 0
-
-        for istep in range(int(nt)):
-
-            # numerical solution
-            uo_hat = u_hat
-
-            F1u = self.rhs_fpe(u_hat, dt, kx, ky, dealias, nu)
-            u_hat = uo_hat + dt * a[0, 0] * F1u
-
-            F2u = self.rhs_fpe(u_hat, dt, kx, ky, dealias, nu)
-            u_hat = uo_hat + dt * (a[1, 0] * F1u + a[1, 1] * F2u)
-
-            F3u = self.rhs_fpe(u_hat, dt, kx, ky, dealias, nu)
-            u_hat = uo_hat + dt * (a[2, 0] * F1u + a[2, 1] * F2u + a[2, 2] * F3u)
-
-            u = torch.real(torch.fft.ifft2(u_hat))
-            t = t + dt
-
-            if istep > 9000 and istep % 100 == 0:
-                plt.imshow(u)
-                plt.show()
-
-    def rhs_fpe(self, u_hat, dt, kx, ky, dealias, nu):
-        # to physical space
-        u_hat = u_hat * dealias
-        u = torch.real(torch.fft.ifft2(u_hat))
-
-        # compute u ^ 2 and back to Fourier
-        u2 = u ** 2
-        u2_hat = torch.fft.fft2(u2)
-
-        # compute derivatives of u ^ 2 in Fourier
-        u2x_hat = 1j * kx * u2_hat
-        u2y_hat = 1j * ky * u2_hat
-
-        # compute RHS
-        rhs_hat = -u2x_hat - u2y_hat - nu * (kx ** 2 + ky ** 2) * u_hat
-
-        # avoid contamination by high frequencies
-        rhs_hat = rhs_hat * dealias
-        return rhs_hat
 
     @abstractmethod
     def a_func(self, x: torch.Tensor) -> torch.Tensor:

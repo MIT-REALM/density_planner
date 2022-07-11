@@ -1,4 +1,5 @@
 import argparse
+import torch
 
 
 def parse_args():
@@ -11,15 +12,15 @@ def parse_args():
     parser.add_argument('--dt_sim', type=int, default=0.01)
     parser.add_argument('--N_sim_max', type=int, default=1001)
     parser.add_argument('--factor_pred', type=int, default=10)
-    parser.add_argument('--random_seed', type=int, default=1)
+    parser.add_argument('--random_seed', type=int, default=2)
 
     # data generation
     parser.add_argument('--samplesX_rawdata', type=int, default=20)
     parser.add_argument('--samplesT_rawdata', type=int, default=20)
     parser.add_argument('--size_rawdata', type=int, default=100)
     parser.add_argument('--iterations_rawdata', type=int, default=500)
-    parser.add_argument('--bin_number', type=int, default=[10, 10, 5, 5])
-    parser.add_argument('--bin_width', type=int, default=0.2)
+    parser.add_argument('--bin_number', type=int, default=torch.Tensor([32, 32, 16, 16]).long())
+    #parser.add_argument('--bin_width', type=int, default=0.1) #TO-DO: remove???
 
     # processing
     parser.add_argument('--gpus', type=str, default="3")
@@ -60,7 +61,7 @@ def parse_args():
     # NN parameter
     parser.add_argument('--run_name', type=str, default="all")
     parser.add_argument('--load_pretrained_nn', type=bool, default=False)
-    parser.add_argument('--equation', type=str, default="FPE")
+    parser.add_argument('--equation', type=str, default="FPE_fourier") #LE, FPE_MC, FPE_fourier, FPE_FE
     parser.add_argument('--batch_size', type=int, default=512) # 256
     parser.add_argument('--device', type=str, default="cpu")
     parser.add_argument('--nn_type', type=str, default="MLP")
