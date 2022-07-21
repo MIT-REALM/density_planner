@@ -4,18 +4,15 @@ from systems.utils import get_density_map
 import hyperparams
 from datetime import datetime
 import pickle
-from plots.plot_functions import plot_density_heatmap, plot_ref
-from multiprocessing.pool import Pool
-import time
-import os
-from data_generation.pde_solver import Solver_PDE
+from plots.plot_functions import plot_density_heatmap
+
 
 def compute_data(iteration_number, samples_x, system, args,samples_t=None, save=True, plot=True):
     results_all = []
 
     for j in range(iteration_number[0]):
         for i in range(iteration_number[1]):
-            xref_traj, rho_traj, uref_traj, u_params, xe_traj, t = system.get_valid_trajectories(samples_x, args)
+            xref_traj, rholog_traj, uref_traj, u_params, xe_traj, t = system.get_valid_trajectories(samples_x, args)
             if samples_t == 0:
                 indizes = args.N_sim - 1
             elif samples_t is not None:
@@ -33,9 +30,9 @@ def compute_data(iteration_number, samples_x, system, args,samples_t=None, save=
                 'xe0': xe_traj[:, :, 0],
                 't': t[indizes],
                 'xref0': xref_traj[0, :, 0],
-                'xref_traj': xref_traj[:, :, indizes],
+                # 'xref_traj': xref_traj[:, :, indizes],
                 'xe_traj': xe_traj[:, :, indizes],
-                'rho_traj': rho_traj[:, :, indizes]
+                'rholog_traj': rholog_traj[:, :, indizes]
             }
             results_all.append(results)
 
@@ -177,7 +174,7 @@ if __name__ == "__main__":
 
     samples_x = args.samplesX_rawdata  # [15, 15, 5, 5] ' number of sampled initial conditions x0
     sample_size = 10000
-    samples_t = 50 #args.samplesT_rawdata
+    samples_t = 10 #args.samplesT_rawdata
     iteration_number = [args.iterations_rawdata, args.size_rawdata]
     system = Car(args)
 

@@ -4,9 +4,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from systems.utils import get_density_map
-from scipy.spatial import Delaunay
-from scipy.interpolate import LinearNDInterpolator
-from plots.utils import sample_from
 import scipy
 import matplotlib.colors as pltcol
 from motion_planning.utils import pos2gridpos, traj2grid

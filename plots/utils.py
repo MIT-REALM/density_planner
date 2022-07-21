@@ -1,7 +1,6 @@
 import numpy as np
 
 
-from scipy.spatial import Delaunay
 
 def fit(X, y):
     kernel = DotProduct() + WhiteKernel()

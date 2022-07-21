@@ -10,6 +10,7 @@ import os
 import logging
 import sys
 from motion_planning.optimization_objects import MotionPlanner
+import numpy as np
 
 
 if __name__ == '__main__':
@@ -18,6 +19,7 @@ if __name__ == '__main__':
     args.device ="cpu"  #"cuda" if torch.cuda.is_available() else
 
     torch.manual_seed(args.random_seed)
+    np.random.seed(args.random_seed)
 
     # 0. create environment
     objects = ["obstacleBottom", "pedLR", "pedRL", "bikerBT"]

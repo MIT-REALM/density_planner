@@ -38,7 +38,7 @@ def load_outputmap(dim_x=5, args=None):
     if args is None or args.equation == "LE":
         num_outputs = dim_x + 1
         output_map = {'xe': torch.arange(0, dim_x),
-                      'rho': dim_x}
+                      'rholog': dim_x}
     else:
         num_outputs = 1
         output_map = {'rho': 0}
@@ -63,7 +63,7 @@ def raw2nnData(results_all, args):
         if args.equation == "LE":
             xe0 = results['xe0']
             xe_traj = results['xe_traj']
-            rho_traj = results['rho_traj']
+            rholog_traj = results['rholog_traj']
             # if 'u_params' not in results.keys():
             #     uref_traj = results['uref_traj']
             #     u_params = uref_traj[0, :, ::args.N_u]
@@ -85,7 +85,7 @@ def raw2nnData(results_all, args):
                 for i_t in range(0, t.shape[0]):
                     input_tensor[input_map['t']] = t[i_t]
                     output_tensor[output_map['xe']] = xe_traj[i_x, :, i_t]
-                    output_tensor[output_map['rho']] = rho_traj[i_x, 0, i_t]
+                    output_tensor[output_map['rholog']] = rholog_traj[i_x, 0, i_t]
                     data.append([input_tensor.numpy().copy(), output_tensor.numpy().copy()])
         else:
             density_map = results['density']
@@ -118,11 +118,11 @@ def get_input_tensors(u_params, xref0, xe0, t, args):
     return input_tensor, input_map
 
 
-def get_output_tensors(xe, rho):
+def get_output_tensors(xe, rholog):
     output_map, num_outputs = load_outputmap(xe.shape[0])
     output_tensor = torch.zeros(num_outputs)
     output_tensor[output_map['xe']] = xe
-    output_tensor[output_map['rho']] = rho
+    output_tensor[output_map['rholog']] = rholog
     return output_tensor, output_map
 
 
@@ -144,15 +144,15 @@ def get_output_variables(output, output_map, type='normal'):
     if output.dim() == 2:
         xe = output[:, output_map['xe']]
         if type == 'exp':
-            rho = torch.exp(output[:, output_map['rho']])
+            rho = torch.exp(output[:, output_map['rholog']])
         elif type == 'normal':
-            rho = (output[:, output_map['rho']])
+            rho = (output[:, output_map['rholog']])
     elif output.dim() == 1:
         xe = output[output_map['xe']]
         if type == 'exp':
-            rho = torch.exp(output[output_map['rho']])
+            rho = torch.exp(output[output_map['rholog']])
         elif type == 'normal':
-            rho = (output[output_map['rho']])
+            rho = (output[output_map['rholog']])
     return xe, rho
 
 

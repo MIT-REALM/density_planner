@@ -101,13 +101,16 @@ def load_args(config, args):
     return args
 
 
-def load_nn(num_inputs, num_outputs, args, load_pretrained=None):
+def load_nn(num_inputs, num_outputs, args, load_pretrained=None, nn2=False):
     if load_pretrained is None:
         load_pretrained = args.load_pretrained_nn
 
     model = NeuralNetwork(num_inputs, num_outputs, args).to(args.device)
     if load_pretrained:
-        model_params, _, _ = torch.load(args.name_pretrained_nn, map_location=args.device)
+        if nn2:
+            model_params, _, _ = torch.load(args.name_pretrained_nn2, map_location=args.device)
+        else:
+            model_params, _, _ = torch.load(args.name_pretrained_nn, map_location=args.device)
         model.load_state_dict(model_params)
     if args.optimizer == "SGD":
         optimizer = torch.optim.SGD(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
@@ -132,9 +135,5 @@ def get_nn_prediction(model, xe0, xref0, t, u_params, args):
     #with torch.no_grad():
     input = input_tensor.to(args.device)
     output = model(input)
-    if args.equation == "LE":
-        xe, rho = get_output_variables(output, output_map, type='exp')
-        return xe.unsqueeze(-1), rho.unsqueeze(-1).unsqueeze(-1)
-    else:
-        rho = output.unsqueeze(-1)
-        return xe0.unsqueeze(-1), rho
+    xe, rholog = get_output_variables(output, output_map)
+    return xe.unsqueeze(-1), rholog.unsqueeze(-1).unsqueeze(-1)

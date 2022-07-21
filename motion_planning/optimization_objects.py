@@ -272,6 +272,3 @@ class MotionPlanner:
                     cost += (rho_traj[idx, 0, i] * coll_prob * sq_dist).sum()
         return cost
 
-
-
-

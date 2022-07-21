@@ -1,15 +1,6 @@
 import torch
-from abc import ABC, abstractmethod
-import sys
-from systems.utils import get_mesh_pos
-# from data.trained_controller import model_CAR
-from systems.utils import jacobian
-import math
-from plots.plot_functions import plot_scatter, plot_density_heatmap, plot_ref, plot_density_heatmap_fpe
-import numpy as np
-import matplotlib.pyplot as plt
-from fplanck import fokker_planck, boundary, gaussian_pdf
-import matplotlib; matplotlib.use("TkAgg")
+
+from plots.plot_functions import plot_density_heatmap_fpe
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl

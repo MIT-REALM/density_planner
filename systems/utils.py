@@ -130,10 +130,12 @@ def get_density_map(x, rho, args, log_density=False, type="LE", bins=None, bin_w
         rho /= rho.max()
 
     range_bins = [[-bins[i] * bin_width[i] / 2, bins[i] * bin_width[i] / 2] for i in range(len(bins))]
-    density_mean, _ = np.histogramdd(x.numpy(), bins=bins, weights=rho.numpy(), range=range_bins)
+    with torch.no_grad():
+        density_mean, _ = np.histogramdd(x.numpy(), bins=bins, weights=rho.numpy(), range=range_bins)
     mask = density_mean > 0
     if type != "MC":
-        num_samples, _ = np.histogramdd(x.numpy(), bins=bins, range=range_bins)
+        with torch.no_grad():
+            num_samples, _ = np.histogramdd(x.numpy(), bins=bins, range=range_bins)
         density_mean[mask] /= num_samples[mask]
     density_mean[mask] = density_mean[mask] / density_mean[mask].sum()
     #extent = [[edges_k[0], edges_k[-1]] for edges_k in edges] = range_bins

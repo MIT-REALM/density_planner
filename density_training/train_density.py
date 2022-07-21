@@ -26,17 +26,17 @@ def evaluate_le(dataloader, model, args, optimizer=None, mode="val"):
 
         # Compute prediction error
         output = model(input)
-        xe_nn, rho_log_nn = get_output_variables(output, dataloader.dataset.output_map)
-        xe_true, rho_true = get_output_variables(target, dataloader.dataset.output_map)
+        xe_nn, rholog_nn = get_output_variables(output, dataloader.dataset.output_map)
+        xe_true, rholog_true = get_output_variables(target, dataloader.dataset.output_map)
         if batch == 0:
             max_loss_xe = torch.zeros(len(dataloader), xe_nn.shape[1])
 
-        loss_xe, loss_rho_w = loss_function_le(xe_nn, xe_true, rho_log_nn, rho_true, args)
-        loss = loss_xe + loss_rho_w
+        loss_xe, loss_rho_w = loss_function_le(xe_nn, xe_true, rholog_nn, rholog_true, args)
+        loss = loss_rho_w + loss_xe
         total_loss_xe += loss_xe.item()
         total_loss_rho_w += loss_rho_w.item()
         max_loss_xe[batch, :], _ = torch.max(torch.abs(xe_nn-xe_true), dim=0)
-        max_loss_rho_w[batch] = args.rho_loss_weight * torch.max(torch.abs(rho_log_nn-torch.log(rho_true)))
+        max_loss_rho_w[batch] = args.rho_loss_weight * torch.max(torch.abs(rholog_nn-torch.log(rholog_true)))
         total_loss += loss.item()
 
         if mode == "train":
@@ -55,20 +55,26 @@ def evaluate_le(dataloader, model, args, optimizer=None, mode="val"):
     return loss_all
 
 
-def loss_function_le(xe_nn, xe_true, rho_log_nn, rho_log_true, args):
+def loss_function_le(xe_nn, xe_true, rholog_nn, rholog_true, args):
     loss_xe = ((xe_nn - xe_true) ** 2).mean()
     # if mask.any():
     #     loss_rho = ((rho_log_nn[mask] - rho_true[mask]) ** 2).mean()
     #     rho_log_nn = rho_log_nn[torch.logical_not(mask)]
     #     rho_true = rho_true[torch.logical_not(mask)]
     #if not mask.all():
-    mask = torch.logical_or(rho_log_true.abs() > 1e30, torch.isnan(rho_log_true))
+    mask = torch.logical_or(rholog_true.abs() > 1e30, torch.isnan(rholog_true))
     if mask.any():
-        rho_log_true[mask] = 1e30
-    #rho_log_true = torch.log(rho_true.abs())
-    loss_rho = ((rho_log_nn - rho_log_true) ** 2).mean()
+        print("invalid rho set to 1e30")
+        rholog_true[mask] = 1e30
+    loss_rho = ((rholog_nn - rholog_true) ** 2).mean()
 
-    return loss_xe, args.rho_loss_weight * loss_rho
+    # mask = torch.logical_and(rholog_true > 0, rholog_nn > 0)
+    # if mask.any():
+    #     rholog_nn[mask] = torch.log(rholog_nn[mask])
+    #     rholog_true[mask] = torch.log(rholog_true[mask])
+    # loss_rho_train = ((rholog_nn - rholog_true) ** 2).mean()
+
+    return loss_xe, args.rho_loss_weight * loss_rho #, args.rho_loss_weight * loss_rho_train
 
 def evaluate_fpe(dataloader, model, args, optimizer=None, mode="val"):
 
@@ -190,6 +196,7 @@ if __name__ == "__main__":
             if args.equation == "LE":
                 loss_train = evaluate_le(train_dataloader, model, args, optimizer=optimizer, mode="train")
                 loss_test = evaluate_le(validation_dataloader, model, args, mode="val")
+                #loss_test = loss_train
                 print(f"Epoch {epoch},    Train loss: {(loss_train['loss']):.3f}  (x: {(loss_train['loss_xe']):.5f}),    Test loss: {(loss_test['loss']):.5f}  (x: {(loss_test['loss_xe']):.5f})")
             else:
                 loss_train = evaluate_fpe(train_dataloader, model, args, optimizer=optimizer, mode="train")

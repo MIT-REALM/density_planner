@@ -1,13 +1,9 @@
 import torch
 from abc import ABC, abstractmethod
-import sys
 from systems.utils import get_mesh_pos
-# from data.trained_controller import model_CAR
 from systems.utils import jacobian
-import math
-from plots.plot_functions import plot_scatter, plot_density_heatmap, plot_ref
+from plots.plot_functions import plot_ref
 import numpy as np
-import matplotlib.pyplot as plt
 
 class ControlAffineSystem(ABC):
     """
@@ -45,11 +41,10 @@ class ControlAffineSystem(ABC):
         u: torch.Tensor
             batch_size x self.DIM_U x 1 tensor of contracting control inputs
         """
-
         u = self.controller(x, xref, uref)
         return u
 
-    def f_func(self, x: torch.Tensor, xref: torch.Tensor, uref: torch.Tensor, noise=True) -> torch.Tensor:
+    def f_func(self, x: torch.Tensor, xref: torch.Tensor, uref: torch.Tensor, noise=False) -> torch.Tensor:
         """
         Return the dynamics at the states x
             \dot{x} = f(x) = a(x) + b(x) * u(x, xref, uref)
@@ -102,7 +97,7 @@ class ControlAffineSystem(ABC):
         if x.requires_grad:
             x = x.detach()
         x.requires_grad = True
-        u = self.controller(x, xref, uref)
+        u = self.u_func(x, xref, uref)
         dudx = jacobian(u, x)
         x.requires_grad = False
         return dudx
@@ -156,9 +151,10 @@ class ControlAffineSystem(ABC):
     def get_next_rholog(self, x: torch.Tensor, xref: torch.Tensor, uref: torch.Tensor, rholog: torch.Tensor,
                      dt: int) -> torch.Tensor:
         divf = self.divf_func(x, xref, uref)
-        drhologdt = -divf
+        drholog = torch.log(1 - divf * dt)
+        #old update: drholog = - divf * dt (less accurate)
         with torch.no_grad():
-            rholog = rholog + drhologdt * dt
+            rholog = rholog + drholog
         return rholog
 
     def cut_xref_traj(self, xref_traj: torch.Tensor, uref_traj: torch.Tensor):
@@ -376,11 +372,21 @@ class ControlAffineSystem(ABC):
     def sample_xe(self, param):
         if isinstance(param, int):
             xe = torch.rand(param, self.DIM_X, 1) * (self.XE_MAX - self.XE_MIN) + self.XE_MIN
-        else:
-            args = param
-            xe_min = self.XE_MIN + 0.5 * args.bin_width
-            xe_max = self.XE_MAX - 0.5 * args.bin_width
-            xe = get_mesh_pos(args.bin_number).unsqueeze(-1) * (xe_max - xe_min) + xe_min
+        # else:
+        #     args = param
+        #     xe_min = self.XE_MIN + 0.5 * args.bin_width
+        #     xe_max = self.XE_MAX - 0.5 * args.bin_width
+        #     xe = get_mesh_pos(args.bin_number).unsqueeze(-1) * (xe_max - xe_min) + xe_min
+        return xe
+
+    def sample_xe0(self, param):
+        if isinstance(param, int):
+            xe = torch.rand(param, self.DIM_X, 1) * (self.XE0_MAX - self.XE0_MIN) + self.XE0_MIN
+        # else:
+        #     args = param
+        #     xe_min = self.XE0_MIN + 0.5 * args.bin_width
+        #     xe_max = self.XE0_MAX - 0.5 * args.bin_width
+        #     xe = get_mesh_pos(args.bin_number).unsqueeze(-1) * (xe_max - xe_min) + xe_min
         return xe
 
     def sample_x0(self, xref0, sample_size):
@@ -392,84 +398,87 @@ class ControlAffineSystem(ABC):
             xe0 = get_mesh_pos(sample_size).unsqueeze(-1) * (xe0_max - xe0_min) + xe0_min
         return xe0 + xref0
 
-    def compute_density(self, x0, xref, uref, rho0, N_sim, dt, cutting=True, computeDensity=True, log_density=False):
+    def compute_density(self, xe0, xref_traj, uref_traj, dt, rho0=None, cutting=True, compute_density=True, log_density=False):
         """
         Get the density rho(x) starting at x0 with rho(x0)
 
         Parameters
         ----------
-        x0: torch.Tensor
-            batch_size x self.DIM_X x 1: tensor of initial states
-        xref: torch.Tensor
+        xe0: torch.Tensor
+            batch_size x self.DIM_X x 1: tensor of initial error states
+        xref_traj: torch.Tensor
             batch_size x self.DIM_U x N: tensor of reference states over N time steps
-        uref: torch.Tensor
+        uref_traj: torch.Tensor
             batch_size x self.DIM_U x N: tensor of controls
         rho0: torch.Tensor
             batch_size x 1 x 1: tensor of the density at the initial states
-        N_sim:
-            number of integration steps
         dt:
             time step for integration
 
         Returns
         -------
-        x_traj: torch.Tensor
-            batch_size x self.DIM_X x N_sim: tensor of state trajectories
+        xe_traj: torch.Tensor
+            batch_size x self.DIM_X x N_sim: tensor of error state trajectories
         rho_traj: torch.Tensor
             batch_size x 1 x N_sim: tensor of the densities at the corresponding states
         """
 
-        x_traj = x0.repeat(1, 1, uref.shape[2]+1)
-        if computeDensity:
-            rho_traj = rho0.repeat(1, 1, uref.shape[2]+1)
+        x0 = xe0 + xref_traj[:, :, [0]]
+        x_traj = x0.repeat(1, 1, uref_traj.shape[2]+1)
+        if compute_density:
+            if rho0 is None:
+                if log_density:
+                    rho0 = torch.zeros(x0.shape[0], 1, 1)  # equal initial density
+                else:
+                    rho0 = torch.ones(x0.shape[0], 1, 1)
+            rho_traj = rho0.repeat(1, 1, uref_traj.shape[2]+1)
         else:
             rho_traj = None
-
-        for i in range(uref.shape[2]):
-            if computeDensity:
+        for i in range(uref_traj.shape[2]):
+            if compute_density:
                 if log_density:
-                    rho_traj[:, 0, i + 1] = self.get_next_rholog(x_traj[:, :, [i]], xref[:, :, [i]], uref[:, :, [i]],
+                    rho_traj[:, 0, i + 1] = self.get_next_rholog(x_traj[:, :, [i]], xref_traj[:, :, [i]], uref_traj[:, :, [i]],
                                                       rho_traj[:, 0, i], dt)
                 else:
-                    rho_traj[:, 0, i + 1] = self.get_next_rho(x_traj[:, :, [i]], xref[:, :, [i]], uref[:, :, [i]],
+                    rho_traj[:, 0, i + 1] = self.get_next_rho(x_traj[:, :, [i]], xref_traj[:, :, [i]], uref_traj[:, :, [i]],
                                                       rho_traj[:, 0, i], dt)
             with torch.no_grad():
-                x_traj[:, :, [i + 1]] = self.get_next_x(x_traj[:, :, [i]], xref[:, :, [i]], uref[:, :, [i]], dt)
-                if cutting:
-                    x_traj, rho_traj = self.cut_x_rho(x_traj[:, :, :], rho_traj[:, [0], :], i + 1)
-                    if x_traj.shape[0] < 2:
-                       return x_traj[:, :, :i + 2], rho_traj[:, [0], :i + 2]
-        #x_traj = self.project_angle(x_traj)
-        return x_traj, rho_traj
+                x_traj[:, :, [i + 1]] = self.get_next_x(x_traj[:, :, [i]], xref_traj[:, :, [i]], uref_traj[:, :, [i]], dt)
+        if compute_density and cutting:
+            if log_density:
+                if torch.any(rho_traj > 1e30):
+                    print("clamp rho_traj to 1e30 (log density)")
+                    rho_traj = rho_traj.clamp(max=1e30)
+            else:
+                if torch.any(rho_traj > 1e30) or torch.any(rho_traj < 0):
+                    print("clamp rho_traj between 0 and 1e30 (no log density)")
+                    rho_traj = rho_traj.clamp(min=0, max=1e30)
+            if torch.any(rho_traj.isnan()):
+                print("set nan in rho_traj to 1e30")
+                rho_traj[rho_traj.isnan()] = 1e30
+        return x_traj-xref_traj, rho_traj
 
-    def get_valid_trajectories(self, sample_size, args, plot=False, log_density=False, getDensity=True):
-        # get random input trajectory and compute corresponding state trajectory
-        valid = False
-        while not valid:
+    def get_valid_ref(self, args):
+        while True:
             uref_traj, u_params = self.sample_uref_traj(args)  # get random input trajectory
             xref0 = self.sample_xref0()  # sample random xref
             xref_traj = self.compute_xref_traj(xref0, uref_traj, args)  # compute corresponding xref trajectory
             xref_traj, uref_traj = self.cut_xref_traj(xref_traj, uref_traj)  # cut trajectory where state limits are exceeded
-            if xref_traj.shape[2] < 0.8 * args.N_sim:  # start again if reference trajectory is shorter than 0.9 * N_sim
-                continue
+            if xref_traj.shape[2] > 0.8 * args.N_sim:  # start again if reference trajectory is shorter than 0.9 * N_sim
+                return u_params, uref_traj, xref_traj
 
-            # compute corresponding  state and density trajectories
-            x0 = self.sample_x0(xref0, sample_size)  # get random initial states
-            if log_density:
-                rho0 = torch.zeros(x0.shape[0], 1, 1)  # equal initial density
-            else:
-                rho0 = torch.ones(x0.shape[0], 1, 1)  # equal initial density
-            x_traj, rho_traj = self.compute_density(x0, xref_traj, uref_traj, rho0, xref_traj.shape[2],
-                                                      args.dt_sim, cutting=True, log_density=log_density, computeDensity=getDensity)  # compute x and rho trajectories
-            if rho_traj.dim() < 2 or x_traj.shape[2] < 0.8 * args.N_sim:  # start again if x trajectories shorter than N_sim
-                continue
-            valid = True
+    def get_valid_trajectories(self, sample_size, args, plot=False, log_density=True, compute_density=True):
+        # get random input trajectory and compute corresponding state trajectory
+        u_params, uref_traj, xref_traj = self.get_valid_ref(args)
+
+        # compute corresponding  state and density trajectories
+        xe0 = self.sample_xe0(sample_size)  # get random initial states
+        xe_traj, rho_traj = self.compute_density(xe0, xref_traj, uref_traj, args.dt_sim,
+                                                cutting=True, log_density=log_density,
+                                                compute_density=compute_density)  # compute x and rho trajectories
 
         # save the results
-        xref_traj = xref_traj[[0], :, :x_traj.shape[2]]
-        uref_traj = uref_traj[[0], :, :x_traj.shape[2]]
-        xe_traj = x_traj - xref_traj
-        t = args.dt_sim * torch.arange(0, x_traj.shape[2])
+        t = args.dt_sim * torch.arange(0, xe_traj.shape[2])
         if plot:
             plot_ref(xref_traj, uref_traj, 'test', args, self, x_traj=xe_traj + xref_traj, t=t, include_date=True)
         return xref_traj[:, :, ::args.factor_pred], rho_traj[:, :, ::args.factor_pred], uref_traj[:, :, ::args.factor_pred], \
