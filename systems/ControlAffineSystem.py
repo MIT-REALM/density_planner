@@ -42,7 +42,7 @@ class ControlAffineSystem(ABC):
             batch_size x self.DIM_U x 1 tensor of contracting control inputs
         """
         u = self.controller(x, xref, uref)
-        return u
+        return u.type(torch.FloatTensor)
 
     def f_func(self, x: torch.Tensor, xref: torch.Tensor, uref: torch.Tensor, noise=False) -> torch.Tensor:
         """
@@ -69,10 +69,10 @@ class ControlAffineSystem(ABC):
             noise_matrix = self.DIST.repeat(x.shape[0], 1, 1)
             noise = torch.bmm(noise_matrix, torch.randn(x.shape[0], self.DIST.shape[2], 1))
             f = f + noise
-        return f
+        return f.type(torch.FloatTensor)
 
     def fref_func(self, xref: torch.Tensor, uref: torch.Tensor) -> torch.Tensor:
-        return self.a_func(xref) + torch.bmm(self.b_func(xref).type(torch.FloatTensor), uref)
+        return self.a_func(xref) + torch.bmm(self.b_func(xref), uref.type(torch.FloatTensor))
 
     def dudx_func(self, x: torch.Tensor, xref: torch.Tensor, uref: torch.Tensor) -> torch.Tensor:
         """
@@ -100,7 +100,7 @@ class ControlAffineSystem(ABC):
         u = self.u_func(x, xref, uref)
         dudx = jacobian(u, x)
         x.requires_grad = False
-        return dudx
+        return dudx.type(torch.FloatTensor)
 
     def dfdx_func(self, x: torch.Tensor, xref: torch.Tensor, uref: torch.Tensor) -> torch.Tensor:
         """
@@ -121,13 +121,13 @@ class ControlAffineSystem(ABC):
         """
 
         bs = x.shape[0]
-        u = self.controller(x, xref, uref)
+        u = self.controller(x, xref, uref).type(torch.FloatTensor)
         dbdx_u = torch.zeros(bs, self.DIM_X, self.DIM_X)
         dbdx = self.dbdx_func(x)
         for i in range(self.DIM_X):
             dbdx_u[:, :, [i]] = torch.bmm(dbdx[:, :, :, i], u)
         dfdx = self.dadx_func(x) + dbdx_u + torch.bmm(self.b_func(x), self.dudx_func(x, xref, uref))
-        return dfdx
+        return dfdx.type(torch.FloatTensor)
 
     def divf_func(self, x: torch.Tensor, xref: torch.Tensor, uref: torch.Tensor) -> torch.Tensor:
         dfdx = self.dfdx_func(x, xref, uref)
@@ -227,7 +227,7 @@ class ControlAffineSystem(ABC):
         rho[mask, :, pos] = 1e30
         return x, rho
 
-    def sample_uref_traj(self, args, u_params=None):
+    def sample_uref_traj(self, args, up=None):
         N_sim = args.N_sim
 
         # parametrization by discretized input signals
@@ -237,24 +237,24 @@ class ControlAffineSystem(ABC):
             elif args.input_type == "discr5":
                 N_u = 5
             length_u = args.N_sim_max // N_u #length of each input signal
-            if u_params is None:
-                u_params = 2 * torch.randn((1, self.DIM_U, N_u))
-                u_params = u_params.clamp(self.UREF_MIN, self.UREF_MAX)
-            elif u_params.dim() == 2:
-                u_params = u_params.unsqueeze(0)
-            uref_traj = torch.repeat_interleave(u_params, length_u, dim=2)
+            if up is None:
+                up = 2 * torch.randn((1, self.DIM_U, N_u))
+                up = up.clamp(self.UREF_MIN, self.UREF_MAX)
+            elif up.dim() == 2:
+                up = up.unsqueeze(0)
+            uref_traj = torch.repeat_interleave(up, length_u, dim=2)
 
         # parametrization by polynomials of degree 3
         elif args.input_type == "polyn3":
             t = torch.arange(0, args.dt_sim * N_sim, args.dt_sim).reshape(1, 1, -1).repeat(1, self.DIM_U, 1)
-            if u_params is None:
-                u_params = ((self.UPOLYN_MAX - self.UPOLYN_MIN) * torch.rand(4, self.DIM_U) + self.UPOLYN_MIN).reshape(
+            if up is None:
+                up = ((self.upOLYN_MAX - self.upOLYN_MIN) * torch.rand(4, self.DIM_U) + self.upOLYN_MIN).reshape(
                     1, 2, 1, -1)  # .repeat(1, 1, t.shape[2], 1)
             else:
                 raise(NotImplementedError)
-            # u_params[1, 2, 1, args.input_params_zero] = 0
-            uref_traj = u_params[:, :, :, 0] * torch.ones_like(t) + u_params[:, :, :, 1] * t + \
-                        u_params[:, :, :, 2] * t ** 2 + u_params[:, :, :, 3] * t ** 3
+            # up[1, 2, 1, args.input_params_zero] = 0
+            uref_traj = up[:, :, :, 0] * torch.ones_like(t) + up[:, :, :, 1] * t + \
+                        up[:, :, :, 2] * t ** 2 + up[:, :, :, 3] * t ** 3
 
             for j in range(self.DIM_U):
                 if torch.any(uref_traj[[0], [j], :] > self.UREF_MAX[0, j, 0]):
@@ -266,13 +266,13 @@ class ControlAffineSystem(ABC):
             num_sins = 5
             t = torch.arange(0, args.dt_sim * N_sim, args.dt_sim)
             T_end = args.dt_sim * (args.N_sim_max - 1)
-            if u_params is None:
-                u_params = (self.UREF_MAX - self.UREF_MIN)[0, :, :] * torch.rand(self.DIM_U, num_sins) + self.UREF_MIN[0,:,:]
+            if up is None:
+                up = (self.UREF_MAX - self.UREF_MIN)[0, :, :] * torch.rand(self.DIM_U, num_sins) + self.UREF_MIN[0,:,:]
             else:
                 raise(NotImplementedError)
             uref_traj = torch.zeros(1, self.DIM_U, N_sim)
             for i in range(num_sins):
-                uref_traj[0,:,:] += u_params[:, [i]] * (torch.sin((i+1) * t / T_end * 2 * np.pi)).repeat(2, 1) #+ u_params[i+num_sins, :] * torch.cos((i+1) * t / T_end * 2 * np.pi)
+                uref_traj[0,:,:] += up[:, [i]] * (torch.sin((i+1) * t / T_end * 2 * np.pi)).repeat(2, 1) #+ up[i+num_sins, :] * torch.cos((i+1) * t / T_end * 2 * np.pi)
             uref_traj = uref_traj.clip(self.UREF_MIN, self.UREF_MAX)
 
         elif "sincos" in args.input_type:
@@ -284,28 +284,28 @@ class ControlAffineSystem(ABC):
                 num_sins = 2
             t = torch.arange(0, args.dt_sim * N_sim - 0.001, args.dt_sim)
             T_end = args.dt_sim * (args.N_sim_max - 1)
-            if u_params is None:
-                u_params = (self.UREF_MAX - self.UREF_MIN)[0, :, :] * torch.rand(self.DIM_U, 2 * num_sins) + self.UREF_MIN[0,:,:]
+            if up is None:
+                up = (self.UREF_MAX - self.UREF_MIN)[0, :, :] * torch.rand(self.DIM_U, 2 * num_sins) + self.UREF_MIN[0,:,:]
             else:
                 raise(NotImplementedError)
             uref_traj = torch.zeros(1, self.DIM_U, N_sim)
             for i in range(num_sins):
-                uref_traj[0,:,:] += u_params[:, [i]] * (torch.sin((i+1) * t / T_end * 2 * np.pi)).repeat(2, 1) \
-                                    + u_params[:, [i+num_sins]] * torch.cos((i+1) * t / T_end * 2 * np.pi)
+                uref_traj[0,:,:] += up[:, [i]] * (torch.sin((i+1) * t / T_end * 2 * np.pi)).repeat(2, 1) \
+                                    + up[:, [i+num_sins]] * torch.cos((i+1) * t / T_end * 2 * np.pi)
             uref_traj[0, :, :] = 0.5 * (uref_traj[0,:,:] - uref_traj[0,:,[0]])
             uref_traj = uref_traj.clip(self.UREF_MIN, self.UREF_MAX)
 
         elif args.input_type == "sin1":
             t = torch.arange(0, args.dt_sim * N_sim, args.dt_sim)
-            if u_params is None:
-                u_params = torch.rand(4, self.DIM_U)
+            if up is None:
+                up = torch.rand(4, self.DIM_U)
             else:
                 raise(NotImplementedError)
             uref_traj = torch.zeros(1, self.DIM_U, N_sim)
-            start = torch.round(args.N_sim_max * u_params[0, :])
-            length = torch.round((args.N_sim_max - start) * u_params[1, :])
-            amplitude = (2 * u_params[2, :] - 1) * self.USIN_AMPL
-            wide = u_params[3, :] * self.USIN_WIDE
+            start = torch.round(args.N_sim_max * up[0, :])
+            length = torch.round((args.N_sim_max - start) * up[1, :])
+            amplitude = (2 * up[2, :] - 1) * self.USIN_AMPL
+            wide = up[3, :] * self.USIN_WIDE
             for j in range(self.DIM_U):
                 uref_traj[0, j, int(start[j]):int(start[j] + length[j])] = amplitude[j] * torch.sin(
                     wide[j] * t[:int(length[j])])
@@ -324,30 +324,32 @@ class ControlAffineSystem(ABC):
             elif args.input_type == "cust4":
                 number = 4
             t = torch.arange(0, args.dt_sim * N_sim, args.dt_sim)
-            if u_params is None:
-                u_params = torch.rand(number, 3, self.DIM_U)
+            if up is None:
+                up = torch.rand(number, 3, self.DIM_U)
             else:
                 raise(NotImplementedError)
             uref_traj = torch.zeros(1, self.DIM_U, N_sim)
             for i in range(number):
-                start = torch.round(args.N_sim_max * u_params[i, 0, :])
-                length = torch.round((args.N_sim_max - start) * u_params[i, 1, :])
-                amplitude = (self.UREF_MAX - self.UREF_MIN).flatten() * u_params[i, 2, :] + self.UREF_MIN.flatten()
+                start = torch.round(args.N_sim_max * up[i, 0, :])
+                length = torch.round((args.N_sim_max - start) * up[i, 1, :])
+                amplitude = (self.UREF_MAX - self.UREF_MIN).flatten() * up[i, 2, :] + self.UREF_MIN.flatten()
                 for j in range(self.DIM_U):
                     uref_traj[0, j, int(start[j]):int(start[j] + length[j])] = amplitude[j]
-        return uref_traj[:, :, :N_sim-1], u_params
+        return uref_traj[:, :, :N_sim-1], up
 
     def sample_xref0(self):
         return (self.XREF0_MAX - self.XREF0_MIN) * torch.rand(1, self.DIM_X, 1) + self.XREF0_MIN
 
-    def compute_xref_traj(self, xref0: torch.Tensor, uref_traj: torch.Tensor, args) -> torch.Tensor:
-        N_sim = args.N_sim
+    def compute_xref_traj(self, xref0: torch.Tensor, uref_traj: torch.Tensor, args, short=False) -> torch.Tensor:
+        N_sim = min(args.N_sim, uref_traj.shape[2]+1)
         dt = args.dt_sim
         xref_traj = xref0.repeat(1, 1, N_sim)
 
         for i in range(N_sim - 1):
             xref_traj[:, :, [i + 1]] = self.get_next_xref(xref_traj[:, :, [i]], uref_traj[:, :, [i]], dt)
         #xref_traj = self.project_angle(xref_traj)
+        if short:
+            return xref_traj[:, :, ::args.factor_pred]
         return xref_traj
 
     def extend_xref_traj(self, xref_traj: torch.Tensor, uref_traj: torch.Tensor, dt) -> torch.Tensor:
@@ -361,8 +363,8 @@ class ControlAffineSystem(ABC):
                 return None
         return xref_traj
 
-    def u_params2ref_traj(self, xref0, u_params, args, short=True):
-        uref_traj, _ = self.sample_uref_traj(args, u_params=u_params)
+    def up2ref_traj(self, xref0, up, args, short=True):
+        uref_traj, _ = self.sample_uref_traj(args, up=up)
         xref_traj = self.compute_xref_traj(xref0, uref_traj, args)
         if short:
             return uref_traj[:, :, ::args.factor_pred], xref_traj[:, :, ::args.factor_pred]
@@ -460,16 +462,16 @@ class ControlAffineSystem(ABC):
 
     def get_valid_ref(self, args):
         while True:
-            uref_traj, u_params = self.sample_uref_traj(args)  # get random input trajectory
+            uref_traj, up = self.sample_uref_traj(args)  # get random input trajectory
             xref0 = self.sample_xref0()  # sample random xref
             xref_traj = self.compute_xref_traj(xref0, uref_traj, args)  # compute corresponding xref trajectory
             xref_traj, uref_traj = self.cut_xref_traj(xref_traj, uref_traj)  # cut trajectory where state limits are exceeded
-            if xref_traj.shape[2] > 0.8 * args.N_sim:  # start again if reference trajectory is shorter than 0.9 * N_sim
-                return u_params, uref_traj, xref_traj
+            if xref_traj.shape[2] > 0.99 * args.N_sim:  # start again if reference trajectory is shorter than 0.9 * N_sim
+                return up, uref_traj, xref_traj
 
     def get_valid_trajectories(self, sample_size, args, plot=False, log_density=True, compute_density=True):
         # get random input trajectory and compute corresponding state trajectory
-        u_params, uref_traj, xref_traj = self.get_valid_ref(args)
+        up, uref_traj, xref_traj = self.get_valid_ref(args)
 
         # compute corresponding  state and density trajectories
         xe0 = self.sample_xe0(sample_size)  # get random initial states
@@ -482,7 +484,7 @@ class ControlAffineSystem(ABC):
         if plot:
             plot_ref(xref_traj, uref_traj, 'test', args, self, x_traj=xe_traj + xref_traj, t=t, include_date=True)
         return xref_traj[:, :, ::args.factor_pred], rho_traj[:, :, ::args.factor_pred], uref_traj[:, :, ::args.factor_pred], \
-               u_params, xe_traj[:, :, ::args.factor_pred], t[::args.factor_pred]
+               up, xe_traj[:, :, ::args.factor_pred], t[::args.factor_pred]
 
 
 

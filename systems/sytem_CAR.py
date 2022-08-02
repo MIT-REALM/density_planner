@@ -30,8 +30,8 @@ class Car(ControlAffineSystem):
         dist_max = np.pi / 8
 
         # limits for controller and trajectory validity
-        self.X_MIN = torch.tensor([-50., -50., -np.pi + 0.2, 0, -dist_max]).reshape(1, -1, 1)
-        self.X_MAX = torch.tensor([50., 50., 3 * np.pi - 0.2, 10, dist_max]).reshape(1, -1, 1)
+        self.X_MIN = torch.tensor([-20., -20., -np.pi + 0.2, 0, -dist_max]).reshape(1, -1, 1)
+        self.X_MAX = torch.tensor([20., 20., 3 * np.pi - 0.2, 10, dist_max]).reshape(1, -1, 1)
         self.XE_MIN = torch.tensor([-2, -2, -1, -1, -dist_max]).reshape(1, -1, 1)
         self.XE_MAX = torch.tensor([2, 2, 1, 1, dist_max]).reshape(1, -1, 1)
 
@@ -52,8 +52,8 @@ class Car(ControlAffineSystem):
         self.XE0_MAX = 0.5 * self.XE_MAX
 
         # limits for trajectory validity for motion planning
-        self.X_MIN_MP = torch.tensor([-9.9, -29.9, -np.pi + 0.2, 0.1]).reshape(1, -1, 1)
-        self.X_MAX_MP = torch.tensor([9.9, 9.9, 3 * np.pi - 0.2, 9.9]).reshape(1, -1, 1)
+        self.X_MIN_MP = torch.tensor([-9.9, -29.9, -np.pi + 0.2, 0.1, -np.inf]).reshape(1, -1, 1)
+        self.X_MAX_MP = torch.tensor([9.9, 9.9, 3 * np.pi - 0.2, 9.9, np.inf]).reshape(1, -1, 1)
 
 
     def controller_wrapper(self):
@@ -111,7 +111,7 @@ class Car(ControlAffineSystem):
         a = torch.zeros(bs, Car.DIM_X, 1).type(x.type())
         a[:, 0, 0] = x[:, 3, 0] * torch.cos(x[:, 2, 0])
         a[:, 1, 0] = x[:, 3, 0] * torch.sin(x[:, 2, 0])
-        return a
+        return a.type(torch.FloatTensor)
 
     def dadx_func(self, x: torch.Tensor) -> torch.Tensor:
         bs = x.shape[0]
@@ -122,7 +122,7 @@ class Car(ControlAffineSystem):
         dadx[:, 0, 3] = torch.cos(x[:, 2, 0])
         dadx[:, 1, 2] = x[:, 3, 0] * torch.cos(x[:, 2, 0])
         dadx[:, 1, 3] = torch.sin(x[:, 2, 0])
-        return dadx
+        return dadx.type(torch.FloatTensor)
 
     def b_func(self, x: torch.Tensor) -> torch.Tensor:
         bs = x.shape[0]
@@ -130,12 +130,12 @@ class Car(ControlAffineSystem):
 
         b[:, 2, 0] = 1
         b[:, 3, 1] = 1
-        return b
+        return b.type(torch.FloatTensor)
 
     def dbdx_func(self, x: torch.Tensor) -> torch.Tensor:
         bs = x.shape[0]
         dbdx = torch.zeros(bs, Car.DIM_X, Car.DIM_U, Car.DIM_X).type(x.type())
-        return dbdx
+        return dbdx.type(torch.FloatTensor)
 
 
     def project_angle(self, x_traj) -> torch.Tensor:

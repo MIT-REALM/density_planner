@@ -9,7 +9,9 @@ import pickle
 import os
 import logging
 import sys
-from motion_planning.optimization_objects import MotionPlanner
+from MotionPlannerGrad import MotionPlannerGrad
+from MotionPlannerNLP import MotionPlannerNLP
+#import MotionPlannerNLP
 import numpy as np
 
 
@@ -23,53 +25,89 @@ if __name__ == '__main__':
 
     # 0. create environment
     objects = ["obstacleBottom", "pedLR", "pedRL", "bikerBT"]
-    env = create_environment(args, timestep=100)
-    plot_grid(env, args, timestep=0, save=False)
-    plot_grid(env, args, timestep=20, save=False)
-    plot_grid(env, args, timestep=40, save=False)
-    plot_grid(env, args, timestep=60, save=False)
-    plot_grid(env, args, timestep=80, save=False)
-    plot_grid(env, args, save=False)
 
-    xref0 = torch.tensor([0, -28, 1.5, 3, 0]).reshape(1, -1, 1).type(torch.FloatTensor)
-    xrefN = torch.tensor([0, 8, 4, 1, 0]).reshape(1, -1, 1) #, [10, 5, 10, 6]]).reshape(2, -1, 1)
+    path_log = None
 
-    ego = EgoVehicle(xref0, xrefN, env, args)
-    opt = MotionPlanner(ego)
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s",
-            handlers=[
-                logging.FileHandler(opt.path_log + '/logfile.txt'),
-                logging.StreamHandler(sys.stdout)])
-    logging.info("Starting motion planning %s" % args.mp_name)
+    time_grad_all = []
+    cost_grad_all = []
+    up_grad_all = []
+    time_MPCcold_iter = []
+    time_MPCwarm_iter = []
+    cost_MPCcold_iter = []
+    cost_MPCwarm_iter = []
+    cost_grad_iter = []
+    up_MPCcold_iter = []
+    up_MPCwarm_iter = []
 
-    ### 1. get initial trajectory
-    if args.mp_find_traj:
-        logging.info("Optimizing %d Random Trajectories" % args.mp_numtraj)
-        opt.find_traj()
-        logging.info("Optimization finished")
-        u_params, cost_min = opt.find_best()
-        logging.info("Best Trajectory with cost %.4f:" % cost_min)
-        logging.info(u_params)
-        u_params = u_params.detach()
-    # best of 7
-    elif args.input_type == "discr10":
-        logging.info("Loading good parameters for input type discr10")
-        u_params = torch.tensor([[[0.7080, -0.2266, 0.1678, -0.5573, -0.0683, -0.3008, 0.2324,
-                -0.2033, -0.0517, 0.2307],
-                [-0.1680, -0.2446, -0.3030, 0.8033, -0.3640, 0.1204, 0.4263,
-                0.1605, -0.3789, 0.6836]]]) # cost=0.0094
-    elif args.input_type == "discr5":
-        logging.info("Loading good parameters for input type discr5")
-        u_params = torch.tensor([[[ 0.0562,  0.7262, -0.7681, -0.0185, -0.2678],
-         [-1.4503,  0.6820,  1.4877,  0.4498, -0.0598]]]) # cost=0.0128
+    for k in range(20):
+        env = create_environment(args, timestep=100)
+        # plot_grid(env, args, timestep=0, save=False)
+        # plot_grid(env, args, timestep=20, save=False)
+        # plot_grid(env, args, timestep=40, save=False)
+        # plot_grid(env, args, timestep=60, save=False)
+        # plot_grid(env, args, timestep=80, save=False)
+        # plot_grid(env, args, save=False)
 
-    ### 2. optimize best trajectories with density predictions
-    logging.info("Improving input parameters with density prediction")
-    u_params, cost = opt.improve_traj(u_params)
-    logging.info("Optimization finished with cost %.4f" % cost)
-    logging.info(u_params)
+        xref0 = torch.tensor([0, -28, 1.5, 3, 0]).reshape(1, -1, 1).type(torch.FloatTensor)
+        xrefN = torch.tensor([0., 8, 4, 1, 0]).reshape(1, -1, 1) #, [10, 5, 10, 6]]).reshape(2, -1, 1)
 
-    logging.info("Finished")
+        ego = EgoVehicle(xref0, xrefN, env, args)
+        plot = False
+        up_grad = None
+
+        planner_grad = MotionPlannerGrad(ego, name="grad%d" % k, plot=plot, path_log=path_log)
+        up_grad, cost_grad, time_grad = planner_grad.plan_motion()
+        time_grad_all.append(time_grad)
+        cost_grad_all.append(cost_grad)
+        up_grad_all.append(up_grad)
+
+        if k == 0:
+            path_log = planner_grad.path_log
+
+        up_grad = torch.Tensor([[[-0.4295,  0.4854,  0.3976,  0.1772, -0.3519, -0.5208, -0.0646,
+                   0.8481, -0.5238, -0.7427],
+                 [-0.2112,  0.3185,  0.3122,  0.5391, -0.0937, -0.1417,  0.7684,
+                  -0.2717,  0.6058, -0.4975]]]) # for seed 1
+
+        for j in range(10):
+            if j == 5:
+                xe0 = torch.zeros(1, ego.system.DIM_X, 1)
+            else:
+                xe0 = ego.system.sample_xe0(1)
+                xe0[:, 4, :] = 0
+
+            #evaluate trajectory for planner_grad
+            cost = planner_grad.validate_traj(up_grad, xe0=xe0)
+            cost_grad_iter.append(cost)
+
+            # compute trajectory with NLP
+            ## without warm start
+            planner_oracle = MotionPlannerNLP(ego, xe0=xe0, name="MPCcold", u0=None, plot=plot, path_log=path_log)
+            up, cost, time = planner_oracle.plan_motion()
+            time_MPCcold_iter.append(time)
+            cost_MPCcold_iter.append(cost)
+            up_MPCcold_iter.append(up)
+
+            ## with warm start
+            planner_oracle = MotionPlannerNLP(ego, xe0=xe0, name="MPCwarm", u0=up_grad, plot=plot, path_log=path_log)
+            up, cost, time = planner_oracle.plan_motion()
+            time_MPCwarm_iter.append(time)
+            cost_MPCwarm_iter.append(cost)
+            up_MPCwarm_iter.append(up)
+
+
+        # planner_sampling = MotionPlannerSampling(ego, plot=plot)
+        # up_search, cost_search = planner_sampling.plan_motion()
+        #
+        # planner_search = MotionPlannerSearch(ego, plot=plot)
+        # up_search, cost_search = planner_search.plan_motion()
+    with open(path_log + "results", "wb") as f:
+        pickle.dump([time_grad_all, cost_grad_all, up_grad_all, time_MPCcold_iter, time_MPCwarm_iter, cost_MPCcold_iter,
+                     cost_MPCwarm_iter, cost_grad_iter, up_MPCcold_iter, up_MPCwarm_iter], f)
+    print("end")
+
+
+
 
 '''
 gradients wrt u_params:

@@ -160,6 +160,7 @@ class EgoVehicle:
         if pdf0 is None:
             pdf0 = sample_pdf(self.system, args.mp_gaussians)
         self.initialize_predictor(pdf0)
+        self.env.get_gradient()
 
     def initialize_predictor(self, pdf0):
         self.model = self.load_predictor(self.system.DIM_X)
@@ -181,16 +182,46 @@ class EgoVehicle:
         model.eval()
         return model
 
-    def predict_density(self, u_params, xref_traj):
-        xe_traj = torch.zeros(self.xe0.shape[0], xref_traj.shape[1], xref_traj.shape[2])
-        rho_nn = torch.zeros(self.xe0.shape[0], 1, xref_traj.shape[2])
-        t_vec = torch.arange(0, self.args.dt_sim * self.args.N_sim - 0.001, self.args.dt_sim * self.args.factor_pred)
+    def predict_density(self, up, xref_traj, use_nn=True, xe0=None, rho0=None, compute_density=True):
+        if xe0 is None:
+            xe0 = self.xe0
+        if rho0 is None:
+            rho0 = self.rho0
+            assert rho0.shape[0] == xe0.shape[0]
 
-        # 2. predict x(t) and rho(t) for times t
-        for idx, t in enumerate(t_vec):
-            xe_traj[:,:, [idx]], rho_nn[:, :, [idx]] = get_nn_prediction(self.model, self.xe0, self.xref0, t, u_params, self.args)
+        if self.args.input_type == "discr10" and up.shape[2] != 10:
+            N_sim = up.shape[2] * (self.args.N_sim_max // 10) + 1
+            up = torch.cat((up, torch.zeros(up.shape[0], up.shape[1], 10 - up.shape[2])), dim=2)
+        elif self.args.input_type == "discr5" and up.shape[2] != 5:
+            N_sim = up.shape[2] * (self.args.N_sim_max // 5) + 1
+            up = torch.cat((up, torch.zeros(up.shape[0], up.shape[1], 5 - up.shape[2])), dim=2)
+        else:
+            N_sim = self.args.N_sim
+
+        if use_nn: # approximate with density NN
+            xe_traj = torch.zeros(xe0.shape[0], xref_traj.shape[1], xref_traj.shape[2])
+            rho_log_unnorm = torch.zeros(xe0.shape[0], 1, xref_traj.shape[2])
+            t_vec = torch.arange(0, self.args.dt_sim * N_sim - 0.001, self.args.dt_sim * self.args.factor_pred)
+
+            # 2. predict x(t) and rho(t) for times t
+            for idx, t in enumerate(t_vec):
+                xe_traj[:,:, [idx]], rho_log_unnorm[:, :, [idx]] = get_nn_prediction(self.model, xe0[:, :, 0], self.xref0[0, :, 0], t, up, self.args)
+        else: # use LE
+            uref_traj, _ = self.system.sample_uref_traj(self.args, up=up)
+            xref_traj_long = self.system.compute_xref_traj(self.xref0, uref_traj, self.args)
+            xe_traj_long, rho_log_unnorm = self.system.compute_density(xe0, xref_traj_long, uref_traj, self.args.dt_sim,
+                                                   cutting=False, log_density=True, compute_density=True)
+            xe_traj = xe_traj_long[:, :, ::self.args.factor_pred]
+
+        if compute_density:
+            rho_max, _ = rho_log_unnorm.max(dim=0)
+            rho_unnorm = torch.exp(rho_log_unnorm - rho_max.unsqueeze(0))
+            rho_traj = rho_unnorm / rho_unnorm.sum(dim=0).unsqueeze(0)
+            rho_traj = rho_traj + rho0.reshape(-1, 1, 1)
+        else:
+            rho_traj = None
+
         x_traj = xe_traj + xref_traj
-        rho_traj = rho_nn * self.rho0.reshape(-1, 1, 1)
         return x_traj, rho_traj
 
     def visualize_xref(self, xref_traj, uref_traj=None, show=True, save=False, include_date=True,
@@ -203,11 +234,11 @@ class EgoVehicle:
         plot_grid(torch.clamp(grid + grid_env_max, 0, 1), self.args, name=name,
                   show=show, save=save, include_date=include_date, folder=folder)
 
-    def animate_traj(self, u_params, folder):
-        _, xref_traj = self.system.u_params2ref_traj(self.xref0, u_params, self.args, short=True)
-
-        with open(folder + "u_params", "wb") as f:
-            pickle.dump(u_params, f)
+    def animate_traj(self, folder, xref_traj, x_traj=None, rho_traj=None):
+        if x_traj is None:
+            x_traj = xref_traj
+        if rho_traj is None:
+            rho_traj = torch.ones(x_traj.shape[0], 1, x_traj.shape[2]) / x_traj.shape[0]  # assume equal density
 
         # create colormap
         greys = cm.get_cmap('Greys')
@@ -220,15 +251,11 @@ class EgoVehicle:
         cmap = ListedColormap(colorarray)
 
         grid_env_sc = 127 * self.env.grid
-        for i in range(xref_traj.shape[2]):
 
-            t = idx2time(i, self.args)
-            xe_nn, rho_nn_fac = get_nn_prediction(self.model, self.xe0[:, :, 0], self.xref0[0, :, 0], t, u_params, self.args)
-            x_nn = xe_nn + xref_traj[:, :, [i]]
-            rho_nn = rho_nn_fac * self.rho0.reshape(-1, 1, 1)
+        for i in range(xref_traj.shape[2]):
             with torch.no_grad():
                 # 3. compute marginalized density grid
-                grid_pred = pred2grid(x_nn, rho_nn, self.args, return_gridpos=False)
+                grid_pred = pred2grid(x_traj[:, :, [i]], rho_traj[:, :, [i]], self.args, return_gridpos=False)
 
             grid_pred_sc = 127 * torch.clamp(grid_pred/grid_pred.max(), 0, 1)
             grid_pred_sc[grid_pred_sc != 0] += 128

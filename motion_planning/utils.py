@@ -30,15 +30,20 @@ def pos2gridpos(args, pos_x=None, pos_y=None):
             pos_x = torch.from_numpy(np.array(pos_x))
         pos_x = ((pos_x - args.environment_size[0]) / (args.environment_size[1] - args.environment_size[0])) * \
                 (args.grid_size[0]-1)
+        if torch.is_tensor(pos_x):
+            pos_x = (torch.round(pos_x + 0.001)).long()
+        else:
+            pos_x = (np.round(pos_x + 0.001).astype(int))
     if pos_y is not None:
         if isinstance(pos_y, list):
             pos_y = torch.from_numpy(np.array(pos_y))
         pos_y = ((pos_y - args.environment_size[2]) / (args.environment_size[3] - args.environment_size[2])) * \
                (args.grid_size[1]-1)
-    if torch.is_tensor(pos_x):
-        return (torch.round(pos_x+0.001)).long(), (torch.round(pos_y+0.001)).long()
-    else:
-        return (np.round(pos_x + 0.001).astype(int)), (np.round(pos_y + 0.001).astype(int))
+        if torch.is_tensor(pos_y):
+            pos_y = (torch.round(pos_y + 0.001)).long()
+        else:
+            pos_y = (np.round(pos_y + 0.001).astype(int))
+    return pos_x, pos_y
 
 
 def gridpos2pos(args, pos_x=None, pos_y=None):

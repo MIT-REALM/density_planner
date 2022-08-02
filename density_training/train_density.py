@@ -8,6 +8,8 @@ from systems.utils import listDict2dictList, sample_binpos
 from data_generation.utils import get_input_tensors
 from density_training.utils import NeuralNetwork, load_nn, load_args, load_dataloader, get_output_variables, create_configs
 from motion_planning.utils import time2idx
+import pickle
+
 
 def evaluate_le(dataloader, model, args, optimizer=None, mode="val"):
 
@@ -213,9 +215,9 @@ if __name__ == "__main__":
             #     test_loss_best = test_loss[-1]["loss"]
             # if args.patience and patience >= args.patience:
             #     break
-            if epoch % args.lr_step_epoch == args.lr_step_epoch - 1: #epoch > 2000 and
-                for g in optimizer.param_groups:
-                    g['lr'] = g['lr'] / args.lr_step
+            # if epoch % args.lr_step_epoch == args.lr_step_epoch - 1: #epoch > 2000 and
+            #     for g in optimizer.param_groups:
+            #         g['lr'] = g['lr'] / args.lr_step
 
             if epoch % 20 == 2:
                 train_loss_dict = listDict2dictList(train_loss)
@@ -225,7 +227,6 @@ if __name__ == "__main__":
                     'test_loss': test_loss_dict,
                     'num_epochs': epoch,
                     'name': nn_name,
-                    'cost_function': "rho_nn=rho0*exp(out)",
                     'hyperparameters': config
                 }
                 #plot_losscurves(result, "t%d_" % (epoch) + short_name, args, filename=maxErrorPlot_name, type="maxError")
@@ -236,5 +237,8 @@ if __name__ == "__main__":
         #print(f"Best test loss after epoch {epoch}: {test_loss_best} \n")
         torch.save([model.state_dict(), args, result], nn_name)
         plot_losscurves(result, "final_t%d_" % (epoch) + short_name, args, filename=lossPlot_name)
+        # with open(args.path_plot_loss + lossPlot_name + "_data", "wb") as f:
+        #     pickle.dump(result, f)
+
     print("Done!")
 

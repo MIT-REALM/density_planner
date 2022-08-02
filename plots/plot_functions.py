@@ -5,10 +5,38 @@ import numpy as np
 import torch
 from systems.utils import get_density_map
 import scipy
+import matplotlib
 import matplotlib.colors as pltcol
 from motion_planning.utils import pos2gridpos, traj2grid
 from matplotlib import cm
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
+plt.style.use('seaborn-paper')
+# matplotlib.rcParams['mathtext.fontset'] = 'custom'
+# matplotlib.rcParams['mathtext.rm'] = 'Bitstream Vera Sans'
+# matplotlib.rcParams['mathtext.it'] = 'Bitstream Vera Sans:italic'
+# matplotlib.rcParams['mathtext.bf'] = 'Bitstream Vera Sans:bold'
+# matplotlib.rcParams['mathtext.fontset'] = 'cm' #'stix'
+# matplotlib.rcParams['font.family'] = 'cmu serif'
+plt.rcParams['text.usetex'] = True
+plt.rcParams['text.latex.preamble'] = r'\usepackage{{amsmath}}'
+plt.rcParams['text.latex.preamble'] = r'\usepackage{{mathrsfs}}'
+# plt.rcParams['font.family'] = "serif"
+plt.rc('font',**{'family':'serif','serif':['Palatino']})
+plt.rcParams['legend.fontsize'] = 18
+plt.rc('axes', titlesize=18)
+plt.rc('axes', labelsize=18)
+plt.rc('xtick', labelsize=14)
+plt.rc('ytick', labelsize=14)
+
+###colours
+MITRed = (163/256, 31/256, 52/256)
+TUMBlue = "#0065BD"
+TUMBlue_med = (153/256, 193/256, 229/256)
+TUMBlue_light = (230/256, 240/256, 249/256)
+TUMGray = "#808080"
+TUMGray_light = "#CCCCC6"
+TUMOrange_acc = "#E37222"
+TUMGreen_acc = "#A2AD00"
 
 def plot_density_heatmap_fpe(name, rho, args, save=True, show=True, filename=None,
                          include_date=False, folder=None):
@@ -48,29 +76,28 @@ def plot_density_heatmap(name, args, xe_dict, rho_dict, system=None, save=True, 
         if density_mean[key].max() > max_rho:
             max_rho = density_mean[key].max()
 
-    fig, ax = plt.subplots(1, num_plots)
-    #fig.set_figwidth(9.5)
+    fig, ax = plt.subplots(num_plots + 1, 1, gridspec_kw={'height_ratios': [1] * num_plots + [0.1]})
+    fig.set_figheight(10)
+    fig.set_figwidth(4)
     for i, key in enumerate(xe_dict):
-        if num_plots == 1:
-            axis = ax
-            axis.set_ylabel("y-yref")
-        else:
-            axis = ax[i]
-            ax[0].set_ylabel("y-yref")
+        axis = ax[i]
         cmap = plt.cm.get_cmap('magma').reversed()
         if key == "FPE":
             im = axis.imshow(density_mean[key].T, extent=extent[0] + extent[1], origin='lower', cmap=cmap)
         else:
-            im = axis.imshow(density_mean[key].T, extent=extent[0]+extent[1], origin='lower', cmap=cmap,
+            im = axis.imshow(density_mean[key].T, extent=extent[0] + extent[1], origin='lower', cmap=cmap,
                          norm=pltcol.LogNorm(vmin=min_rho, vmax=max_rho))#vmin=plot_limits[0], vmax=plot_limits[1])
-        fig.colorbar(im, ax=axis, orientation='horizontal', format="%.0e")
-        axis.set_title("%s Prediction" % (key))
-        axis.set_xlabel("x-xref")
+        axis.set_title("\\textbf{%s Prediction}" % (key))
+        axis.set_xlabel("$p_x-p_{x*}$ [m]")
+        axis.set_ylabel("$p_y-p_{y*}$ [m]")
 
+    fig.colorbar(im, ax=ax[num_plots], orientation='horizontal', fraction=0.8, pad=0.2, format="%.0e")
+    ax[num_plots].set_title("\\textbf{Density Scale}")
+    ax[num_plots].axis('off')
     # if num_plots == 2:
     #     fig.suptitle("Density Heatmap at %s                \n max density error: %.3f, mean density error: %.4f            "
     #              % (name, error.max(), error.mean()))
-    fig.suptitle("Density Heatmap %s" % name)
+    #fig.suptitle("Density Heatmap %s" % name)
     fig.tight_layout()
     #
     # if num_plots == 2:
@@ -150,17 +177,34 @@ def plot_scatter(x_nn, x_le, rho_nn, rho_le, name, args, weighted=False,
 
 def plot_losscurves(result, name, args, type="Loss",
                     save=True, show=True, filename=None, include_date=False):
-    colors = ['g', 'r', 'c', 'b', 'm', 'y']
+    colors = [MITRed, TUMBlue, TUMGray] #['g', 'r', 'c', 'b', 'm', 'y']
+    plt.figure(figsize=(8, 4.5))
     if type == "Loss":
         if "train_loss" in result:
             for i, (key, val) in enumerate((result['train_loss']).items()):
                 if not 'max' in key:
-                    plt.plot(val, color=colors[i], linestyle='-', label="train " + key)
+                    if key == "loss":
+                        label = "$\mathscr{L}~$"
+                    elif key == "loss_xe":
+                        label = "$\mathscr{L}_\mathbf{x}$"
+                    elif key == "loss_rho_w":
+                        label = "$\mathscr{L}_g$"
+                    else:
+                        label = key
+                    plt.plot(val, color=colors[i], linestyle='-', label=label + " (training)")
         if "test_loss" in result:
             for i, (key, val) in enumerate(result['test_loss'].items()):
                 if not 'max' in key:
-                    plt.plot(val, color=colors[i], linestyle=':', label="test " + key)
-        plt.title("Loss Curves for Config \n %s" % (name))
+                    if key == "loss":
+                        label = "$\mathscr{L}~$"
+                    elif key == "loss_xe":
+                        label = "$\mathscr{L}_\mathbf{x}$"
+                    elif key == "loss_rho_w":
+                        label = "$\mathscr{L}_g$"
+                    else:
+                        label = key
+                    plt.plot(val, color=colors[i], linestyle=':', label=label + " (test)")
+        # plt.title("Loss Curves for Config \n %s" % (name))
         plt.ylabel("Loss")
         #plt.ylim(0, 0.02)
         plt.yscale('log')
@@ -194,7 +238,7 @@ def plot_losscurves(result, name, args, type="Loss",
         plt.ylabel("Maximum Error")
         #plt.ylim(0, 10)
         plt.yscale('log')
-    plt.legend()
+    plt.legend(ncol=2, loc='upper right')
     plt.grid()
     plt.xlabel("Episodes")
     plt.tight_layout()
@@ -253,58 +297,63 @@ def plot_ref(xref_traj, uref_traj, name, args, system, t=None, x_traj=None,
     #xref_traj = system.project_angle(xref_traj)
     if t is None:
         t = args.dt_sim * torch.arange(0, xref_traj.shape[2])
-    fig, ax = plt.subplots(5, 1, gridspec_kw={'height_ratios': [4, 1, 1, 1, 1]})
-    fig.set_figheight(13)
+    fig, ax = plt.subplots(2, 1, gridspec_kw={'height_ratios': [4, 1]})
+    fig.set_figheight(8) # for 5 plots: 13
 
     if x_traj is not None:
         #x_traj = system.project_angle(x_traj)
         for i in range(x_traj.shape[0]):
             if i == 1:
-                ax[0].plot(x_traj[i, 0, :], x_traj[i, 1, :], 'slategrey', label='Sample Trajectories')
+                ax[0].plot(x_traj[i, 0, :], x_traj[i, 1, :], color=TUMGray_light,
+                           label='Sample Trajectories $\{\mathbf{x}^{(i)}(\cdot)\}_{i=1}^{50}$')
             else:
-                ax[0].plot(x_traj[i, 0, :], x_traj[i, 1, :], 'slategrey')
+                ax[0].plot(x_traj[i, 0, :], x_traj[i, 1, :], color=TUMGray_light)
             tracking_error = torch.sqrt((x_traj[i, 0, :]-xref_traj[0,0,:]) ** 2 + (x_traj[i, 1, :]-xref_traj[0,1,:]) ** 2)
-            ax[1].plot(t, tracking_error, 'slategrey')
-            ax[2].plot(t, x_traj[i, 2, :], 'slategrey')
-            ax[3].plot(t, x_traj[0, 3, :], 'slategrey')
+            ax[1].plot(t, tracking_error, color=TUMGray_light)
+            # ax[2].plot(t, x_traj[i, 2, :], 'slategrey')
+            # ax[3].plot(t, x_traj[0, 3, :], 'slategrey')
 
-    ax[0].plot(xref_traj[0,0,:], xref_traj[0,1,:], 'firebrick', label='Reference Trajectory')
+    ax[0].plot(xref_traj[0,0,:], xref_traj[0,1,:],  color=TUMBlue,
+               label='Reference Trajectory $\mathbf{x}_*(\cdot)$')
     ax[0].grid()
-    ax[0].set_xlabel("x-position")
-    ax[0].set_ylabel("y-position")
-    ax[0].set_xlim(system.X_MIN[0, 0, 0] - 0.1, system.X_MAX[0, 0, 0] + 0.1)
-    ax[0].set_ylim(system.X_MIN[0, 1, 0] - 0.1, system.X_MAX[0, 1, 0] + 0.1)
-    ax[0].legend()
-    ax[0].set_title("Reference Trajectories of type " + args.input_type + "\n" + name)
+    ax[0].set_xlabel("$p_x$ [m]")
+    ax[0].set_ylabel("$p_y$ [m]")
+    ax[0].set_xlim(system.X_MIN[0, 0, 0] - 1, system.X_MAX[0, 0, 0] + 1)
+    ax[0].set_ylim(system.X_MIN[0, 1, 0] - 1, system.X_MAX[0, 1, 0] + 1)
+    ax[0].set_xticks(np.arange(system.X_MIN[0, 0, 0], system.X_MAX[0, 0, 0]+1, 5))
+    ax[0].set_yticks(np.arange(system.X_MIN[0, 1, 0], system.X_MAX[0, 1, 0]+1, 5))
+    ax[0].legend() #loc='lower left')
+    # ax[0].set_title("Reference Trajectories of type " + args.input_type + "\n" + name)
 
-    ax[1].plot(t, torch.zeros_like(t), 'firebrick')
+    ax[1].plot(t, torch.zeros_like(t), color=TUMBlue)
     ax[1].grid()
-    ax[1].set_xlabel("Time")
-    ax[1].set_ylabel("Tracking Error")
+    ax[1].set_xlabel("$t$ [s]")
+    ax[1].set_ylabel("$\left\Vert\\begin{bmatrix} p_x - p_{x*} \\\\ p_y -p_{y*} \end{bmatrix}\\right\Vert~$ [m]")
     ax[1].set_ylim(0, torch.sqrt(system.XE0_MAX[0, 0, 0] ** 2 + system.XE0_MAX[0, 1, 0] ** 2) + 1)
+    ax[1].set_title("$\quad$ ")
 
-    ax[2].plot(t, xref_traj[0, 2, :], 'firebrick')
-    ax[2].grid()
-    ax[2].set_xlabel("Time")
-    ax[2].set_ylabel("Heading angle")
-    ax[2].set_ylim(system.X_MIN[0, 2, 0] - 0.1, system.X_MAX[0, 2, 0] + 0.1)
-
-    ax[3].plot(t, xref_traj[0, 3, :], 'firebrick')
-    ax[3].grid()
-    ax[3].set_xlabel("Time")
-    ax[3].set_ylabel("Velocity")
-    ax[3].set_ylim(system.X_MIN[0, 3, 0] - 0.1, system.X_MAX[0, 3, 0] + 0.1)
-
-    ax[4].plot(t[:uref_traj.shape[2]], uref_traj[0, 0, :], label='Angular velocity')
-    ax[4].plot(t[:uref_traj.shape[2]], uref_traj[0, 1, :], label='Longitudinal acceleration')
-    ax[4].grid()
-    ax[4].set_xlabel("Time")
-    ax[4].set_ylabel("Reference Inputs")
-    ax[4].set_ylim(system.UREF_MIN[0, :, 0].min() - 0.1, system.UREF_MAX[0, :, 0].max() + 0.1)
-    ax[4].legend()
-
+    # ax[2].plot(t, xref_traj[0, 2, :], 'firebrick')
+    # ax[2].grid()
+    # ax[2].set_xlabel("Time [s]")
+    # ax[2].set_ylabel("Heading angle $\phi$ [rad]")
+    # ax[2].set_ylim(system.X_MIN[0, 2, 0] - 0.1, system.X_MAX[0, 2, 0] + 0.1)
+    #
+    # ax[3].plot(t, xref_traj[0, 3, :], 'firebrick')
+    # ax[3].grid()
+    # ax[3].set_xlabel("Time [s]")
+    # ax[3].set_ylabel("Velocity [m/s]")
+    # ax[3].set_ylim(system.X_MIN[0, 3, 0] - 0.1, system.X_MAX[0, 3, 0] + 0.1)
+    #
+    # ax[4].plot(t[:uref_traj.shape[2]], uref_traj[0, 0, :], label='Angular velocity')
+    # ax[4].plot(t[:uref_traj.shape[2]], uref_traj[0, 1, :], label='Longitudinal acceleration')
+    # ax[4].grid()
+    # ax[4].set_xlabel("Time [s]")
+    # ax[4].set_ylabel("Reference Inputs")
+    # ax[4].set_ylim(system.UREF_MIN[0, :, 0].min() - 0.1, system.UREF_MAX[0, :, 0].max() + 0.1)
+    # ax[4].legend()
 
     fig.tight_layout()
+    #fig.align_ylabels(ax[:])
     if save:
         if folder is None:
             folder = args.path_plot_references

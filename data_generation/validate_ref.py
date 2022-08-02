@@ -10,16 +10,16 @@ if __name__ == "__main__":
     use_le = True
     use_mc = False
     use_nn = True
-    use_nn2 = True
+    use_nn2 = False
 
-    sample_size = 500
+    sample_size = 1000
     sample_size_mc = 0
     args = hyperparams.parse_args()
 
     # preparation
     torch.manual_seed(args.random_seed)
     system = Car(args)
-    name = "nn_validation" #'dist%.1fS%d_%s_samples%d' % (system.X_MAX[0, 4, 0], system.controller.dist_state, args.input_type, sample_size)
+    name = "figures_thesis" #'dist%.1fS%d_%s_samples%d' % (system.X_MAX[0, 4, 0], system.controller.dist_state, args.input_type, sample_size)
     path = make_path(args.path_plot_references, name)
 
     if use_nn:
@@ -34,20 +34,19 @@ if __name__ == "__main__":
         model2.eval()
 
     log_density = True
-    time_steps = [30, 50, 70, 100, 200, 300, 500, 800]
-    for k in range(40):
+    time_steps = [30, 50, 70, 100, 200, 300, 400, 500, 800, 900, 1000]
+    for k in range(12):
         xe0 = system.sample_xe0(sample_size)
-        u_params, uref_traj, xref_traj = system.get_valid_ref(args)
+        Up, uref_traj, xref_traj = system.get_valid_ref(args)
 
         # LE:
         if use_le:  # get random initial states
             xe_le, rho_le = system.compute_density(xe0, xref_traj, uref_traj, args.dt_sim,
                                                   cutting=False, log_density=log_density)
-            plot_ref(xref_traj, uref_traj, "traj%d" % k, args, system, x_traj=xe_le[:100, :, :]+xref_traj,
+            plot_ref(xref_traj, uref_traj, "traj%d" % k, args, system, x_traj=xe_le[:50, :, :]+xref_traj,
                  include_date=True, folder=path)
 
-        # MC
-        if use_mc:
+        #MC
             if sample_size_mc != 0:
                 xe0 = system.sample_xe0(sample_size_mc)
                 xe_mc, _ = system.compute_density(xe0, xref_traj, uref_traj, args.dt_sim,
@@ -57,19 +56,22 @@ if __name__ == "__main__":
             else:
                 xe_mc = xe_le
 
+        if k < 5:
+            continue
+
         if use_nn:
             t_vec = args.dt_sim * torch.arange(0, xref_traj.shape[2])
             xe_nn = torch.zeros(xe0.shape[0], system.DIM_X, xref_traj.shape[2])
             rho_nn = torch.zeros(xe0.shape[0], 1, xref_traj.shape[2])
             for i, t in enumerate(t_vec):
-                xe_nn[:, :, [i]], rho_nn[:, :, [i]] = get_nn_prediction(model, xe0, xref_traj[0, :, 0], t, u_params, args)
+                xe_nn[:, :, [i]], rho_nn[:, :, [i]] = get_nn_prediction(model, xe0, xref_traj[0, :, 0], t, Up, args)
 
-        if use_nn:
+        if use_nn2:
             t_vec = args.dt_sim * torch.arange(0, xref_traj.shape[2])
             xe_nn2 = torch.zeros(xe0.shape[0], system.DIM_X, xref_traj.shape[2])
             rho_nn2 = torch.zeros(xe0.shape[0], 1, xref_traj.shape[2])
             for i, t in enumerate(t_vec):
-                xe_nn2[:, :, [i]], rho_nn2[:, :, [i]] = get_nn_prediction(model2, xe0, xref_traj[0, :, 0], t, u_params, args)
+                xe_nn2[:, :, [i]], rho_nn2[:, :, [i]] = get_nn_prediction(model2, xe0, xref_traj[0, :, 0], t, Up, args)
 
         for i, iter_plot in enumerate(time_steps): #50, 70, xe_traj.shape[2]-1]:
             xe_dict = {}
