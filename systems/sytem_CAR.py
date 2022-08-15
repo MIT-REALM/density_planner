@@ -30,8 +30,8 @@ class Car(ControlAffineSystem):
         dist_max = np.pi / 8
 
         # limits for controller and trajectory validity
-        self.X_MIN = torch.tensor([-20., -20., -np.pi + 0.2, 0, -dist_max]).reshape(1, -1, 1)
-        self.X_MAX = torch.tensor([20., 20., 3 * np.pi - 0.2, 10, dist_max]).reshape(1, -1, 1)
+        self.X_MIN = torch.tensor([-50., -50., -np.pi + 0.2, 0, -dist_max]).reshape(1, -1, 1)
+        self.X_MAX = torch.tensor([50., 50., 3 * np.pi - 0.2, 10, dist_max]).reshape(1, -1, 1)
         self.XE_MIN = torch.tensor([-2, -2, -1, -1, -dist_max]).reshape(1, -1, 1)
         self.XE_MAX = torch.tensor([2, 2, 1, 1, dist_max]).reshape(1, -1, 1)
 

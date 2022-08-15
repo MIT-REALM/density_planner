@@ -87,7 +87,7 @@ def parse_args():
 
     ### MOTION PLANNING
     # general motion planning options
-    parser.add_argument('--mp_name', type=str, default="restructuring")
+    parser.add_argument('--mp_name', type=str, default="test")
     parser.add_argument('--weight_goal_far', type=float, default=10) #1 if no influence
     parser.add_argument('--weight_uref_effort', type=float, default=1e-2) #0 if no influence
     parser.add_argument('--close2goal_thr', type=float, default=3)
@@ -122,6 +122,10 @@ def parse_args():
     parser.add_argument('--search_weight_bounds', type=float, default=1e1)
     parser.add_argument('--goal_thr', type=float, default=4)
     parser.add_argument('--coll_thr', type=float, default=4)
+
+    # optimization with NLP
+    parser.add_argument('--iter_NLP', type=int, default=1000) #1000
+    parser.add_argument('--iter_MPC', type=int, default=500) #1000
 
 
 

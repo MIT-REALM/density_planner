@@ -45,19 +45,19 @@ class MotionPlannerNLP(MotionPlanner):
         start motion planner: call optimization/planning function and compute cost
         """
 
-        logging.info("##### Starting motion planning with %s - %s" % (self.name, self.ego.args.mp_name))
+        logging.info("##### %s: Starting motion planning %s" % (self.name, self.ego.args.mp_name))
         t0 = time.time()
         u_traj, x_traj = self.solve_nlp()
         if self.plot and x_traj is not None:
             self.ego.visualize_xref(x_traj, name=self.name + " trajectory", save=True, show=False, folder=self.path_log)
         t_plan = time.time() - t0
-        logging.info("Planning finished in %.2fs" % t_plan)
+        logging.info("%s: Planning finished in %.2fs" % (self.name, t_plan))
         if u_traj is not None:  # up is None if MPC didn't find solution
-            logging.debug(up)
+            logging.debug(u_traj)
             cost = self.validate_traj(u_traj)
         else:
             cost = None
-        return up, cost, t_plan
+        return u_traj, cost, t_plan
 
     def solve_nlp(self):
         quiet = False
@@ -81,10 +81,7 @@ class MotionPlannerNLP(MotionPlanner):
             self.weight_coll * casadi.sumsqr(coll_prob) +
             self.weight_uref * casadi.sumsqr(u)
         )
-        opti.subject_to(x[0, 0] == xstart[0])
-        opti.subject_to(x[1, 0] == xstart[1])
-        opti.subject_to(x[2, 0] == xstart[2])
-        opti.subject_to(x[3, 0] == xstart[3])
+        opti.subject_to(x[:4, 0] == xstart[:]) # CHANGED
 
         opti.subject_to(u[0, :] <= 3)  # accel
         opti.subject_to(u[0, :] >= -3)  # accel
@@ -95,31 +92,33 @@ class MotionPlannerNLP(MotionPlanner):
             x_max = 7
             y_min = -30
             y_max = 10
-            opti.subject_to(x[0, :] <= x_max)  # x
-            opti.subject_to(x[0, :] >= x_min)  # x
-            opti.subject_to(x[1, :] <= y_max)  # x
-            opti.subject_to(x[1, :] >= y_min)  # x
-        opti.subject_to(x[3, :] <= 10)  # v
-        opti.subject_to(x[3, :] >= 0)  # v
+        else:
+            x_min = self.ego.args.environment_size[0]  # self.ego.system.X_MIN[0, 0, 0]
+            x_max = self.ego.args.environment_size[1]  # self.ego.system.X_MAX[0, 0, 0]
+            y_min = self.ego.args.environment_size[2]  # self.ego.system.X_MIN[0, 1, 0]
+            y_max = self.ego.args.environment_size[3]  # self.ego.system.X_MAX[0, 1, 0]
+
+        opti.subject_to(x[0, :] <= x_max)  # x
+        opti.subject_to(x[0, :] >= x_min)  # x
+        opti.subject_to(x[1, :] <= y_max)  # y
+        opti.subject_to(x[1, :] >= y_min)
+        opti.subject_to(x[2, :] >= self.ego.system.X_MIN[0, 2, 0].item())  # theta # CHANGED
+        opti.subject_to(x[2, :] <= self.ego.system.X_MAX[0, 2, 0].item())  # theta # CHANGED
+        opti.subject_to(x[3, :] >= self.ego.system.X_MIN[0, 3, 0].item())  # v
+        opti.subject_to(x[3, :] <= self.ego.system.X_MAX[0, 3, 0].item())  # v
+        #opti.subject_to(((x[0, self.N] - px_ref) ** 2 + (x[1, self.N] - py_ref) ** 2) <= 4)
 
         if self.u0 is not None:
-            logging.info("MPC decision variables are initialized with good parameters")
+            logging.info("%s: decision variables are initialized with good parameters" % self.name)
             uref_traj, xref_traj = self.ego.system.up2ref_traj(self.ego.xref0, self.u0, self.ego.args, short=True)
-            if self.use_up:                
-                for i in range(N_u):
-                    opti.set_initial(u[0, i], self.u0[0, 0, i].item())
-                    opti.set_initial(u[1, i], self.u0[0, 1, i].item())
+            if self.use_up:
+                u_start = self.u0[0, :, :] # CHANGED
             else:
-                for i in range(N_u):
-                    opti.set_initial(u[0, i], uref_traj[0, 0, i].item())
-                    opti.set_initial(u[1, i], uref_traj[0, 1, i].item())
-            for i in range(self.N + 1):
-                opti.set_initial(x[0, i], xref_traj[0, 0, i].item())
-                opti.set_initial(x[1, i], xref_traj[0, 1, i].item())
-                opti.set_initial(x[2, i], xref_traj[0, 2, i].item())
-                opti.set_initial(x[3, i], xref_traj[0, 3, i].item())
+                u_start = uref_traj[0, :, :] # CHANGED
+            opti.set_initial(u[:, :N_u], u_start[:, :N_u].numpy()) # CHANGED
+            opti.set_initial(x[:, :self.N+1], xref_traj[0, :4, :self.N+1].numpy()) # CHANGED
         else:
-            logging.info("MPC decision variables are initialized with zeros")
+            logging.info("%s: decision variables are initialized with zeros" % self.name)
 
         ix_min, iy_min = pos2gridpos(self.ego.args, pos_x=x_min, pos_y=y_min)
         ix_max, iy_max = pos2gridpos(self.ego.args, pos_x=x_max, pos_y=y_max)
@@ -150,7 +149,7 @@ class MotionPlannerNLP(MotionPlanner):
 
         # optimizer setting
         p_opts = {"expand": False}
-        s_opts = {"max_iter": 1000}
+        s_opts = {"max_iter": self.ego.args.iter_NLP}
         if quiet:
             p_opts["print_time"] = 0
             s_opts["print_level"] = 0
@@ -162,24 +161,25 @@ class MotionPlannerNLP(MotionPlanner):
             self.xe0 = torch.zeros(1, self.ego.system.DIM_X, 1)
         x0 = self.xe0 + self.ego.xref0
 
-        for i in range(4):
-            opti.set_value(xstart[i], x0[0, i, 0].item())
+        opti.set_value(xstart[:], x0[0, :4, 0].numpy()) # CHANGED
         try:
             sol1 = opti.solve()
-            ud = sol1.value(u)
-            xd = sol1.value(x)
-            up = torch.from_numpy(ud).unsqueeze(0)
-            if self.use_up:
-                uref_traj, xref_traj = self.ego.system.up2ref_traj(x0, up, self.ego.args)
-            else:
-                uref_traj = up
-                xref_traj = self.ego.system.compute_xref_traj(x0, uref_traj, self.ego.args, dhort=True)
-            x_traj = torch.from_numpy(xd).unsqueeze(0)
-            logging.info("Solution found. MPC state trajectory error: %.2f" % ((x_traj-xref_traj[:, :4, :]).abs().sum()))
         except:
-            logging.info("No solution found")
+            logging.info("%s: No solution found" % self.name)
             uref_traj = None
             x_traj = None
+            return uref_traj, x_traj
+
+        ud = sol1.value(u)
+        xd = sol1.value(x)
+        up = torch.from_numpy(ud).unsqueeze(0)
+        if self.use_up:
+            uref_traj, xref_traj = self.ego.system.up2ref_traj(x0, up, self.ego.args)
+        else:
+            uref_traj = up
+            xref_traj = self.ego.system.compute_xref_traj(x0, uref_traj.repeat_interleave(10, dim=2), self.ego.args, short=True)
+        x_traj = torch.from_numpy(xd).unsqueeze(0)
+        logging.info("%s: Solution found. State trajectory error: %.2f" % (self.name, (x_traj - xref_traj[:, :4, :]).abs().sum()))
 
         return uref_traj, x_traj
 
@@ -212,7 +212,7 @@ class MotionPlannerNLP(MotionPlanner):
         if xe0 is None:
             xe0 = self.xe0
 
-        xref_traj = self.ego.system.compute_xref_traj(self.ego.xref0+xe0, u_traj, self.ego.args, short=True)
+        xref_traj = self.ego.system.compute_xref_traj(self.ego.xref0+xe0, u_traj.repeat_interleave(10, dim=2), self.ego.args, short=True)
         if plot:
             if folder is None:
                 folder = self.path_log
@@ -254,7 +254,7 @@ class MotionPlannerNLP(MotionPlanner):
 
         cost, cost_dict = self.get_cost(u_traj, x_traj, rho_traj)
         cost_dict = self.remove_cost_factor(cost_dict)
-        logging.info("True cost coll %.4f, goal %.4f, bounds %.4f, uref %.4f" % (cost_dict["cost_coll"],
+        logging.info("%s: True cost coll %.4f, goal %.4f, bounds %.4f, uref %.4f" % (self.name, cost_dict["cost_coll"],
                                                                                  cost_dict["cost_goal"],
                                                                                  cost_dict["cost_bounds"],
                                                                                  cost_dict["cost_uref"]))
@@ -263,65 +263,54 @@ class MotionPlannerNLP(MotionPlanner):
 
 class MotionPlannerMPC(MotionPlannerNLP):
     """
-    class using MPC for motion planning
+    class using NLP solver for motion planning
     """
 
-    def __init__(self, ego, N, u0=None, xe0=None, plot=True, name="oracle", path_log=None):
-        super().__init__(ego, plot=plot, name=name, path_log=path_log)
-        self.rho0 = torch.ones(1, 1, 1)
-        self.u0 = u0
-        self.xe0 = xe0
-        self.dt = ego.args.dt_sim
-        self.factor_pred = ego.args.factor_pred
-        self.N = ego.args.N_sim // ego.args.factor_pred
-        # self.ego.rho0 = torch.zeros(1, 1, 1)
-        if ego.args.input_type == "discr10":
-            self.num_discr = 10
-        elif ego.args.input_type == "discr5":
-            self.num_discr = 5
+    def __init__(self, ego, u0=None, xe0=None, plot=True, name="MPC", path_log=None, N_MPC=20):
+        super().__init__(ego, u0=u0, xe0=xe0, plot=plot, name=name, path_log=path_log, use_up=False)
+        self.N_MPC = N_MPC
 
     def plan_motion(self):
         """
         start motion planner: call optimization/planning function and compute cost
         """
 
-        logging.info("##### Starting motion planning with %s - %s" % (self.name, self.ego.args.mp_name))
+        logging.info("##### %s: Starting motion planning %s" % (self.name, self.ego.args.mp_name))
         t0 = time.time()
-        up, x_traj = self.solve_nlp()
+        u_traj, x_traj = self.solve_nlp()
         if self.plot and x_traj is not None:
             self.ego.visualize_xref(x_traj, name=self.name + " trajectory", save=True, show=False, folder=self.path_log)
         t_plan = time.time() - t0
-        logging.info("Planning finished in %.2fs" % t_plan)
-        if up is not None:  # up is None if MPC didn't find solution
-            logging.debug(up)
-            cost = self.validate_traj(up)
+        logging.info("%s: Planning finished in %.2fs" % (self.name, t_plan))
+        if u_traj is not None:  # up is None if MPC didn't find solution
+            logging.debug(u_traj)
+            cost = self.validate_traj(u_traj)
         else:
             cost = None
-        return up, cost, t_plan
+        return u_traj, cost, t_plan
 
     def solve_nlp(self):
         quiet = False
         px_ref = self.ego.xrefN[0, 0, 0].item()
         py_ref = self.ego.xrefN[0, 1, 0].item()
-        N_u = (self.N - 1) // 10 + 1
+        N_u = self.N_MPC
 
         opti = casadi.Opti()
-        x = opti.variable(4, self.N + 1)  # state (x, y, psi, v)
+        x = opti.variable(4, self.N_MPC + 1)  # state (x, y, psi, v)
         u = opti.variable(2, N_u)  # control (accel, omega)
-        coll_prob = opti.variable(1, self.N)
+        coll_prob = opti.variable(1, self.N_MPC)
         xstart = opti.parameter(4)
+        u_traj = np.zeros((1, 2, N_u))
+        x_traj = np.zeros((1, 4, self.N))
 
         street = True  # TO-DO: try False
 
         opti.minimize(
-            self.weight_goal * ((x[0, self.N] - px_ref) ** 2 + (x[1, self.N] - py_ref) ** 2) +
+            self.weight_goal * ((x[0, self.N_MPC] - px_ref) ** 2 + (x[1, self.N_MPC] - py_ref) ** 2) +
             self.weight_coll * casadi.sumsqr(coll_prob) +
             self.weight_uref * casadi.sumsqr(u)
         )
-        opti.subject_to(x[0, 0] == xstart[0])
-        opti.subject_to(x[1, 0] == xstart[1])
-        opti.subject_to(x[2, 0] == xstart[2])
-        opti.subject_to(x[3, 0] == xstart[3])
+        opti.subject_to(x[:4, 0] == xstart[:])
 
         opti.subject_to(u[0, :] <= 3)  # accel
         opti.subject_to(u[0, :] >= -3)  # accel
@@ -332,37 +321,46 @@ class MotionPlannerMPC(MotionPlannerNLP):
             x_max = 7
             y_min = -30
             y_max = 10
-            opti.subject_to(x[0, :] <= x_max)  # x
-            opti.subject_to(x[0, :] >= x_min)  # x
-            opti.subject_to(x[1, :] <= y_max)  # x
-            opti.subject_to(x[1, :] >= y_min)  # x
-        opti.subject_to(x[3, :] <= 10)  # v
-        opti.subject_to(x[3, :] >= 0)  # v
-
-        if self.u0 is not None:
-            logging.info("MPC decision variables are initialized with good parameters")
-            uref_traj, xref_traj = self.ego.system.up2ref_traj(self.ego.xref0, self.u0, self.ego.args, short=True)
-
-            for i in range(N_u):
-                opti.set_initial(u[0, i], self.u0[0, 0, i].item())
-                opti.set_initial(u[1, i], self.u0[0, 1, i].item())
-            for i in range(self.N + 1):
-                opti.set_initial(x[0, i], xref_traj[0, 0, i].item())
-                opti.set_initial(x[1, i], xref_traj[0, 1, i].item())
-                opti.set_initial(x[2, i], xref_traj[0, 2, i].item())
-                opti.set_initial(x[3, i], xref_traj[0, 3, i].item())
         else:
-            logging.info("MPC decision variables are initialized with zeros")
+            x_min = self.ego.args.environment_size[0]  # self.ego.system.X_MIN[0, 0, 0]
+            x_max = self.ego.args.environment_size[1]  # self.ego.system.X_MAX[0, 0, 0]
+            y_min = self.ego.args.environment_size[2]  # self.ego.system.X_MIN[0, 1, 0]
+            y_max = self.ego.args.environment_size[3]  # self.ego.system.X_MAX[0, 1, 0]
+
+        opti.subject_to(x[0, :] <= x_max)  # x
+        opti.subject_to(x[0, :] >= x_min)  # x
+        opti.subject_to(x[1, :] <= y_max)  # y
+        opti.subject_to(x[1, :] >= y_min)
+        opti.subject_to(x[2, :] <= self.ego.system.X_MIN[0, 2, 0].item())  # v
+        opti.subject_to(x[2, :] >= self.ego.system.X_MAX[0, 2, 0].item())  # v
+        opti.subject_to(x[3, :] <= self.ego.system.X_MIN[0, 3, 0].item())  # v
+        opti.subject_to(x[3, :] >= self.ego.system.X_MAX[0, 3, 0].item())  # v
 
         ix_min, iy_min = pos2gridpos(self.ego.args, pos_x=x_min, pos_y=y_min)
         ix_max, iy_max = pos2gridpos(self.ego.args, pos_x=x_max, pos_y=y_max)
         xgrid = np.arange(x_min, x_max + 0.0001, self.ego.args.grid_wide)
         ygrid = np.arange(y_min, y_max + 0.0001, self.ego.args.grid_wide)
 
-        for k in range(self.N):  # timesteps
+        # optimizer setting
+        p_opts = {"expand": False}
+        s_opts = {"max_iter": self.ego.args.iter_MPC}
+        if quiet:
+            p_opts["print_time"] = 0
+            s_opts["print_level"] = 0
+            s_opts["sb"] = "yes"
+        opti.solver("ipopt", p_opts, s_opts)
+        if self.xe0 is None:
+            self.xe0 = torch.zeros(1, self.ego.system.DIM_X, 1)
+        x0 = self.xe0 + self.ego.xref0
+        x_traj[:, :, [0]] = x0[:, :4, :].numpy()
+
+        for k in range(self.N_MPC):  # timesteps
             grid_coll_prob = self.ego.env.grid[ix_min:ix_max + 1, iy_min:iy_max + 1, k].numpy().ravel(order='F')
             LUT = casadi.interpolant('name', 'linear', [xgrid, ygrid], grid_coll_prob)
-            u_k = k // 10
+            if self.use_up:
+                u_k = k // 10
+            else:
+                u_k = k
             xk0 = x[0, k]
             xk1 = x[1, k]
             xk2 = x[2, k]
@@ -378,38 +376,41 @@ class MotionPlannerMPC(MotionPlannerNLP):
             opti.subject_to(x[3, k + 1] == xk3)  # v+=a*dt
             opti.subject_to(coll_prob[0, k] == LUT(casadi.hcat([x[0, k + 1], x[1, k + 1]])))
 
-        # optimizer setting
-        p_opts = {"expand": False}
-        s_opts = {"max_iter": 1000}
-        if quiet:
-            p_opts["print_time"] = 0
-            s_opts["print_level"] = 0
-            s_opts["sb"] = "yes"
-        opti.solver("ipopt", p_opts, s_opts)
+        for k_start in range(self.N - self.N_MPC):
 
-        if self.xe0 is None:
-            self.xe0 = torch.zeros(1, self.ego.system.DIM_X, 1)
-        x0 = self.xe0 + self.ego.xref0
+            # initialization
+            if k_start == 0:
+                opti.set_value(xstart[:], x0[0, :4, 0].numpy())
+                if self.u0 is not None:
+                    logging.info("%s: decision variables are initialized with good parameters" % self.name)
+                    uref_traj, xref_traj = self.ego.system.up2ref_traj(self.ego.xref0, self.u0, self.ego.args,
+                                                                       short=True)
+                    opti.set_initial(u[:, :N_u], uref_traj[0, :, :N_u].numpy())
+                    opti.set_initial(x[:, :], xref_traj[0, :4, :].numpy())
+                else:
+                    logging.info("%s: decision variables are initialized with zeros" % self.name)
+            else:
+                opti.set_initial(u[:, :N_u-1], ud[:, 1:])
+                opti.set_initial(x[:, :self.N_MPC], xd[:, 1:])
+                opti.set_value(xstart[:], xd[:, 1])
 
-        for i in range(4):
-            opti.set_value(xstart[i], x0[0, i, 0].item())
-        try:
-            sol1 = opti.solve()
+            try:
+                sol1 = opti.solve()
+
+            except:
+                logging.info("%s: No solution found" % self.name)
+                return None, None
             ud = sol1.value(u)
             xd = sol1.value(x)
-            up = torch.from_numpy(ud).unsqueeze(0)
-            uref_traj, xref_traj = self.ego.system.up2ref_traj(x0, up, self.ego.args)
-            x_traj = torch.from_numpy(xd).unsqueeze(0)
-            logging.info(
-                "Solution found. MPC state trajectory error: %.2f" % ((x_traj - xref_traj[:, :4, :]).abs().sum()))
-        except:
-            logging.info("No solution found")
-            up = None
-            x_traj = None
+            u_traj[0, :, k_start] = ud[:, 0]
+            x_traj[0, :, k_start+1] = xd[:, 1]
 
-        return up, x_traj
+        xref_traj = self.ego.system.compute_xref_traj(x0, u_traj.repeat_interleave(10, dim=2), self.ego.args, dhort=True)
+        logging.info("%s: Solution found. State trajectory error: %.2f" % (
+            self.name, (x_traj - xref_traj[:, :4, :]).abs().sum()))
+        return u_traj, x_traj
 
-    def get_traj(self, up, xe0=None, name="traj", plot=True, folder=None):
+    def get_traj(self, u_traj, xe0=None, name="traj", plot=True, folder=None):
         """
         compute trajectories from up
 
@@ -437,7 +438,8 @@ class MotionPlannerMPC(MotionPlannerNLP):
         """
         if xe0 is None:
             xe0 = self.xe0
-        uref_traj, xref_traj = self.ego.system.up2ref_traj(self.ego.xref0 + xe0, up, self.ego.args, short=True)
+
+        xref_traj = self.ego.system.compute_xref_traj(self.ego.xref0 + xe0, u_traj.repeat_interleave(10, dim=2), self.ego.args, short=True)
         if plot:
             if folder is None:
                 folder = self.path_log
@@ -445,9 +447,9 @@ class MotionPlannerMPC(MotionPlannerNLP):
         x_traj = xref_traj
         rho_traj = torch.ones(1, 1, x_traj.shape[2])
 
-        return uref_traj, xref_traj, x_traj, rho_traj
+        return u_traj, xref_traj, x_traj, rho_traj
 
-    def validate_traj(self, up):
+    def validate_traj(self, u_traj):
         """
         evaluate input parameters (plot and compute final cost), assume that reference trajectory starts at ego.xref0+self.xe0
 
@@ -473,16 +475,14 @@ class MotionPlannerMPC(MotionPlannerNLP):
         else:
             path_final = None
 
-        uref_traj, xref_traj, x_traj, rho_traj = self.get_traj(up, name="finalTraj", plot=self.plot, folder=path_final)
+        u_traj, xref_traj, x_traj, rho_traj = self.get_traj(u_traj, name="finalTraj", plot=self.plot, folder=path_final)
         if self.plot:
             self.ego.animate_traj(path_final, x_traj, x_traj, rho_traj)
 
-        cost, cost_dict = self.get_cost(uref_traj, x_traj, rho_traj)
+        cost, cost_dict = self.get_cost(u_traj, x_traj, rho_traj)
         cost_dict = self.remove_cost_factor(cost_dict)
-        logging.info("True cost coll %.4f, goal %.4f, bounds %.4f, uref %.4f" % (cost_dict["cost_coll"],
-                                                                                 cost_dict["cost_goal"],
-                                                                                 cost_dict["cost_bounds"],
-                                                                                 cost_dict["cost_uref"]))
+        logging.info("%s: True cost coll %.4f, goal %.4f, bounds %.4f, uref %.4f" % (self.name, cost_dict["cost_coll"],
+                                                                                     cost_dict["cost_goal"],
+                                                                                     cost_dict["cost_bounds"],
+                                                                                     cost_dict["cost_uref"]))
         return cost_dict
-
-

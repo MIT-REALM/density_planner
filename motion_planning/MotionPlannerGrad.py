@@ -38,26 +38,26 @@ class MotionPlannerGrad(MotionPlanner):
         start motion planner: call optimization/planning function and compute cost
         """
 
-        logging.info("##### Starting motion planning with %s - %s" % (self.name, self.ego.args.mp_name))
+        logging.info("##### %s: Starting motion planning %s" % (self.name, self.ego.args.mp_name))
         tall = time.time()
 
-        logging.debug("Optimizing %d Random Trajectories without density" % self.ego.args.mp_numtraj)
+        logging.debug("%s: Optimizing %d Random Trajectories without density" % (self.name, self.ego.args.mp_numtraj))
         t0 = time.time()
         up_best, cost_min = self.find_initial_traj()
         t_init = time.time() - t0
-        logging.debug("Initilialization finished in %.2fs" % t_init)
-        logging.debug("Best Trajectory with cost %.4f:" % cost_min)
+        logging.debug("%s: Initilialization finished in %.2fs" % (self.name, t_init))
+        logging.debug("%s: Best Trajectory with cost %.4f:" % (self.name, cost_min))
         logging.debug(up_best)
 
-        logging.debug("Improving input parameters with density prediction")
+        logging.debug("%s: Improving input parameters with density prediction" % self.name)
         t0 = time.time()
         up, cost = self.optimize_traj(up_best)
         t_opt = time.time() - t0
-        logging.debug("Optimization finished in %.2fs" % t_opt)
+        logging.debug("%s: Optimization finished in %.2fs" % (self.name, t_opt))
 
         t_plan = time.time() - tall
-        logging.info("Planning finished in %.2fs" % t_plan)
-        logging.info("Final cost coll %.4f, goal %.4f, bounds %.4f, uref %.4f" % (cost["cost_coll"],
+        logging.info("%s: Planning finished in %.2fs" % (self.name, t_plan))
+        logging.info("%s: Final cost coll %.4f, goal %.4f, bounds %.4f, uref %.4f" % (self.name, cost["cost_coll"],
                                                                                   cost["cost_goal"],
                                                                                   cost["cost_bounds"],
                                                                                   cost["cost_uref"]))
@@ -403,7 +403,7 @@ class MotionPlannerGrad(MotionPlanner):
 
         cost, cost_dict = self.get_cost(uref_traj, x_traj, rho_traj)
         cost_dict = self.remove_cost_factor(cost_dict)
-        logging.info("True cost coll %.4f, goal %.4f, bounds %.4f, uref %.4f" % (cost_dict["cost_coll"],
+        logging.info("%s: True cost coll %.4f, goal %.4f, bounds %.4f, uref %.4f" % (self.name, cost_dict["cost_coll"],
                                                                                  cost_dict["cost_goal"],
                                                                                  cost_dict["cost_bounds"],
                                                                                  cost_dict["cost_uref"]))
@@ -447,7 +447,7 @@ class MotionPlannerGrad(MotionPlanner):
 
         cost, cost_dict = self.get_cost(uref_traj, x_traj, rho_traj)
         cost_dict = self.remove_cost_factor(cost_dict)
-        logging.info("True cost coll %.4f, goal %.4f, bounds %.4f, uref %.4f" % (cost_dict["cost_coll"],
+        logging.info("%s: True cost coll %.4f, goal %.4f, bounds %.4f, uref %.4f" % (self.name, cost_dict["cost_coll"],
                                                                                  cost_dict["cost_goal"],
                                                                                  cost_dict["cost_bounds"],
                                                                                  cost_dict["cost_uref"]))

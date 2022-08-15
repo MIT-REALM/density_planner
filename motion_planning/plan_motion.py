@@ -10,7 +10,7 @@ import os
 import logging
 import sys
 from MotionPlannerGrad import MotionPlannerGrad
-from MotionPlannerNLP import MotionPlannerNLP
+from MotionPlannerNLP import MotionPlannerNLP, MotionPlannerMPC
 #import MotionPlannerNLP
 import numpy as np
 
@@ -31,13 +31,16 @@ if __name__ == '__main__':
     time_grad_all = []
     cost_grad_all = []
     up_grad_all = []
-    time_MPCcold_iter = []
-    time_MPCwarm_iter = []
-    cost_MPCcold_iter = []
-    cost_MPCwarm_iter = []
+    time_NLPcold_iter = []
+    time_NLPwarm_iter = []
+    time_NLPutraj_iter = []
+    cost_NLPcold_iter = []
+    cost_NLPwarm_iter = []
+    cost_NLPutraj_iter = []
     cost_grad_iter = []
-    up_MPCcold_iter = []
-    up_MPCwarm_iter = []
+    up_NLPcold_iter = []
+    up_NLPwarm_iter = []
+    up_NLPutraj_iter = []
 
     for k in range(20):
         env = create_environment(args, timestep=100)
@@ -47,7 +50,7 @@ if __name__ == '__main__':
         # plot_grid(env, args, timestep=60, save=False)
         # plot_grid(env, args, timestep=80, save=False)
         # plot_grid(env, args, save=False)
-
+        #xref0 = torch.Tensor([[[-0.1823], [ 0.6661], [ 0.3189], [ 0.1411], [ 0.0000]]])
         xref0 = torch.tensor([0, -28, 1.5, 3, 0]).reshape(1, -1, 1).type(torch.FloatTensor)
         xrefN = torch.tensor([0., 8, 4, 1, 0]).reshape(1, -1, 1) #, [10, 5, 10, 6]]).reshape(2, -1, 1)
 
@@ -56,18 +59,24 @@ if __name__ == '__main__':
         up_grad = None
 
         planner_grad = MotionPlannerGrad(ego, name="grad%d" % k, plot=plot, path_log=path_log)
-        up_grad, cost_grad, time_grad = planner_grad.plan_motion()
-        time_grad_all.append(time_grad)
-        cost_grad_all.append(cost_grad)
-        up_grad_all.append(up_grad)
-
         if k == 0:
             path_log = planner_grad.path_log
+        # up_grad, cost_grad, time_grad = planner_grad.plan_motion()
+        # time_grad_all.append(time_grad)
+        # cost_grad_all.append(cost_grad)
+        # print(up_grad)
+        # up_grad_all.append(up_grad)
+        up_grad = torch.Tensor([[[0.9255, -0.6596, -0.3638, 0.1527, 0.2528, -0.1136, -0.2866,
+                  0.0067, -0.1316, -0.3437],
+                 [0.2499, 0.4296, -0.1355, -0.0274, 0.6027, 0.3089, -0.5549,
+                  0.0684, -0.0828, 0.2266]]]) #for seed 0
+        # up_grad = torch.Tensor([[[-0.4295,  0.4854,  0.3976,  0.1772, -0.3519, -0.5208, -0.0646,
+        #            0.8481, -0.5238, -0.7427],
+        #          [-0.2112,  0.3185,  0.3122,  0.5391, -0.0937, -0.1417,  0.7684,
+        #           -0.2717,  0.6058, -0.4975]]]) # for seed 1
 
-        up_grad = torch.Tensor([[[-0.4295,  0.4854,  0.3976,  0.1772, -0.3519, -0.5208, -0.0646,
-                   0.8481, -0.5238, -0.7427],
-                 [-0.2112,  0.3185,  0.3122,  0.5391, -0.0937, -0.1417,  0.7684,
-                  -0.2717,  0.6058, -0.4975]]]) # for seed 1
+        planner_MPC = MotionPlannerMPC(ego, name="MPC%d" % k, plot=plot, path_log=path_log)
+        u_MPC, cost_MPC, time_MPC = planner_MPC.plan_motion()
 
         for j in range(10):
             if j == 5:
@@ -82,18 +91,29 @@ if __name__ == '__main__':
 
             # compute trajectory with NLP
             ## without warm start
-            planner_oracle = MotionPlannerNLP(ego, xe0=xe0, name="MPCcold", u0=None, plot=plot, path_log=path_log)
+            planner_oracle = MotionPlannerNLP(ego, xe0=xe0, name="Oracle%d.%d" % (k, j), u0=None, plot=plot, path_log=path_log)
             up, cost, time = planner_oracle.plan_motion()
-            time_MPCcold_iter.append(time)
-            cost_MPCcold_iter.append(cost)
-            up_MPCcold_iter.append(up)
+            time_NLPcold_iter.append(time)
+            cost_NLPcold_iter.append(cost)
+            up_NLPcold_iter.append(up)
 
             ## with warm start
-            planner_oracle = MotionPlannerNLP(ego, xe0=xe0, name="MPCwarm", u0=up_grad, plot=plot, path_log=path_log)
+            planner_oracle = MotionPlannerNLP(ego, xe0=xe0, name="OracleWarm%d.%d" % (k, j), u0=up_grad, plot=plot, path_log=path_log)
             up, cost, time = planner_oracle.plan_motion()
-            time_MPCwarm_iter.append(time)
-            cost_MPCwarm_iter.append(cost)
-            up_MPCwarm_iter.append(up)
+            time_NLPwarm_iter.append(time)
+            cost_NLPwarm_iter.append(cost)
+            up_NLPwarm_iter.append(up)
+
+            ## with warm start
+            planner_oracle = MotionPlannerNLP(ego, xe0=xe0, name="OracleUtraj%d.%d" % (k, j), use_up=False, plot=plot, path_log=path_log)
+            up, cost, time = planner_oracle.plan_motion()
+            time_NLPutraj_iter.append(time)
+            cost_NLPutraj_iter.append(cost)
+            up_NLPutraj_iter.append(up)
+
+            ## with warm start
+            planner_oracle = MotionPlannerNLP(ego, xe0=xe0, u0=up_grad, name="OracleUtrajWarm%d.%d" % (k, j), use_up=False, plot=plot, path_log=path_log)
+            up, cost, time = planner_oracle.plan_motion()
 
 
         # planner_sampling = MotionPlannerSampling(ego, plot=plot)
@@ -102,8 +122,8 @@ if __name__ == '__main__':
         # planner_search = MotionPlannerSearch(ego, plot=plot)
         # up_search, cost_search = planner_search.plan_motion()
     with open(path_log + "results", "wb") as f:
-        pickle.dump([time_grad_all, cost_grad_all, up_grad_all, time_MPCcold_iter, time_MPCwarm_iter, cost_MPCcold_iter,
-                     cost_MPCwarm_iter, cost_grad_iter, up_MPCcold_iter, up_MPCwarm_iter], f)
+        pickle.dump([time_grad_all, cost_grad_all, up_grad_all, time_NLPcold_iter, time_NLPwarm_iter, cost_NLPcold_iter,
+                     cost_NLPwarm_iter, cost_grad_iter, up_NLPcold_iter, up_NLPwarm_iter], f)
     print("end")
 
 
