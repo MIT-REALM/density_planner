@@ -74,8 +74,6 @@ class MotionPlannerNLP(MotionPlanner):
         coll_prob = opti.variable(1, self.N)
         xstart = opti.parameter(4)
 
-        street = True  # TO-DO: try False
-
         opti.minimize(
             self.weight_goal * ((x[0, self.N] - px_ref) ** 2 + (x[1, self.N] - py_ref) ** 2) +
             self.weight_coll * casadi.sumsqr(coll_prob) +
@@ -87,16 +85,11 @@ class MotionPlannerNLP(MotionPlanner):
         opti.subject_to(u[0, :] >= -3)  # accel
         opti.subject_to(u[1, :] <= 3)  # omega
         opti.subject_to(u[1, :] >= -3)  # omega
-        if street:
-            x_min = -7
-            x_max = 7
-            y_min = -30
-            y_max = 10
-        else:
-            x_min = self.ego.args.environment_size[0]  # self.ego.system.X_MIN[0, 0, 0]
-            x_max = self.ego.args.environment_size[1]  # self.ego.system.X_MAX[0, 0, 0]
-            y_min = self.ego.args.environment_size[2]  # self.ego.system.X_MIN[0, 1, 0]
-            y_max = self.ego.args.environment_size[3]  # self.ego.system.X_MAX[0, 1, 0]
+
+        x_min = self.ego.args.environment_size[0]  # self.ego.system.X_MIN[0, 0, 0]
+        x_max = self.ego.args.environment_size[1]  # self.ego.system.X_MAX[0, 0, 0]
+        y_min = self.ego.args.environment_size[2]  # self.ego.system.X_MIN[0, 1, 0]
+        y_max = self.ego.args.environment_size[3]  # self.ego.system.X_MAX[0, 1, 0]
 
         opti.subject_to(x[0, :] <= x_max)  # x
         opti.subject_to(x[0, :] >= x_min)  # x
@@ -125,7 +118,7 @@ class MotionPlannerNLP(MotionPlanner):
         ygrid = np.arange(y_min, y_max + 0.0001, self.ego.args.grid_wide)
 
         for k in range(self.N):  # timesteps
-            grid_coll_prob = self.ego.env.grid[ix_min:ix_max + 1, iy_min:iy_max + 1, k].numpy().ravel(order='F')
+            grid_coll_prob = self.ego.env.grid[ix_min:ix_max + 1, iy_min:iy_max + 1, k + 1].numpy().ravel(order='F')
             LUT = casadi.interpolant('name', 'linear', [xgrid, ygrid], grid_coll_prob)
             if self.use_up:
                 u_k = k // 10
@@ -265,9 +258,11 @@ class MotionPlannerMPC(MotionPlannerNLP):
     class using NLP solver for motion planning
     """
 
-    def __init__(self, ego, u0=None, xe0=None, plot=True, name="MPC", path_log=None, N_MPC=20):
+    def __init__(self, ego, u0=None, xe0=None, plot=True, name="MPC", path_log=None, N_MPC=10, biased=True):
         super().__init__(ego, u0=u0, xe0=xe0, plot=plot, name=name, path_log=path_log, use_up=False)
         self.N_MPC = N_MPC
+        # if biased:
+        #     self.ye0 =
 
     def plan_motion(self):
         """
@@ -296,35 +291,23 @@ class MotionPlannerMPC(MotionPlannerNLP):
 
         opti = casadi.Opti()
         x = opti.variable(4, self.N_MPC + 1)  # state (x, y, psi, v)
-        u = opti.variable(2, N_u)  # control (accel, omega)
-        coll_prob = opti.variable(1, self.N_MPC)
+        u = opti.variable(2, self.N_MPC)  # control (accel, omega)
+        coll_prob = opti.variable(self.N, self.N_MPC)
         xstart = opti.parameter(4)
-        u_traj = np.zeros((1, 2, N_u))
-        x_traj = np.zeros((1, 4, self.N))
 
-        street = True  # TO-DO: try False
+        u_traj = np.zeros((1, 2, self.N))
+        x_traj = np.zeros((1, 4, self.N + 1))
 
-        opti.minimize(
-            self.weight_goal * ((x[0, self.N_MPC] - px_ref) ** 2 + (x[1, self.N_MPC] - py_ref) ** 2) +
-            self.weight_coll * casadi.sumsqr(coll_prob) +
-            self.weight_uref * casadi.sumsqr(u)
-        )
         opti.subject_to(x[:4, 0] == xstart[:])
-
         opti.subject_to(u[0, :] <= 3)  # accel
         opti.subject_to(u[0, :] >= -3)  # accel
         opti.subject_to(u[1, :] <= 3)  # omega
         opti.subject_to(u[1, :] >= -3)  # omega
-        if street:
-            x_min = -7
-            x_max = 7
-            y_min = -30
-            y_max = 10
-        else:
-            x_min = self.ego.args.environment_size[0]  # self.ego.system.X_MIN[0, 0, 0]
-            x_max = self.ego.args.environment_size[1]  # self.ego.system.X_MAX[0, 0, 0]
-            y_min = self.ego.args.environment_size[2]  # self.ego.system.X_MIN[0, 1, 0]
-            y_max = self.ego.args.environment_size[3]  # self.ego.system.X_MAX[0, 1, 0]
+
+        x_min = self.ego.args.environment_size[0]  # self.ego.system.X_MIN[0, 0, 0]
+        x_max = self.ego.args.environment_size[1]  # self.ego.system.X_MAX[0, 0, 0]
+        y_min = self.ego.args.environment_size[2]  # self.ego.system.X_MIN[0, 1, 0]
+        y_max = self.ego.args.environment_size[3]  # self.ego.system.X_MAX[0, 1, 0]
 
         opti.subject_to(x[0, :] <= x_max)  # x
         opti.subject_to(x[0, :] >= x_min)  # x
@@ -354,8 +337,6 @@ class MotionPlannerMPC(MotionPlannerNLP):
         x_traj[:, :, [0]] = x0[:, :4, :].numpy()
 
         for k in range(self.N_MPC):  # timesteps
-            grid_coll_prob = self.ego.env.grid[ix_min:ix_max + 1, iy_min:iy_max + 1, k].numpy().ravel(order='F')
-            LUT = casadi.interpolant('name', 'linear', [xgrid, ygrid], grid_coll_prob)
             if self.use_up:
                 u_k = k // 10
             else:
@@ -373,9 +354,23 @@ class MotionPlannerMPC(MotionPlannerNLP):
             opti.subject_to(x[1, k + 1] == xk1)  # y+=v*sin(theta)*dt
             opti.subject_to(x[2, k + 1] == xk2)  # theta+=omega*dt
             opti.subject_to(x[3, k + 1] == xk3)  # v+=a*dt
-            opti.subject_to(coll_prob[0, k] == LUT(casadi.hcat([x[0, k + 1], x[1, k + 1]])))
 
-        for k_start in range(self.N - self.N_MPC):
+            for kN in range(self.N):
+                # if k + kN > self.N:
+                #     opti.subject_to(coll_prob[kN, k] == 0)
+                if k + kN < self.N:
+                    grid_coll_prob = self.ego.env.grid[ix_min:ix_max + 1, iy_min:iy_max + 1, k + kN + 1].numpy().ravel(order='F')
+                    LUT = casadi.interpolant('name', 'linear', [xgrid, ygrid], grid_coll_prob)
+                    opti.subject_to(coll_prob[kN, k] == LUT(casadi.hcat([x[0, k + 1], x[1, k + 1]])))
+
+        times = []
+        for k_start in range(self.N):
+            t0 = time.time()
+            opti.minimize(
+                self.weight_goal * ((x[0, self.N_MPC] - px_ref) ** 2 + (x[1, self.N_MPC] - py_ref) ** 2) +
+                self.weight_coll * casadi.sumsqr(coll_prob[k_start, :]) +
+                self.weight_uref * casadi.sumsqr(u)
+            )
 
             # initialization
             if k_start == 0:
@@ -397,16 +392,22 @@ class MotionPlannerMPC(MotionPlannerNLP):
                 sol1 = opti.solve()
 
             except:
-                logging.info("%s: No solution found" % self.name)
-                return None, None
+                times.append(time.time()-t0)
+                logging.info("%s: No solution found at iteration %d" % (self.name, k_start))
+                logging.info("%s: Average computation time: %.4f, maximum computation time: %.4f" % (self.name, np.array(times).mean(), np.array(times).max()))
+                return u_traj, x_traj
+            times.append(time.time()-t0)
             ud = sol1.value(u)
             xd = sol1.value(x)
             u_traj[0, :, k_start] = ud[:, 0]
             x_traj[0, :, k_start+1] = xd[:, 1]
 
+        u_traj = torch.from_numpy(u_traj)
+        x_traj = torch.from_numpy(x_traj)
         xref_traj = self.ego.system.compute_xref_traj(x0, u_traj.repeat_interleave(10, dim=2), self.ego.args, dhort=True)
         logging.info("%s: Solution found. State trajectory error: %.2f" % (
             self.name, (x_traj - xref_traj[:, :4, :]).abs().sum()))
+        logging.info("%s: Average computation time: %.4f, maximum computation time: %.4f" % (self.name, np.array(times).mean(), np.array(times).max()))
         return u_traj, x_traj
 
     def get_traj(self, u_traj, xe0=None, name="traj", plot=True, folder=None):
