@@ -43,14 +43,14 @@ if __name__ == '__main__':
     up_NLPutraj_iter = []
 
     for k in range(20):
-        env = create_environment(args, timestep=100)
+        env = create_environment(args, timestep=100) #@Andres: replace/adapt this function to load your environment
         # plot_grid(env, args, timestep=0, save=False)
         # plot_grid(env, args, timestep=20, save=False)
         # plot_grid(env, args, timestep=40, save=False)
         # plot_grid(env, args, timestep=60, save=False)
         # plot_grid(env, args, timestep=80, save=False)
         # plot_grid(env, args, save=False)
-        #xref0 = torch.Tensor([[[-0.1823], [ 0.6661], [ 0.3189], [ 0.1411], [ 0.0000]]])
+
         xref0 = torch.tensor([0, -28, 1.5, 3, 0]).reshape(1, -1, 1).type(torch.FloatTensor)
         xrefN = torch.tensor([0., 8, 4, 1, 0]).reshape(1, -1, 1) #, [10, 5, 10, 6]]).reshape(2, -1, 1)
 
@@ -58,26 +58,16 @@ if __name__ == '__main__':
         plot = False
         up_grad = None
 
+        # plan motion
         planner_grad = MotionPlannerGrad(ego, name="grad%d" % k, plot=plot, path_log=path_log)
+        up_grad, cost_grad, time_grad = planner_grad.plan_motion()
         if k == 0:
             path_log = planner_grad.path_log
-        # up_grad, cost_grad, time_grad = planner_grad.plan_motion()
-        # time_grad_all.append(time_grad)
-        # cost_grad_all.append(cost_grad)
-        # print(up_grad)
-        # up_grad_all.append(up_grad)
-        up_grad = torch.Tensor([[[0.9255, -0.6596, -0.3638, 0.1527, 0.2528, -0.1136, -0.2866,
-                  0.0067, -0.1316, -0.3437],
-                 [0.2499, 0.4296, -0.1355, -0.0274, 0.6027, 0.3089, -0.5549,
-                  0.0684, -0.0828, 0.2266]]]) #for seed 0
-        # up_grad = torch.Tensor([[[-0.4295,  0.4854,  0.3976,  0.1772, -0.3519, -0.5208, -0.0646,
-        #            0.8481, -0.5238, -0.7427],
-        #          [-0.2112,  0.3185,  0.3122,  0.5391, -0.0937, -0.1417,  0.7684,
-        #           -0.2717,  0.6058, -0.4975]]]) # for seed 1
+        time_grad_all.append(time_grad)
+        cost_grad_all.append(cost_grad)
+        up_grad_all.append(up_grad)
 
-        planner_MPC = MotionPlannerMPC(ego, name="MPC%d" % k, plot=plot, path_log=path_log)
-        u_MPC, cost_MPC, time_MPC = planner_MPC.plan_motion()
-
+        # compare with other motion planners from different initial states
         for j in range(10):
             if j == 5:
                 xe0 = torch.zeros(1, ego.system.DIM_X, 1)
@@ -121,6 +111,7 @@ if __name__ == '__main__':
         #
         # planner_search = MotionPlannerSearch(ego, plot=plot)
         # up_search, cost_search = planner_search.plan_motion()
+
     with open(path_log + "results", "wb") as f:
         pickle.dump([time_grad_all, cost_grad_all, up_grad_all, time_NLPcold_iter, time_NLPwarm_iter, cost_NLPcold_iter,
                      cost_NLPwarm_iter, cost_grad_iter, up_NLPcold_iter, up_NLPwarm_iter], f)

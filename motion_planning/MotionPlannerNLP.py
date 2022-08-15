@@ -34,7 +34,7 @@ class MotionPlannerNLP(MotionPlanner):
         self.factor_pred = ego.args.factor_pred
         self.use_up = use_up
         self.N = ego.args.N_sim // ego.args.factor_pred
-        #self.ego.rho0 = torch.zeros(1, 1, 1)
+
         if ego.args.input_type == "discr10":
             self.num_discr = 10
         elif ego.args.input_type == "discr5":
@@ -106,7 +106,6 @@ class MotionPlannerNLP(MotionPlanner):
         opti.subject_to(x[2, :] <= self.ego.system.X_MAX[0, 2, 0].item())  # theta # CHANGED
         opti.subject_to(x[3, :] >= self.ego.system.X_MIN[0, 3, 0].item())  # v
         opti.subject_to(x[3, :] <= self.ego.system.X_MAX[0, 3, 0].item())  # v
-        #opti.subject_to(((x[0, self.N] - px_ref) ** 2 + (x[1, self.N] - py_ref) ** 2) <= 4)
 
         if self.u0 is not None:
             logging.info("%s: decision variables are initialized with good parameters" % self.name)
@@ -331,10 +330,10 @@ class MotionPlannerMPC(MotionPlannerNLP):
         opti.subject_to(x[0, :] >= x_min)  # x
         opti.subject_to(x[1, :] <= y_max)  # y
         opti.subject_to(x[1, :] >= y_min)
-        opti.subject_to(x[2, :] <= self.ego.system.X_MIN[0, 2, 0].item())  # v
-        opti.subject_to(x[2, :] >= self.ego.system.X_MAX[0, 2, 0].item())  # v
-        opti.subject_to(x[3, :] <= self.ego.system.X_MIN[0, 3, 0].item())  # v
-        opti.subject_to(x[3, :] >= self.ego.system.X_MAX[0, 3, 0].item())  # v
+        opti.subject_to(x[2, :] <= self.ego.system.X_MAX[0, 2, 0].item())  # v
+        opti.subject_to(x[2, :] >= self.ego.system.X_MIN[0, 2, 0].item())  # v
+        opti.subject_to(x[3, :] <= self.ego.system.X_MAX[0, 3, 0].item())  # v
+        opti.subject_to(x[3, :] >= self.ego.system.X_MIN[0, 3, 0].item())  # v
 
         ix_min, iy_min = pos2gridpos(self.ego.args, pos_x=x_min, pos_y=y_min)
         ix_max, iy_max = pos2gridpos(self.ego.args, pos_x=x_max, pos_y=y_max)
