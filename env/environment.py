@@ -1,10 +1,15 @@
 import numpy as np
 import torch
-import pygame
 import os
+
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
+
+import pygame
+
 import sys
 import matplotlib.pyplot as plt
 import matplotlib.animation as anim
+from matplotlib.patches import Circle
 import matplotlib.path as mplt_path
 
 from multiprocessing import Pool
@@ -12,11 +17,13 @@ from tqdm import tqdm
 from loguru import logger
 from skimage.io import imread
 from skimage.measure import block_reduce
+from skimage.transform import downscale_local_mean
 from skimage.color import rgb2gray
 from skimage.util import crop
 from skimage.filters import threshold_isodata
 from motion_planning.utils import enlarge_grid, compute_gradient
 from env.utils import Configurable
+from scipy.stats import multivariate_normal
 
 # adding submodules to the system path
 sys.path.insert(0, './env/external/drone-dataset-tools/src/')
@@ -27,41 +34,44 @@ from tracks_import import read_from_csv
 class Environment(Configurable):
     """Combined grip map of multiple OccupancyObjects"""
 
-    def __init__(self, name="environment", init_time=0, config=None):
+    def __init__(self, name="environment", init_time=0, end_time=np.inf, config=None):
         # Initialize superclass
         super().__init__()
         Configurable.__init__(self, config)
         self.map_anim = None
         self.name = name
         self.current_time = init_time
+        self.init_time = init_time
+        self.end_time = end_time
+        self.scale_down_factor = 12
         # Extract tracks and records from config
         self.__extract_recording_data()
         # Initialize tracks
         self.__initialize_tracks(self.__tracks, self.__tracks_meta)
         # Initialize environmental parameters
-        self.scale_down_factor = 12
+
         self.step_size = 1 / self.__recording_meta['frameRate']  # in seconds
         self.grid_resolution = self.config['grid']['resolution'] / self.scale_down_factor  # [m]
+        self.max_env_size = np.array(self.config['grid']['max_size']) / self.scale_down_factor  # [m]
         self.simulation_time = self.__recording_meta['duration']  # [s]
         self.scaling_factor = self.__recording_meta['orthoPxToMeter']  # [m/px]
         self.num_vehicles = self.__recording_meta['numVehicles']
         self.num_vrus = self.__recording_meta['numVRUs']
         self.num_obstacles = self.__recording_meta['numTracks']
-        self.num_frames = self.maximum_frame - self.minimum_frame + 1
-        self._init_frame = int(np.round(init_time / self.step_size))
-        self.current_frame = self._init_frame
+        self.num_frames = self.maximum_frame - self.minimum_frame
+        self.current_frame = self.minimum_frame
 
-        # Check if visualization should be included
-        self.visualize = self.config['environment']['visualize']
-        if self.visualize:
-            # Initialize visualization
-            self.__initialize_visualization()
+        # Uncertainty parameters
+        self.certainty = self.config['grid']['certainty']
+        self.spread = self.config['grid']['spread']
 
         # Initialize grid with background image and static obstacles
         self.__create_grid()
         self.grid_enlarged = None
         self.grid_gradientX = None
         self.grid_gradientY = None
+        # Check if visualization should be included
+        self.visualize = self.config['environment']['visualize']
 
     # noinspection PyTypeChecker
     def run(self) -> torch.Tensor:
@@ -85,6 +95,9 @@ class Environment(Configurable):
         return self.grid
 
     def create_animation(self):
+        if self.visualize:
+            # Initialize visualization
+            self.__initialize_visualization()
         if not self.visualize:
             raise Exception('Visualization is not enabled on configuration file.')
         """create the animation"""
@@ -92,7 +105,7 @@ class Environment(Configurable):
         # Create animation
         # noinspection PyTypeChecker
         self.map_anim = anim.FuncAnimation(self.fig, self.__update_animation,
-                                           frames=tqdm(np.arange(self._init_frame, self.num_frames - 1)),
+                                           frames=tqdm(np.arange(self.minimum_frame, self.num_frames)),
                                            interval=1000 / self.config['environment']["fps"])
         # Save animation
         self.map_anim.save(self.output_file, writer=self.writer_video)
@@ -116,6 +129,21 @@ class Environment(Configurable):
         self.minimum_frame = min(meta["initialFrame"] for meta in tracks_meta)
         self.maximum_frame = max(meta["finalFrame"] for meta in tracks_meta)
         logger.info("The recording contains tracks from frame {} to {}.", self.minimum_frame, self.maximum_frame)
+        # crop minimum time if specified in config
+        init_frame = int(self.__recording_meta['frameRate'] * self.init_time)
+        if self.minimum_frame < init_frame:
+            self.minimum_frame = init_frame
+            logger.info("Cropping minimum frame to {}.", self.minimum_frame)
+        # crop maximum time if specified by config
+        if not np.isinf(self.end_time):
+            end_frame = int(self.__recording_meta['frameRate'] * self.end_time)
+        else:
+            end_frame = self.maximum_frame
+
+        if not np.isinf(self.end_time) and end_frame < self.maximum_frame:
+            self.maximum_frame = end_frame
+            logger.info("Cropping maximum frame to {} frames.", self.maximum_frame)
+
         # Create a mapping between frame and idxs of tracks for quick lookup during playback
         self.frame_to_track_idxs = {}
         for i_frame in range(self.minimum_frame, self.maximum_frame + 1):
@@ -146,20 +174,19 @@ class Environment(Configurable):
         x_scale = int(np.round(self.grid_resolution / self.scaling_factor))
         y_scale = int(np.round(self.grid_resolution / self.scaling_factor))
         logger.info("Rescaling image with pool of size {}.", np.array([x_scale, y_scale]))
-        background_grid = block_reduce(self.background_image_cropped, block_size=(x_scale, y_scale), func=np.mean)
-        threshold = threshold_isodata(self.background_image)  # input value
+        background_grid = downscale_local_mean(self.background_image_cropped, (x_scale, y_scale))
+        threshold = threshold_isodata(background_grid)  # input value
         # Create binary occupancy grid
-        binary_grid = background_grid < threshold
-        number_time_steps = int(self.num_frames - self.current_frame)
+        binary_grid = (background_grid < threshold).astype(np.float)
         # Create occupancy grid for each time step
-        self.grid = torch.tensor(np.repeat(binary_grid[:, :, np.newaxis], number_time_steps, axis=2))
+        self.grid = torch.tensor(np.repeat(binary_grid[:, :, np.newaxis], self.num_frames, axis=2))
         # Create spacing points for the grid
-        self.__x_pts = np.linspace(left, right, binary_grid.shape[1])
-        self.__y_pts = np.linspace(-upper, -lower, binary_grid.shape[0])
-        self.__time_pts = np.linspace(self._init_frame, self.num_frames, number_time_steps)
+        self._x_pts = np.linspace(left, right, binary_grid.shape[1])
+        self._y_pts = np.linspace(-upper, -lower, binary_grid.shape[0])
+        self.__time_pts = np.linspace(self.minimum_frame, self.maximum_frame, self.num_frames)
 
-        grid_2d = np.meshgrid(self.__x_pts, self.__y_pts)  # make a canvas with coordinates
-        self.__points = np.vstack((grid_2d[0].flatten(), grid_2d[1].flatten())).T
+        self.grid_2d = np.meshgrid(self._x_pts, self._y_pts)  # make a canvas with coordinates
+        self._points = np.vstack((self.grid_2d[0].flatten(), self.grid_2d[1].flatten())).T
 
     def __extract_recording_data(self):
         """extracts the recordings from config"""
@@ -216,29 +243,90 @@ class Environment(Configurable):
             # Instantiate obstacle on grid
             # Vehicles are represented as polygons
             if track["bbox"] is not None:
-                # extract obstacle bounding box
-                bounding_box = track["bbox"][current_index] / self.scale_down_factor
-                path = mplt_path.Path(bounding_box)
-                inside_pts = path.contains_points(self.__points)
-                if inside_pts.any():
-                    inside_pts = self.__points[inside_pts]
-                    for inside_pt in inside_pts:
-                        x_indx = np.where(self.__x_pts == inside_pt[0])[0]
-                        y_indx = np.where(self.__y_pts == inside_pt[1])[0]
-                        # Populate grid with obstacle
-                        self.grid[y_indx, x_indx, frame_idx] = 1
-                        """ NOTE: Here is where uncertainty can be added """
+                if self.certainty:
+                    # extract obstacle bounding box
+                    bounding_box = track["bbox"][current_index] / self.scale_down_factor
+                    # Create obstacle polygon
+                    path = mplt_path.Path(bounding_box)
+                    inside_pts = path.contains_points(self._points)
+                    if inside_pts.any():
+                        inside_pts = self._points[inside_pts]
+                        # Update occupancy grid
+                        for inside_pt in inside_pts:
+                            x_indx = np.where(self._x_pts == inside_pt[0])[0]
+                            y_indx = np.where(self._y_pts == inside_pt[1])[0]
+                            # Populate grid with obstacle
+                            self.grid[y_indx, x_indx, frame_idx] = 1
+                else:
+                    # extract obstacle bounding box
+                    bounding_box = track["bbox"][current_index] / self.scale_down_factor
+                    # extract obstacle centroid position
+                    x_cntr = track['xCenter'][current_index] / self.scale_down_factor
+                    y_cntr = track['yCenter'][current_index] / self.scale_down_factor
+                    # Extract speed
+                    x_velocity = track['xVelocity'][current_index] / self.scale_down_factor
+                    y_velocity = track['yVelocity'][current_index] / self.scale_down_factor
+                    # Extract heading
+                    heading = track['heading'][current_index]
+                    # Create gaussian around the centroid
+                    length = track['length'][current_index] / self.scale_down_factor
+                    width = track['width'][current_index] / self.scale_down_factor
+
+                    # fetch the PDF of the 2D gaussian
+                    _, _, PDF = self.mvpdf(x_cntr, y_cntr,
+                                           self.grid_2d[0].flatten(), self.grid_2d[1].flatten(),
+                                           length=length/2+self.spread/self.scale_down_factor,
+                                           width=width/2+self.spread/self.scale_down_factor,
+                                           velocity=np.linalg.norm([x_velocity, y_velocity],ord=2),
+                                           theta=heading)
+                    # normalize PDF by shifting and scaling, so that the smallest value is 0 and the largest is 1
+                    normPDF = PDF - PDF.min()
+                    normPDF = normPDF / normPDF.max()
+                    normPDF = normPDF.reshape(self.grid_2d[0].shape)
+                    # Populate grid with obstacle
+                    indx = normPDF>=1e-1
+                    self.grid[:, :, frame_idx][indx] = torch.tensor(normPDF[indx])
+                    # fig, ax= self.plotmv(self, y_cntr, x_cntr, self.grid_2d[1].flatten(), self.grid_2d[0].flatten(),
+                    #             radius=length,
+                    #             velocity=[x_velocity, y_velocity],
+                    #             scale=length / width, theta=heading)
+
             # VRUs are represented as dots
             else:
-                # extract obstacle centroid position
-                x_position = track['xCenter'][current_index] / self.scale_down_factor
-                y_position = track['yCenter'][current_index] / self.scale_down_factor
-                # Compute nearest grid point
-                x_indx = self.find_nearest_index(self.__x_pts, x_position)[0]
-                y_indx = self.find_nearest_index(self.__y_pts, y_position)[0]
-                # Populate occupancy grid
-                self.grid[y_indx, x_indx, frame_idx] = 1
-                """ NOTE: Here is where uncertainty can be added """
+                if self.certainty:
+                    # extract obstacle centroid position
+                    x_cntr = track['xCenter'][current_index] / self.scale_down_factor
+                    y_cntr = track['yCenter'][current_index] / self.scale_down_factor
+                    # Compute nearest grid point
+                    x_indx = self.find_nearest_index(self._x_pts, x_cntr)[0]
+                    y_indx = self.find_nearest_index(self._y_pts, y_cntr)[0]
+                    # Populate occupancy grid
+                    self.grid[y_indx, x_indx, frame_idx] = 1
+                else:
+                    # extract obstacle centroid position
+                    x_cntr = track['xCenter'][current_index] / self.scale_down_factor
+                    y_cntr = track['yCenter'][current_index] / self.scale_down_factor
+                    # Create gaussian around the centroid
+                    # Extract speed
+                    x_velocity = track['xVelocity'][current_index] / self.scale_down_factor
+                    y_velocity = track['yVelocity'][current_index] / self.scale_down_factor
+                    # Extract heading
+                    heading = track['heading'][current_index]
+                    # fetch the PDF of the 2D gaussian
+                    _, _, PDF = self.mvpdf(x_cntr, y_cntr,
+                                           self.grid_2d[0].flatten(), self.grid_2d[1].flatten(),
+                                           length=0.5/2/12, width=0.5/ 2,
+                                           velocity=np.linalg.norm([x_velocity, y_velocity],ord=2),
+                                           theta=heading)
+                    # normalize PDF by shifting and scaling, so that the smallest value is 0 and the largest is 1
+                    normPDF = PDF - PDF.min()
+                    normPDF = normPDF / normPDF.max()
+                    normPDF = normPDF.reshape(self.grid_2d[0].shape)
+
+                    # Populate grid with obstacle
+                    indx = normPDF>=1e-1
+                    self.grid[:, :, frame_idx][indx] = torch.tensor(normPDF[indx])
+
         # time.sleep(0.2)
         return self.grid[:, :, frame_idx]
 
@@ -282,8 +370,8 @@ class Environment(Configurable):
         :return: None
         """
         self.ax.clear()
-        self.ax.set_xlim(0, self.grid.shape[1])
-        self.ax.set_ylim(0, self.grid.shape[0])
+        # self.ax.set_xlim(0, self.grid.shape[1])
+        # self.ax.set_ylim(0, self.grid.shape[0])
         self.ax.imshow(self.grid[:, :, frame], cmap='gray', origin='lower', vmin=0.0, vmax=1.0)
 
     @staticmethod
@@ -385,9 +473,61 @@ class Environment(Configurable):
             left, right = right, left
         if lower < upper:
             lower, upper = upper, lower
+        # make sure that environment doesn't go out of bounds
+        max_env_size = np.array(self.config['grid']['max_size']) / self.scale_down_factor
+        max_size_px_x = int(max_env_size[0] / self.__recording_meta['orthoPxToMeter'])
+        max_size_px_y = int(max_env_size[1] / self.__recording_meta['orthoPxToMeter'])
+        if right - left > max_size_px_y:
+            right = left + max_size_px_y
+        if lower - upper > max_size_px_x:
+            lower = upper + max_size_px_x
         # crop the image
         img = rgb2gray(imread(path))[upper:lower, left:right]
         return img, (left, upper, right, lower)
+
+    @staticmethod
+    def rot(theta):
+        theta = np.deg2rad(theta)
+        return np.array([
+            [np.cos(theta), -np.sin(theta)],
+            [np.sin(theta), np.cos(theta)]
+        ])
+
+    def getcov(self, length:float=1/12, width:float=1/12, theta:float=0):
+        cov = np.array([
+            [length**2, 0],
+            [0, width**2]
+        ])
+
+        r = self.rot(theta)
+        return r @ cov @ r.T
+
+    def mvpdf(self, x, y, XX, YY, length:float=1/12, width:float=1/12, velocity= 0, theta:float=0):
+        """Creates a grid of data that represents the PDF of a multivariate gaussian.
+
+        x, y: The center of the returned PDF
+        xx,yy: flattened mesh grid of x and y
+        radius: The PDF will be dilated by this factor
+        scale: The PDF be stretched by a factor of (scale + 1) in the x direction, and squashed by a factor of 1/(scale + 1) in the y direction
+        theta: The PDF will be rotated by this many degrees
+
+        returns: XX, YY, PDF. XX and YY hold the coordinates of the PDF.
+        """
+
+        # stack them into the format expected by the multivariate pdf
+        XY = np.column_stack([XX, YY])
+
+        # displace xy by half the velocity
+        x, y = self.rot(theta) @ (velocity / 2, 0) + (x, y)
+
+        # get the covariance matrix with the appropriate transforms
+        cov = self.getcov(length, width, theta=theta)
+
+        # generate the data grid that represents the PDF
+        PDF = multivariate_normal([x, y], cov).pdf(XY)
+
+        return XX, YY, PDF
+
 
     @classmethod
     def default_config(cls):
@@ -396,13 +536,14 @@ class Environment(Configurable):
             recording=1,
         ),
             grid=dict(
-                resolution=0.5,
-                certainty=np.random.randint(3, 10) / 10,
-                spread=np.random.randint(1, 30)
+                resolution=0.5,  # [m]
+                max_size=[100, 100],  # [x, y]
+                certainty=0,  # np.random.randint(3, 10) / 10,
+                spread=1
             ),
             environment=dict(
                 visualize=True,
-                parallel=True,
+                parallel=False,
                 output_file=r"./env/animation.mp4",
                 fps=10
             )
