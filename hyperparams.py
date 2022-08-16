@@ -126,7 +126,7 @@ def parse_args():
     # optimization with NLP
     parser.add_argument('--iter_NLP', type=int, default=1000) #1000
     parser.add_argument('--iter_MPC', type=int, default=2000) #1000
-    parser.add_argument('--goal_reached_MPC', type=float, default=0.5)
+    parser.add_argument('--goal_reached_MPC', type=float, default=1)
 
 
 

@@ -284,99 +284,96 @@ class MotionPlannerMPC(MotionPlannerNLP):
         return u_traj, cost, t_plan
 
     def solve_nlp(self):
-        quiet = False
+        quiet = True
         px_ref = self.ego.xrefN[0, 0, 0].item()
         py_ref = self.ego.xrefN[0, 1, 0].item()
         N_u = self.N_MPC
 
-        opti = casadi.Opti()
-        x = opti.variable(4, self.N_MPC + 1)  # state (x, y, psi, v)
-        u = opti.variable(2, self.N_MPC)  # control (accel, omega)
-        coll_prob = opti.variable(self.N, self.N_MPC)
-        xstart = opti.parameter(4)
-
         u_traj = np.zeros((1, 2, self.N))
         x_traj = np.zeros((1, 4, self.N + 1))
-
-        opti.subject_to(x[:4, 0] == xstart[:])
-        opti.subject_to(u[0, :] <= 3)  # accel
-        opti.subject_to(u[0, :] >= -3)  # accel
-        opti.subject_to(u[1, :] <= 3)  # omega
-        opti.subject_to(u[1, :] >= -3)  # omega
+        if self.xe0 is None:
+            self.xe0 = torch.zeros(1, self.ego.system.DIM_X, 1)
+        x0 = self.xe0 + self.ego.xref0
+        x_traj[:, :, [0]] = x0[:, :4, :].numpy()
 
         x_min = self.ego.args.environment_size[0]  # self.ego.system.X_MIN[0, 0, 0]
         x_max = self.ego.args.environment_size[1]  # self.ego.system.X_MAX[0, 0, 0]
         y_min = self.ego.args.environment_size[2]  # self.ego.system.X_MIN[0, 1, 0]
         y_max = self.ego.args.environment_size[3]  # self.ego.system.X_MAX[0, 1, 0]
-
-        opti.subject_to(x[0, :] <= x_max)  # x
-        opti.subject_to(x[0, :] >= x_min)  # x
-        opti.subject_to(x[1, :] <= y_max)  # y
-        opti.subject_to(x[1, :] >= y_min)
-        opti.subject_to(x[2, :] <= self.ego.system.X_MAX[0, 2, 0].item())  # v
-        opti.subject_to(x[2, :] >= self.ego.system.X_MIN[0, 2, 0].item())  # v
-        opti.subject_to(x[3, :] <= self.ego.system.X_MAX[0, 3, 0].item())  # v
-        opti.subject_to(x[3, :] >= self.ego.system.X_MIN[0, 3, 0].item())  # v
-
         ix_min, iy_min = pos2gridpos(self.ego.args, pos_x=x_min, pos_y=y_min)
         ix_max, iy_max = pos2gridpos(self.ego.args, pos_x=x_max, pos_y=y_max)
         xgrid = np.arange(x_min, x_max + 0.0001, self.ego.args.grid_wide)
         ygrid = np.arange(y_min, y_max + 0.0001, self.ego.args.grid_wide)
+        times = []
 
-        # optimizer setting
+        ### optimizer settings
         p_opts = {"expand": False}
         s_opts = {"max_iter": self.ego.args.iter_MPC}
         if quiet:
             p_opts["print_time"] = 0
             s_opts["print_level"] = 0
             s_opts["sb"] = "yes"
-        opti.solver("ipopt", p_opts, s_opts)
-        if self.xe0 is None:
-            self.xe0 = torch.zeros(1, self.ego.system.DIM_X, 1)
-        x0 = self.xe0 + self.ego.xref0
-        x_traj[:, :, [0]] = x0[:, :4, :].numpy()
 
-        for k in range(self.N_MPC):  # timesteps
-            if self.use_up:
-                u_k = k // 10
-            else:
-                u_k = k
-            xk0 = x[0, k]
-            xk1 = x[1, k]
-            xk2 = x[2, k]
-            xk3 = x[3, k]
-            for j in range(self.factor_pred):
-                xk0 = xk0 + xk3 * casadi.cos(xk2) * self.dt
-                xk1 = xk1 + xk3 * casadi.sin(xk2) * self.dt
-                xk2 = xk2 + u[0, u_k] * self.dt
-                xk3 = xk3 + u[1, u_k] * self.dt
-            opti.subject_to(x[0, k + 1] == xk0)  # x+=v*cos(theta)*dt
-            opti.subject_to(x[1, k + 1] == xk1)  # y+=v*sin(theta)*dt
-            opti.subject_to(x[2, k + 1] == xk2)  # theta+=omega*dt
-            opti.subject_to(x[3, k + 1] == xk3)  # v+=a*dt
-
-            for kN in range(self.N):
-                # if k + kN > self.N:
-                #     opti.subject_to(coll_prob[kN, k] == 0)
-                if k + kN < self.N:
-                    grid_coll_prob = self.ego.env.grid[ix_min:ix_max + 1, iy_min:iy_max + 1, k + kN + 1].numpy().ravel(order='F')
-                    LUT = casadi.interpolant('name', 'linear', [xgrid, ygrid], grid_coll_prob)
-                    opti.subject_to(coll_prob[kN, k] == LUT(casadi.hcat([x[0, k + 1], x[1, k + 1]])))
-
-        times = []
         for k_start in range(self.N):
-            t0 = time.time()
-            if k_start > self.N - self.N_MPC:
-                goal_factor = 1 / 100
-            else:
-                goal_factor = 1
+
+            ### prepare optimizer
+            opti = casadi.Opti()
+            x = opti.variable(4, self.N_MPC + 1)  # state (x, y, psi, v)
+            u = opti.variable(2, self.N_MPC)  # control (accel, omega)
+            coll_prob = opti.variable(self.N_MPC)
+            xstart = opti.parameter(4)
+            opti.solver("ipopt", p_opts, s_opts)
+
+            ### add constraints
+            opti.subject_to(x[:4, 0] == xstart[:])
+            opti.subject_to(u[0, :] <= 3)  # accel
+            opti.subject_to(u[0, :] >= -3)  # accel
+            opti.subject_to(u[1, :] <= 3)  # omega
+            opti.subject_to(u[1, :] >= -3)  # omega
+            opti.subject_to(x[0, :] <= x_max)  # x
+            opti.subject_to(x[0, :] >= x_min)  # x
+            opti.subject_to(x[1, :] <= y_max)  # y
+            opti.subject_to(x[1, :] >= y_min)  # y
+            opti.subject_to(x[2, :] <= self.ego.system.X_MAX[0, 2, 0].item())  # theta
+            opti.subject_to(x[2, :] >= self.ego.system.X_MIN[0, 2, 0].item())  # theta
+            opti.subject_to(x[3, :] <= self.ego.system.X_MAX[0, 3, 0].item())  # v
+            opti.subject_to(x[3, :] >= self.ego.system.X_MIN[0, 3, 0].item())  # v
+
+            for k in range(min(self.N_MPC, self.N - k_start)):  # timesteps
+                if self.use_up:
+                    u_k = k // 10
+                else:
+                    u_k = k
+                xk0 = x[0, k]
+                xk1 = x[1, k]
+                xk2 = x[2, k]
+                xk3 = x[3, k]
+                for j in range(self.factor_pred):
+                    xk0 = xk0 + xk3 * casadi.cos(xk2) * self.dt
+                    xk1 = xk1 + xk3 * casadi.sin(xk2) * self.dt
+                    xk2 = xk2 + u[0, u_k] * self.dt
+                    xk3 = xk3 + u[1, u_k] * self.dt
+                opti.subject_to(x[0, k + 1] == xk0)  # x+=v*cos(theta)*dt
+                opti.subject_to(x[1, k + 1] == xk1)  # y+=v*sin(theta)*dt
+                opti.subject_to(x[2, k + 1] == xk2)  # theta+=omega*dt
+                opti.subject_to(x[3, k + 1] == xk3)  # v+=a*dt
+
+                grid_coll_prob = self.ego.env.grid[ix_min:ix_max + 1, iy_min:iy_max + 1, k_start + k + 1].numpy().ravel(order='F')
+                LUT = casadi.interpolant('name', 'linear', [xgrid, ygrid], grid_coll_prob)
+                opti.subject_to(coll_prob[k] == LUT(casadi.hcat([x[0, k + 1], x[1, k + 1]])))
+
+            goal_factor = 100
             opti.minimize(
-                goal_factor * k_start ** 2 / self.N ** 2 * self.weight_goal * ((x[0, self.N_MPC] - px_ref) ** 2 + (x[1, self.N_MPC] - py_ref) ** 2) +
-                self.weight_coll * casadi.sumsqr(coll_prob[k_start, :]) +
+                goal_factor * k_start ** 2 / self.N ** 2 * self.weight_goal * (
+                            (x[0, self.N_MPC] - px_ref) ** 2 + (x[1, self.N_MPC] - py_ref) ** 2) +
+                self.weight_coll * casadi.sumsqr(coll_prob) +
                 self.weight_uref * casadi.sumsqr(u)
             )
 
-            # initialization
+            ### online computations
+            t0 = time.time()
+
+            ### initialization
             if k_start == 0:
                 opti.set_value(xstart[:], x0[0, :4, 0].numpy())
                 if self.u0 is not None:
@@ -388,28 +385,33 @@ class MotionPlannerMPC(MotionPlannerNLP):
                 else:
                     logging.info("%s: decision variables are initialized with zeros" % self.name)
             else:
-                opti.set_initial(u[:, :N_u-1], ud[:, 1:])
+                opti.set_initial(u[:, :N_u - 1], ud[:, 1:])
                 opti.set_initial(x[:, :self.N_MPC], xd[:, 1:])
                 opti.set_value(xstart[:], xd[:, 1])
 
+            ### solve
             try:
                 sol1 = opti.solve()
 
-            except:
-                times.append(time.time()-t0)
+            except:  # no solution found
+                times.append(time.time() - t0)
                 logging.info("%s: No solution found at iteration %d" % (self.name, k_start))
-                logging.info("%s: Average computation time: %.4f, maximum computation time: %.4f" % (self.name, np.array(times).mean(), np.array(times).max()))
+                logging.info("%s: Average computation time: %.4f, maximum computation time: %.4f" % (
+                self.name, np.array(times).mean(), np.array(times).max()))
                 return u_traj, x_traj
-            times.append(time.time()-t0)
+
+            # solution found
+            times.append(time.time() - t0)
             ud = sol1.value(u)
             xd = sol1.value(x)
             u_traj[0, :, k_start] = ud[:, 0]
-            x_traj[0, :, k_start+1] = xd[:, 1]
+            x_traj[0, :, k_start + 1] = xd[:, 1]
             if ((xd[0, 1] - px_ref) ** 2 + (xd[1, 1] - py_ref) ** 2) < self.ego.args.goal_reached_MPC:
                 u_traj = u_traj[:, :, :k_start + 1]
                 x_traj = x_traj[:, :, :k_start + 2]
                 break
 
+        ### save and print results
         u_traj = torch.from_numpy(u_traj)
         x_traj = torch.from_numpy(x_traj)
         xref_traj = self.ego.system.compute_xref_traj(x0, u_traj.repeat_interleave(10, dim=2), self.ego.args, short=True)

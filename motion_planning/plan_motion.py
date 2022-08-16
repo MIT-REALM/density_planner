@@ -23,7 +23,7 @@ if __name__ == '__main__':
     torch.manual_seed(args.random_seed)
     np.random.seed(args.random_seed)
 
-    plot = False
+    plot = True
     path_log = None
     num_initial = 10  # number of different initial state which will be evaluated
 
@@ -82,6 +82,13 @@ if __name__ == '__main__':
 
             ### compute trajectory with MPC
             planner_MPC = MotionPlannerMPC(ego, xe0=xe0, name="MPC%d.%d" % (k, j), plot=plot, path_log=path_log)
+            u, cost, time = planner_MPC.plan_motion()
+            results["MPC"]["u"].append(u)
+            results["MPC"]["cost"].append(cost)
+            results["MPC"]["time"].append(time)
+
+            ### compute trajectory with MPC
+            planner_MPC = MotionPlannerMPC(ego, xe0=xe0, name="MPC%d.%d" % (k, j), plot=plot, path_log=path_log, N_MPC=20)
             u, cost, time = planner_MPC.plan_motion()
             results["MPC"]["u"].append(u)
             results["MPC"]["cost"].append(cost)
