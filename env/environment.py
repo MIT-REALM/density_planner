@@ -34,10 +34,11 @@ from tracks_import import read_from_csv
 class Environment(Configurable):
     """Combined grip map of multiple OccupancyObjects"""
 
-    def __init__(self, name="environment", init_time=0, end_time=np.inf, config=None):
+    def __init__(self, args, name="environment", init_time=0, end_time=np.inf,config=None):
         # Initialize superclass
         super().__init__()
         Configurable.__init__(self, config)
+        self.args = args
         self.map_anim = None
         self.name = name
         self.current_time = init_time
@@ -72,6 +73,14 @@ class Environment(Configurable):
         self.grid_gradientY = None
         # Check if visualization should be included
         self.visualize = self.config['environment']['visualize']
+
+        # Find limits of grid based on center of grid in meters [-xlim, xlim] and [-ylim, ylim]
+        env_size = np.array([0, self.grid_size[0], 0, self.grid_size[1]])
+        # Compute center of grid in meters
+        env_center = env_size / 2
+        # Shift limits based on center of grid in meters
+        args.environment_size = np.hstack((env_size[0:2] - env_center[1], env_size[2:4] - env_center[3]))
+        args.grid_size = [self.grid.shape[1], self.grid.shape[0]]
 
     # noinspection PyTypeChecker
     def run(self) -> torch.Tensor:
