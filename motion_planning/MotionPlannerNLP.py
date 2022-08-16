@@ -366,8 +366,12 @@ class MotionPlannerMPC(MotionPlannerNLP):
         times = []
         for k_start in range(self.N):
             t0 = time.time()
+            if k_start > self.N - self.N_MPC:
+                goal_factor = 1 / 100
+            else:
+                goal_factor = 1
             opti.minimize(
-                self.weight_goal * ((x[0, self.N_MPC] - px_ref) ** 2 + (x[1, self.N_MPC] - py_ref) ** 2) +
+                goal_factor * k_start ** 2 / self.N ** 2 * self.weight_goal * ((x[0, self.N_MPC] - px_ref) ** 2 + (x[1, self.N_MPC] - py_ref) ** 2) +
                 self.weight_coll * casadi.sumsqr(coll_prob[k_start, :]) +
                 self.weight_uref * casadi.sumsqr(u)
             )
@@ -401,10 +405,14 @@ class MotionPlannerMPC(MotionPlannerNLP):
             xd = sol1.value(x)
             u_traj[0, :, k_start] = ud[:, 0]
             x_traj[0, :, k_start+1] = xd[:, 1]
+            if ((xd[0, 1] - px_ref) ** 2 + (xd[1, 1] - py_ref) ** 2) < self.ego.args.goal_reached_MPC:
+                u_traj = u_traj[:, :, :k_start + 1]
+                x_traj = x_traj[:, :, :k_start + 2]
+                break
 
         u_traj = torch.from_numpy(u_traj)
         x_traj = torch.from_numpy(x_traj)
-        xref_traj = self.ego.system.compute_xref_traj(x0, u_traj.repeat_interleave(10, dim=2), self.ego.args, dhort=True)
+        xref_traj = self.ego.system.compute_xref_traj(x0, u_traj.repeat_interleave(10, dim=2), self.ego.args, short=True)
         logging.info("%s: Solution found. State trajectory error: %.2f" % (
             self.name, (x_traj - xref_traj[:, :4, :]).abs().sum()))
         logging.info("%s: Average computation time: %.4f, maximum computation time: %.4f" % (self.name, np.array(times).mean(), np.array(times).max()))

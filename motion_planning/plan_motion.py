@@ -23,6 +23,7 @@ if __name__ == '__main__':
     torch.manual_seed(args.random_seed)
     np.random.seed(args.random_seed)
 
+    plot = False
     path_log = None
     num_initial = 10  # number of different initial state which will be evaluated
 
@@ -47,20 +48,25 @@ if __name__ == '__main__':
 
         xref0 = torch.tensor([0, -28, 1.5, 3, 0]).reshape(1, -1, 1).type(torch.FloatTensor)
         xrefN = torch.tensor([0., 8, 4, 1, 0]).reshape(1, -1, 1)
-
         ego = EgoVehicle(xref0, xrefN, env, args)
-        plot = False
-        up_grad = None
 
         ### plan motion with density planner
         planner_grad = MotionPlannerGrad(ego, name="grad%d" % k, plot=plot, path_log=path_log)
         if k == 0:
             path_log = planner_grad.path_log
 
-        up_grad, cost_grad, time_grad = planner_grad.plan_motion()
+        # up_grad, cost_grad, time_grad = planner_grad.plan_motion()
+        up_grad = torch.Tensor([[[0.9255, -0.6596, -0.3638, 0.1527, 0.2528, -0.1136, -0.2866,
+                  0.0067, -0.1316, -0.3437],
+                 [0.2499, 0.4296, -0.1355, -0.0274, 0.6027, 0.3089, -0.5549,
+                  0.0684, -0.0828, 0.2266]]]) #for seed 0
+        # up_grad = torch.Tensor([[[-0.4295,  0.4854,  0.3976,  0.1772, -0.3519, -0.5208, -0.0646,
+        #            0.8481, -0.5238, -0.7427],
+        #          [-0.2112,  0.3185,  0.3122,  0.5391, -0.0937, -0.1417,  0.7684,
+        #           -0.2717,  0.6058, -0.4975]]]) # for seed 1
 
         results["grad"]["u"].append(up_grad)
-        results["grad"]["time"].append(time_grad)
+        #results["grad"]["time"].append(time_grad)
 
         ### compare with other motion planners from different initial states
         for j in range(num_initial):
@@ -75,11 +81,11 @@ if __name__ == '__main__':
             results["grad"]["cost"].append(cost)
 
             ### compute trajectory with MPC
-            # planner_MPC = MotionPlannerMPC(ego, xe0=xe0, name="MPC%d.%d" % (k, j), plot=plot, path_log=path_log)
-            # u, cost, time = planner_MPC.plan_motion()
-            # results["MPC"]["u"].append(u)
-            # results["MPC"]["cost"].append(cost)
-            # results["MPC"]["time"].append(time)
+            planner_MPC = MotionPlannerMPC(ego, xe0=xe0, name="MPC%d.%d" % (k, j), plot=plot, path_log=path_log)
+            u, cost, time = planner_MPC.plan_motion()
+            results["MPC"]["u"].append(u)
+            results["MPC"]["cost"].append(cost)
+            results["MPC"]["time"].append(time)
 
             ### compute input parameters with NLP
             planner_oracle = MotionPlannerNLP(ego, xe0=xe0, name="Oracle%d.%d" % (k, j), u0=None, plot=plot, path_log=path_log)
