@@ -60,7 +60,7 @@ class MotionPlannerNLP(MotionPlanner):
         return u_traj, cost, t_plan
 
     def solve_nlp(self):
-        quiet = False
+        quiet = True
         px_ref = self.ego.xrefN[0, 0, 0].item()
         py_ref = self.ego.xrefN[0, 1, 0].item()
         if self.use_up:
@@ -398,7 +398,9 @@ class MotionPlannerMPC(MotionPlannerNLP):
                 logging.info("%s: No solution found at iteration %d" % (self.name, k_start))
                 logging.info("%s: Average computation time: %.4f, maximum computation time: %.4f" % (
                 self.name, np.array(times).mean(), np.array(times).max()))
-                return u_traj, x_traj
+                u_traj = torch.from_numpy(u_traj)
+                x_traj = torch.from_numpy(x_traj)
+                return None, None #u_traj, x_traj
 
             # solution found
             times.append(time.time() - t0)
