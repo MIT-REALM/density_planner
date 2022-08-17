@@ -55,18 +55,18 @@ if __name__ == '__main__':
         if k == 0:
             path_log = planner_grad.path_log
 
-        # up_grad, cost_grad, time_grad = planner_grad.plan_motion()
-        up_grad = torch.Tensor([[[0.9255, -0.6596, -0.3638, 0.1527, 0.2528, -0.1136, -0.2866,
-                  0.0067, -0.1316, -0.3437],
-                 [0.2499, 0.4296, -0.1355, -0.0274, 0.6027, 0.3089, -0.5549,
-                  0.0684, -0.0828, 0.2266]]]) #for seed 0
+        up_grad, cost_grad, time_grad = planner_grad.plan_motion()
+        # up_grad = torch.Tensor([[[0.9255, -0.6596, -0.3638, 0.1527, 0.2528, -0.1136, -0.2866,
+        #           0.0067, -0.1316, -0.3437],
+        #          [0.2499, 0.4296, -0.1355, -0.0274, 0.6027, 0.3089, -0.5549,
+        #           0.0684, -0.0828, 0.2266]]]) #for seed 0
         # up_grad = torch.Tensor([[[-0.4295,  0.4854,  0.3976,  0.1772, -0.3519, -0.5208, -0.0646,
         #            0.8481, -0.5238, -0.7427],
         #          [-0.2112,  0.3185,  0.3122,  0.5391, -0.0937, -0.1417,  0.7684,
         #           -0.2717,  0.6058, -0.4975]]]) # for seed 1
 
         results["grad"]["u"].append(up_grad)
-        #results["grad"]["time"].append(time_grad)
+        results["grad"]["time"].append(time_grad)
 
         ### compare with other motion planners from different initial states
         for j in range(num_initial):
@@ -88,11 +88,11 @@ if __name__ == '__main__':
             results["MPC"]["time"].append(time)
 
             ### compute trajectory with MPC
-            planner_MPC = MotionPlannerMPC(ego, xe0=xe0, name="MPC%d.%d" % (k, j), plot=plot, path_log=path_log, N_MPC=20)
-            u, cost, time = planner_MPC.plan_motion()
-            results["MPC"]["u"].append(u)
-            results["MPC"]["cost"].append(cost)
-            results["MPC"]["time"].append(time)
+            # planner_MPC = MotionPlannerMPC(ego, xe0=xe0, name="MPC%d.%d" % (k, j), plot=plot, path_log=path_log, N_MPC=20)
+            # u, cost, time = planner_MPC.plan_motion()
+            # results["MPC"]["u"].append(u)
+            # results["MPC"]["cost"].append(cost)
+            # results["MPC"]["time"].append(time)
 
             ### compute input parameters with NLP
             planner_oracle = MotionPlannerNLP(ego, xe0=xe0, name="Oracle%d.%d" % (k, j), u0=None, plot=plot, path_log=path_log)
@@ -101,26 +101,26 @@ if __name__ == '__main__':
             results["NLP_up_cold"]["cost"].append(cost)
             results["NLP_up_cold"]["time"].append(time)
 
-            ### compute input parameters with NLP with warm start
-            planner_oracle = MotionPlannerNLP(ego, xe0=xe0, name="OracleWarm%d.%d" % (k, j), u0=up_grad, plot=plot, path_log=path_log)
-            u, cost, time = planner_oracle.plan_motion()
-            results["NLP_up_warm"]["u"].append(u)
-            results["NLP_up_warm"]["cost"].append(cost)
-            results["NLP_up_warm"]["time"].append(time)
-
-            ### compute the whole input trajectory
-            planner_oracle = MotionPlannerNLP(ego, xe0=xe0, name="OracleUtraj%d.%d" % (k, j), use_up=False, plot=plot, path_log=path_log)
-            u, cost, time = planner_oracle.plan_motion()
-            results["NLP_utraj_cold"]["u"].append(u)
-            results["NLP_utraj_cold"]["cost"].append(cost)
-            results["NLP_utraj_cold"]["time"].append(time)
-
-            ### compute the whole input trajectory with warm start
-            planner_oracle = MotionPlannerNLP(ego, xe0=xe0, u0=up_grad, name="OracleUtrajWarm%d.%d" % (k, j), use_up=False, plot=plot, path_log=path_log)
-            u, cost, time = planner_oracle.plan_motion()
-            results["NLP_utraj_warm"]["u"].append(u)
-            results["NLP_utraj_warm"]["cost"].append(cost)
-            results["NLP_utraj_warm"]["time"].append(time)
+            # ### compute input parameters with NLP with warm start
+            # planner_oracle = MotionPlannerNLP(ego, xe0=xe0, name="OracleWarm%d.%d" % (k, j), u0=up_grad, plot=plot, path_log=path_log)
+            # u, cost, time = planner_oracle.plan_motion()
+            # results["NLP_up_warm"]["u"].append(u)
+            # results["NLP_up_warm"]["cost"].append(cost)
+            # results["NLP_up_warm"]["time"].append(time)
+            #
+            # ### compute the whole input trajectory
+            # planner_oracle = MotionPlannerNLP(ego, xe0=xe0, name="OracleUtraj%d.%d" % (k, j), use_up=False, plot=plot, path_log=path_log)
+            # u, cost, time = planner_oracle.plan_motion()
+            # results["NLP_utraj_cold"]["u"].append(u)
+            # results["NLP_utraj_cold"]["cost"].append(cost)
+            # results["NLP_utraj_cold"]["time"].append(time)
+            #
+            # ### compute the whole input trajectory with warm start
+            # planner_oracle = MotionPlannerNLP(ego, xe0=xe0, u0=up_grad, name="OracleUtrajWarm%d.%d" % (k, j), use_up=False, plot=plot, path_log=path_log)
+            # u, cost, time = planner_oracle.plan_motion()
+            # results["NLP_utraj_warm"]["u"].append(u)
+            # results["NLP_utraj_warm"]["cost"].append(cost)
+            # results["NLP_utraj_warm"]["time"].append(time)
 
 
         # planner_sampling = MotionPlannerSampling(ego, plot=plot)
@@ -134,7 +134,8 @@ if __name__ == '__main__':
         for key_method in results.keys():
             print("#### Method: %s" % key_method)
             print("Average time: %.2f" % np.array(results[key_method]["time"]).mean())
-            print("Failure rate: %.2f" % (np.array(results[key_method]["up"]) == None).sum() / num_initial)
+            if key_method != "grad":
+                print("Failure rate: %.2f" % ((np.array(results[key_method]["u"]) == None).sum() / num_initial))
     print("end")
 
 
