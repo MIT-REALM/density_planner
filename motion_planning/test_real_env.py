@@ -24,7 +24,7 @@ if __name__ == '__main__':
     torch.manual_seed(args.random_seed)
     np.random.seed(args.random_seed)
 
-    plot = False
+    plot = True
     path_log = None
     num_initial = 10  # number of different initial state which will be evaluated
 
@@ -82,10 +82,10 @@ if __name__ == '__main__':
 
         with open(path_log + "results%d" % k, "wb") as f:
             pickle.dump(results, f)
-        for key_method in results.keys():
-            print("#### Method: %s" % key_method)
-            print("Average time: %.2f" % np.array(results[key_method]["time"]).mean())
-            print("Failure rate: %.2f" % (np.array(results[key_method]["up"]) == None).sum() / num_initial)
+        # for key_method in results.keys():
+        #     print("#### Method: %s" % key_method)
+        #     print("Average time: %.2f" % np.array(results[key_method]["time"]).mean())
+            # print("Failure rate: %.2f" % (np.array(results[key_method]["up"]) == None).sum() / num_initial)
     print("end")
 
 '''
