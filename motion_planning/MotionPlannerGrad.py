@@ -401,7 +401,7 @@ class MotionPlannerGrad(MotionPlanner):
         if self.plot:
             self.ego.animate_traj(path_final, xref_traj, x_traj, rho_traj)
 
-        cost, cost_dict = self.get_cost(uref_traj, x_traj, rho_traj)
+        cost, cost_dict = self.get_cost(uref_traj, x_traj, rho_traj, evaluate=True)
         cost_dict = self.remove_cost_factor(cost_dict)
         logging.info("%s: True cost coll %.4f, goal %.4f, bounds %.4f, uref %.4f" % (self.name, cost_dict["cost_coll"],
                                                                                  cost_dict["cost_goal"],
@@ -445,7 +445,7 @@ class MotionPlannerGrad(MotionPlanner):
         if self.plot:
             self.ego.animate_traj(path_final, xref_traj, x_traj, rho_traj)
 
-        cost, cost_dict = self.get_cost(uref_traj, x_traj, rho_traj)
+        cost, cost_dict = self.get_cost(uref_traj, x_traj, rho_traj, evaluate=True)
         cost_dict = self.remove_cost_factor(cost_dict)
         logging.info("%s: True cost coll %.4f, goal %.4f, bounds %.4f, uref %.4f" % (self.name, cost_dict["cost_coll"],
                                                                                  cost_dict["cost_goal"],

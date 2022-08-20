@@ -56,6 +56,16 @@ def gridpos2pos(args, pos_x=None, pos_y=None):
     return pos_x, pos_y
 
 
+def bounds2array(env, args):
+    bounds_array = np.zeros((len(env.objects), 4, env.grid.shape[2]))
+    for t in range(env.grid.shape[2]):
+        for k in range(len(env.objects)):
+            bounds_x, bounds_y = gridpos2pos(args, pos_x=env.objects[k].bounds[t][:2], pos_y=env.objects[k].bounds[t][2:])
+            bounds_array[k, :2, t] = bounds_x
+            bounds_array[k, 2:, t] = bounds_y
+    return bounds_array
+
+
 def shift_array(grid, step_x=0, step_y=0, fill=0):
     result = torch.zeros_like(grid)
 

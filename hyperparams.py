@@ -13,7 +13,7 @@ def parse_args():
     parser.add_argument('--dt_sim', type=int, default=0.01)
     parser.add_argument('--N_sim_max', type=int, default=1001)
     parser.add_argument('--factor_pred', type=int, default=10)
-    parser.add_argument('--random_seed', type=int, default=0)
+    parser.add_argument('--random_seed', type=int, default=10)
 
     ### DATA GENERATION
     # data generation
@@ -34,6 +34,7 @@ def parse_args():
     parser.add_argument('--path_dataset', type=str, default="data/dataset/")  # directory for the density data
     parser.add_argument('--path_nn', type=str, default="data/trained_nn/")  # directory for saving and loading the trained NN
     parser.add_argument('--path_traj0', type=str, default="data/initial_traj/")
+    parser.add_argument('--path_matlab', type=str, default="data/matlab_env/")
 
     parser.add_argument('--nameend_rawdata', type=str,
                         default=".pickle")  # ending of the file used for creating the data set / dataloader
@@ -124,8 +125,8 @@ def parse_args():
     parser.add_argument('--coll_thr', type=float, default=4)
 
     # optimization with NLP
-    parser.add_argument('--iter_NLP', type=int, default=1000) #1000
-    parser.add_argument('--iter_MPC', type=int, default=2000) #1000
+    parser.add_argument('--iter_NLP', type=int, default=5000) #1000
+    parser.add_argument('--iter_MPC', type=int, default=5000) #1000
     parser.add_argument('--goal_reached_MPC', type=float, default=1)
 
 

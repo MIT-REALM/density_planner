@@ -103,7 +103,7 @@ class MotionPlanner(ABC):
 
         return uref_traj, xref_traj, x_traj, rho_traj
 
-    def get_cost(self, uref_traj, x_traj, rho_traj):
+    def get_cost(self, uref_traj, x_traj, rho_traj, evaluate=False):
         """
         compute cost of a given trajectory
 
@@ -125,7 +125,7 @@ class MotionPlanner(ABC):
         """
 
         cost_uref = self.get_cost_uref(uref_traj)
-        cost_goal, goal_reached = self.get_cost_goal(x_traj, rho_traj)
+        cost_goal, goal_reached = self.get_cost_goal(x_traj, rho_traj, evaluate=evaluate)
         cost_bounds, in_bounds = self.get_cost_bounds(x_traj, rho_traj)
         cost_coll = self.get_cost_coll(x_traj, rho_traj)  # for xref: 0.044s
 
@@ -159,7 +159,7 @@ class MotionPlanner(ABC):
         cost = self.ego.args.weight_uref_effort * (uref_traj ** 2).sum(dim=(1, 2))
         return cost
 
-    def get_cost_goal(self, x_traj, rho_traj):
+    def get_cost_goal(self, x_traj, rho_traj, evaluate=False):
         """
         compute cost for reaching the goal
 
@@ -183,7 +183,8 @@ class MotionPlanner(ABC):
         else:
             cost_goal = (rho_traj[:, 0, -1] * sq_dist).sum()
         close = cost_goal < self.ego.args.close2goal_thr
-        cost_goal[torch.logical_not(close)] *= self.ego.args.weight_goal_far
+        if not evaluate:
+            cost_goal[torch.logical_not(close)] *= self.ego.args.weight_goal_far
         # if rho_traj is not None:
         #     close = torch.all(close)
         return cost_goal, close

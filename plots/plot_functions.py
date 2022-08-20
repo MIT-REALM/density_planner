@@ -392,8 +392,8 @@ def plot_grid(object, args, timestep=None, cmap='binary', name=None,
         grid = object.grid[:, :, timestep]
         if name is None:
             name = object.name
-    x_wide = max((args.environment_size[1] - args.environment_size[0]) / 10, 3)
-    y_wide = (args.environment_size[3] - args.environment_size[2]) / 10
+    x_wide = max(np.abs((args.environment_size[1] - args.environment_size[0])) / 10, 3)
+    y_wide = np.abs((args.environment_size[3] - args.environment_size[2])) / 10
     plt.figure(figsize=(x_wide, y_wide), dpi=200)
     plt.pcolormesh(grid.T, cmap=cmap, norm=None)
     plt.axis('scaled')
