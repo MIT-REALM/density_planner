@@ -19,15 +19,15 @@ import sys
 import casadi
 from abc import ABC, abstractmethod
 import random
-from MotionPlanner import MotionPlanner
+from motion_planning.MotionPlanner import MotionPlanner
 
 
 class MotionPlannerGrad(MotionPlanner):
     """
     class to use proposed density algorithm for motion planning
     """
-    def __init__(self, ego, plot=True, path_log=None, name="grad"):
-        super().__init__(ego, plot=plot, name=name, path_log=path_log)
+    def __init__(self, ego, plot=True, path_log=None, name="grad", plot_final=None):
+        super().__init__(ego, plot=plot, name=name, path_log=path_log, plot_final=plot_final)
         self.initial_traj = []
         self.improved_traj = []
         self.beta1 = 0.9
@@ -67,7 +67,7 @@ class MotionPlannerGrad(MotionPlanner):
 
     def find_initial_traj(self):
         if self.plot:
-            self.path_log_opt = make_path(self.path_log, "initialTraj")
+            self.path_log_opt = make_path(self.path_log, self.name + "_initialTraj")
 
         ### 1. generate random trajectory
         num_samples = self.ego.args.mp_numtraj
@@ -99,7 +99,7 @@ class MotionPlannerGrad(MotionPlanner):
 
     def optimize_traj(self, up):
         if self.plot:
-            self.path_log_opt = make_path(self.path_log, "improvedTraj")
+            self.path_log_opt = make_path(self.path_log, self.name + "_improvedTraj")
         up, costs_dict = self.optimize(up, self.ego.args.mp_epochs_density, initializing=False)
         self.improved_traj.append([up, costs_dict])
         cost_min = {}
@@ -390,15 +390,15 @@ class MotionPlannerGrad(MotionPlanner):
             contains the unweighted cost tensors
         """
 
-        if self.plot:
+        if self.plot_final:
             path_final = make_path(self.path_log, self.name + "_finalMotionPlan")
         else:
             path_final = None
 
         uref_traj, xref_traj, x_traj, rho_traj = self.get_traj(up, name="final_ref", compute_density=True,
-                                                               plot=self.plot, use_nn=False, folder=path_final)
+                                                               plot=self.plot_final, use_nn=False, folder=path_final)
 
-        if self.plot:
+        if self.plot_final:
             self.ego.animate_traj(path_final, xref_traj, x_traj, rho_traj)
 
         cost, cost_dict = self.get_cost(uref_traj, x_traj, rho_traj, evaluate=True)
@@ -430,19 +430,19 @@ class MotionPlannerGrad(MotionPlanner):
             xe0 = torch.zeros(1, self.ego.system.DIM_X, 1)
         rho0 = torch.ones(1, 1, 1)
 
-        if self.plot:
+        if self.plot_final:
             path_final = make_path(self.path_log, self.name + "_finalTraj")
         else:
             path_final = None
 
         # TO-DO: get u_traj and compute "true" u_cost
         uref_traj, xref_traj, x_traj, _ = self.get_traj(up, name="validated_traj", xe0=xe0, rho0=rho0,
-                                                               compute_density=False, plot=self.plot, use_nn=False,
+                                                               compute_density=False, plot=self.plot_final, use_nn=False,
                                                                folder=path_final)
 
         rho_traj = torch.ones(1, 1, x_traj.shape[2])
 
-        if self.plot:
+        if self.plot_final:
             self.ego.animate_traj(path_final, xref_traj, x_traj, rho_traj)
 
         cost, cost_dict = self.get_cost(uref_traj, x_traj, rho_traj, evaluate=True)
@@ -456,8 +456,8 @@ class MotionPlannerGrad(MotionPlanner):
 
 
 class MotionPlannerSearch(MotionPlanner):
-    def __init__(self, ego, plot=True, name="search", path_log=None):
-        super().__init__(ego, name=name, path_log=path_log)
+    def __init__(self, ego, plot=True, name="search", path_log=None, plot_final=None):
+        super().__init__(ego, name=name, plot=plot, path_log=path_log, plot_final=plot_final)
         self.incl_cost_goal = True
         self.incl_cost_uref = True
         self.up_saved = []
@@ -475,13 +475,71 @@ class MotionPlannerSearch(MotionPlanner):
             self.num_discr = 5
         self.repeats = 1
 
+    def plan_motion(self):
+        """
+        start motion planner: call optimization/planning function and compute cost
+        """
+
+        logging.info("##### %s: Starting motion planning %s" % (self.name, self.ego.args.mp_name))
+        t0 = time.time()
+        up, cost = self.plan_traj()
+        t_plan = time.time() - t0
+        logging.info("%s: Planning finished in %.2fs" % (self.name, t_plan))
+        if up is not None:
+            logging.info("%s: Final cost coll %.4f, goal %.4f, bounds %.4f, uref %.4f" % (self.name, cost["cost_coll"],
+                                                                                      cost["cost_goal"],
+                                                                                      cost["cost_bounds"],
+                                                                                      cost["cost_uref"]))
+            logging.debug(up)
+            cost = self.validate_ref(up)
+        else:
+            logging.info("%s: No valid solution found" % self.name)
+        return up, cost, t_plan
+
+    def validate_ref(self, up):
+        """
+        evaluate input parameters (plot and compute final cost), assume that reference trajectory starts at ego.xref0
+
+        Parameters
+        ----------
+        up: torch.Tensor
+            parameters specifying the reference input trajectory
+
+        Returns
+        -------
+        cost_dict: dictionary
+            contains the unweighted cost tensors
+        """
+
+        if self.plot_final:
+            path_final = make_path(self.path_log, self.name + "_finalMotionPlan")
+        else:
+            path_final = None
+
+        uref_traj, xref_traj, x_traj, rho_traj = self.get_traj(up, name="final_ref", compute_density=True,
+                                                               plot=self.plot_final, use_nn=False, folder=path_final)
+
+        if self.plot_final:
+            self.ego.animate_traj(path_final, xref_traj, x_traj, rho_traj)
+
+        cost, cost_dict = self.get_cost(uref_traj, x_traj, rho_traj, evaluate=True)
+        cost_dict = self.remove_cost_factor(cost_dict)
+        logging.info("%s: True cost coll %.4f, goal %.4f, bounds %.4f, uref %.4f" % (self.name, cost_dict["cost_coll"],
+                                                                                 cost_dict["cost_goal"],
+                                                                                 cost_dict["cost_bounds"],
+                                                                                 cost_dict["cost_uref"]))
+        return cost_dict
+
     def plan_traj(self):
+        t0 = time.time()
         self.u0 = torch.arange(self.ego.system.UREF_MIN[0, 0, 0] + 1, self.ego.system.UREF_MAX[0, 0, 0] - 1 + 1e-5,
                                self.ego.args.du_search[0])
         self.u1 = torch.arange(self.ego.system.UREF_MIN[0, 1, 0] + 1, self.ego.system.UREF_MAX[0, 1, 0] - 1 + 1e-5,
                                self.ego.args.du_search[1])
-
-        self.path_log_opt = make_path(self.path_log, "foundTraj")
+        if self.plot:
+            self.path_log_opt = make_path(self.path_log, self.name + "_foundTraj")
+        else:
+            self.path_log_opt = None
         success = False
         for u0 in self.u0:
             for u1 in self.u1:
@@ -499,9 +557,13 @@ class MotionPlannerSearch(MotionPlanner):
             cost_goal_min = cost_dict_min["cost_goal"]
             up_min = self.up_saved.pop(idx_min)
             success = self.extend_traj(up_min, cost_goal_min)
-        cost_min = self.remove_cost_factor(cost_dict_min)
-        path_final = make_path(self.path_log, "finalTraj")
-        self.ego.animate_traj(up_min, folder=path_final)
+            if time.time() - t0 > self.ego.args.opt_time_limit:
+                break
+        if success:
+            cost_min = self.remove_cost_factor(cost_dict_min)
+        else:
+            up_min = None
+            cost_min = None
         return up_min, cost_min
 
     def check_up(self, up, cost_goal_old=np.inf):
@@ -532,7 +594,7 @@ class MotionPlannerSearch(MotionPlanner):
             if self.incl_cost_uref:
                 cost_path += cost_dict["cost_uref"].item()
 
-            if self.name == "sampling":
+            if isinstance(self, MotionPlannerSampling):
                 self.cost_path = np.concatenate((self.cost_path, np.array([cost_path])))
             else:
                 self.cost_path.append(cost_path)
@@ -551,21 +613,25 @@ class MotionPlannerSearch(MotionPlanner):
 
 
 class MotionPlannerSampling(MotionPlannerSearch):
-    def __init__(self, ego, plot=True, name="sampling", path_log=None):
-        super().__init__(ego, plot=plot, name=name, path_log=path_log)
+    def __init__(self, ego, plot=True, name="sampling", path_log=None, plot_final=None):
+        super().__init__(ego, plot=plot, name=name, path_log=path_log, plot_final=plot_final)
         self.cost_path = np.array([])
         self.incl_cost_goal = True
         self.incl_cost_uref = False
         self.start_samples = 10
         self.cost_chosen = 0.1
-        self.weight_goal = 0.001
+        self.weight_goal = 0.1
         self.weight_coll = 10
         #self.sampl_cost_thr = 25
 
     def plan_traj(self):
-        self.path_log_opt = make_path(self.path_log, "foundTraj")
+        if self.plot:
+            self.path_log_opt = make_path(self.path_log, self.name + "_foundTraj")
+        else:
+            self.path_log_opt = None
         success = False
 
+        t0 = time.time()
         while not success:
             decision_new = torch.randint(0, len(self.up_saved) + self.start_samples, (1,))
             if decision_new >= len(self.up_saved): # up_add gets added as new parameter set
@@ -574,7 +640,7 @@ class MotionPlannerSampling(MotionPlannerSearch):
                 self.check_up(up_add)
             else: # up_add extends an already saved parameter set
                 thr = np.mean(self.cost_path)
-                weights = thr - self.cost_path #self.cost_path.max() - self.cost_path
+                weights = thr - self.cost_path + 1e-8 #self.cost_path.max() - self.cost_path
                 weights[self.cost_path > thr] = 0
                 decision_cost = np.random.choice(self.cost_path, p=weights / weights.sum())
                 idx_chosen = np.where(self.cost_path == decision_cost)[0][0]
@@ -584,10 +650,17 @@ class MotionPlannerSampling(MotionPlannerSearch):
                 cost_goal_chosen = cost_dict_chosen["cost_goal"]
                 up_chosen = self.up_saved[idx_chosen]
                 success, up_ext = self.extend_traj(up_chosen, cost_goal_chosen)
+            if time.time() - t0 > self.ego.args.opt_time_limit:
+                break
 
-        cost_min = self.remove_cost_factor(cost_dict_chosen)
-        path_final = make_path(self.path_log, "finalTraj")
-        self.ego.animate_traj(up_ext, folder=path_final)
+        if success:
+            uref_traj, xref_traj, x_traj, rho_traj = self.get_traj(up_ext, name="final_ref", compute_density=True,
+                                                                       plot=False, use_nn=False, folder=None)
+            cost, cost_dict = self.get_cost(uref_traj, x_traj, rho_traj)
+            cost_min = self.remove_cost_factor(cost_dict)
+        else:
+            cost_min = None
+            up_ext = None
         return up_ext, cost_min
 
     def extend_traj(self, up_old, cost_goal_old):

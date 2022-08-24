@@ -23,7 +23,7 @@ import random
 
 
 class MotionPlanner(ABC):
-    def __init__(self, ego, plot=True, name="mp", path_log=None):
+    def __init__(self, ego, plot=True, name="mp", path_log=None, plot_final=None):
         """
         initialize motion planner object (function is called by all child classes)
         """
@@ -36,6 +36,10 @@ class MotionPlanner(ABC):
         self.weight_bounds = ego.args.weight_bounds
         self.weight_coll = ego.args.weight_coll
         self.plot = plot
+        if plot_final is None:
+            self.plot_final = plot
+        else:
+            self.plot_final = plot_final
         if path_log is None:
             self.initialize_logging()
         else:
@@ -48,6 +52,8 @@ class MotionPlanner(ABC):
         self.path_log = make_path(self.ego.args.path_plot_motion, self.name + "_" + self.ego.args.mp_name)
         shutil.copyfile('hyperparams.py', self.path_log + 'hyperparams.py')
         shutil.copyfile('motion_planning/simulation_objects.py', self.path_log + 'simulation_objects.py')
+        shutil.copyfile('motion_planning/MotionPlanner.py', self.path_log + 'MotionPlannerNLP.py')
+        shutil.copyfile('motion_planning/MotionPlannerGrad.py', self.path_log + 'MotionPlannerNLP.py')
         shutil.copyfile('motion_planning/MotionPlannerNLP.py', self.path_log + 'MotionPlannerNLP.py')
         shutil.copyfile('motion_planning/plan_motion.py', self.path_log + 'plan_motion.py')
         logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s",
@@ -283,9 +289,9 @@ class MotionPlanner(ABC):
             cost_dict["cost_sum"] += cost_dict[key]
         return cost_dict
 
-    @abstractmethod
-    def validate_traj(self, up, xref0=None, xe0=None, rho0=None, compute_density=True):
-        """
-        method for evaluating the optimized input (plot resulting trajectory and compute its cost)
-        """
-        pass
+    # @abstractmethod
+    # def validate_traj(self, up, xref0=None, xe0=None, rho0=None, compute_density=True):
+    #     """
+    #     method for evaluating the optimized input (plot resulting trajectory and compute its cost)
+    #     """
+    #     pass

@@ -17,7 +17,7 @@ import time
 import logging
 import sys
 import casadi
-from MotionPlanner import MotionPlanner
+from motion_planning.MotionPlanner import MotionPlanner
 
 
 class MotionPlannerNLP(MotionPlanner):
@@ -25,8 +25,8 @@ class MotionPlannerNLP(MotionPlanner):
     class using NLP solver for motion planning
     """
     
-    def __init__(self, ego, u0=None, xe0=None, plot=True, name="oracle", path_log=None, use_up=True):
-        super().__init__(ego, plot=plot, name=name, path_log=path_log)
+    def __init__(self, ego, u0=None, xe0=None, plot=True, name="oracle", path_log=None, use_up=True, plot_final=None):
+        super().__init__(ego, plot=plot, name=name, path_log=path_log, plot_final=plot_final)
         self.rho0 = torch.ones(1, 1, 1)
         self.u0 = u0
         self.xe0 = xe0
@@ -236,13 +236,13 @@ class MotionPlannerNLP(MotionPlanner):
             contains the unweighted cost tensors
         """
 
-        if self.plot:
+        if self.plot_final:
             path_final = make_path(self.path_log, self.name + "_finalTraj")
         else:
             path_final = None
 
-        u_traj, xref_traj, x_traj, rho_traj = self.get_traj(u_traj, name="finalTraj", plot=self.plot, folder=path_final)
-        if self.plot:
+        u_traj, xref_traj, x_traj, rho_traj = self.get_traj(u_traj, name="finalTraj", plot=self.plot_final, folder=path_final)
+        if self.plot_final:
             self.ego.animate_traj(path_final, x_traj, x_traj, rho_traj)
 
         cost, cost_dict = self.get_cost(u_traj, x_traj, rho_traj, evaluate=True)
@@ -259,8 +259,8 @@ class MotionPlannerMPC(MotionPlannerNLP):
     class using NLP solver for motion planning
     """
 
-    def __init__(self, ego, u0=None, xe0=None, plot=True, name="MPC", path_log=None, N_MPC=10, biased=True):
-        super().__init__(ego, u0=u0, xe0=xe0, plot=plot, name=name, path_log=path_log, use_up=False)
+    def __init__(self, ego, u0=None, xe0=None, plot=True, name="MPC", path_log=None, N_MPC=10, biased=True, plot_final=None):
+        super().__init__(ego, u0=u0, xe0=xe0, plot=plot, name=name, path_log=path_log, use_up=False, plot_final=plot_final)
         self.N_MPC = N_MPC
         # if biased:
         #     self.ye0 =
@@ -483,12 +483,12 @@ class MotionPlannerMPC(MotionPlannerNLP):
             contains the unweighted cost tensors
         """
 
-        if self.plot:
+        if self.plot_final:
             path_final = make_path(self.path_log, self.name + "_finalTraj")
         else:
             path_final = None
 
-        u_traj, xref_traj, x_traj, rho_traj = self.get_traj(u_traj, name="finalTraj", plot=self.plot, folder=path_final)
+        u_traj, xref_traj, x_traj, rho_traj = self.get_traj(u_traj, name="finalTraj", plot=self.plot_final, folder=path_final)
 
         cost, cost_dict = self.get_cost(u_traj, x_traj, rho_traj, evaluate=True)
         cost_dict = self.remove_cost_factor(cost_dict)
@@ -496,7 +496,7 @@ class MotionPlannerMPC(MotionPlannerNLP):
                                                                                      cost_dict["cost_goal"],
                                                                                      cost_dict["cost_bounds"],
                                                                                      cost_dict["cost_uref"]))
-        if self.plot:
+        if self.plot_final:
             self.ego.animate_traj(path_final, x_traj, x_traj, rho_traj)
         return cost_dict
 
@@ -506,8 +506,8 @@ class MotionPlannerTubeMPC(MotionPlannerNLP):
     class using NLP solver for motion planning
     """
 
-    def __init__(self, ego, u0=None, xe0=None, plot=True, name="TubeMPC", path_log=None, N_MPC=10, biased=True):
-        super().__init__(ego, u0=u0, xe0=xe0, plot=plot, name=name, path_log=path_log, use_up=False)
+    def __init__(self, ego, u0=None, xe0=None, plot=True, name="TubeMPC", path_log=None, N_MPC=10, biased=True, plot_final=None):
+        super().__init__(ego, u0=u0, xe0=xe0, plot=plot, name=name, path_log=path_log, use_up=False, plot_final=plot_final)
         self.N_MPC = N_MPC
 
     def plan_motion(self):
@@ -606,7 +606,7 @@ class MotionPlannerTubeMPC(MotionPlannerNLP):
                 opti.subject_to(x[3, k + 1] == xk3)  # v+=a*dt
 
                 for j in range(array_bounds.shape[0]):
-                    opti.subject_to(x[0, k + 1] < array_bounds(j))  # x+=v*cos(theta)*dt
+                    opti.subject_to(x[0, k + 1] < array_bounds(j, 0))  # x+=v*cos(theta)*dt
                     opti.subject_to(x[1, k + 1] == xk1)  # y+=v*sin(theta)*dt
 
 
@@ -733,12 +733,12 @@ class MotionPlannerTubeMPC(MotionPlannerNLP):
             contains the unweighted cost tensors
         """
 
-        if self.plot:
+        if self.plot_final:
             path_final = make_path(self.path_log, self.name + "_finalTraj")
         else:
             path_final = None
 
-        u_traj, xref_traj, x_traj, rho_traj = self.get_traj(u_traj, name="finalTraj", plot=self.plot, folder=path_final)
+        u_traj, xref_traj, x_traj, rho_traj = self.get_traj(u_traj, name="finalTraj", plot=self.plot_final, folder=path_final)
 
         cost, cost_dict = self.get_cost(u_traj, x_traj, rho_traj, evaluate=True)
         cost_dict = self.remove_cost_factor(cost_dict)
@@ -746,6 +746,6 @@ class MotionPlannerTubeMPC(MotionPlannerNLP):
                                                                                      cost_dict["cost_goal"],
                                                                                      cost_dict["cost_bounds"],
                                                                                      cost_dict["cost_uref"]))
-        if self.plot:
+        if self.plot_final:
             self.ego.animate_traj(path_final, x_traj, x_traj, rho_traj)
         return cost_dict
