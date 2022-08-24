@@ -20,7 +20,7 @@ from skimage.measure import block_reduce
 from skimage.transform import downscale_local_mean
 from skimage.color import rgb2gray
 from skimage.util import crop
-from skimage.filters import threshold_isodata
+from skimage.filters import threshold_isodata, threshold_li
 from motion_planning.utils import enlarge_grid, compute_gradient
 from env.utils import Configurable
 from scipy.stats import multivariate_normal
@@ -34,7 +34,7 @@ from tracks_import import read_from_csv
 class Environment(Configurable):
     """Combined grip map of multiple OccupancyObjects"""
 
-    def __init__(self, args, name="environment", init_time=0, end_time=np.inf,config=None):
+    def __init__(self, args, name="environment", init_time=0, end_time=np.inf, config=None):
         # Initialize superclass
         super().__init__()
         Configurable.__init__(self, config)
@@ -45,6 +45,9 @@ class Environment(Configurable):
         self.init_time = init_time
         self.end_time = end_time
         self.scale_down_factor = 12
+
+        # Initialize the environment
+        self.clipping_type = self.config['dataset']['clipping']  # [m]
         # Extract tracks and records from config
         self.__extract_recording_data()
         # Initialize tracks
@@ -81,6 +84,15 @@ class Environment(Configurable):
         # Shift limits based on center of grid in meters
         args.environment_size = np.hstack((env_size[0:2] - env_center[1], env_size[2:4] - env_center[2]))
         args.grid_size = [self.grid.shape[0], self.grid.shape[1]]
+
+    def generate_random_waypoints(self, time: float, num_waypoints: int = 1):
+        """Generate random waypoints in the environment for the given number of waypoints. It checks if the waypoints
+        are valid by making sure that the waypoints are in a free space and if not, it generates new waypoints.
+        The waypoints are chosen based on the time and the number of waypoints."""
+
+        waypoints = np.random.rand(num_waypoints, 2) * self.grid_size
+        return waypoints
+
 
     # noinspection PyTypeChecker
     def run(self) -> torch.Tensor:
@@ -184,7 +196,7 @@ class Environment(Configurable):
         y_scale = int(np.round(self.grid_resolution / self.scaling_factor))
         logger.info("Rescaling image with pool of size {}.", np.array([x_scale, y_scale]))
         background_grid = downscale_local_mean(self.background_image_cropped, (x_scale, y_scale))
-        threshold = threshold_isodata(background_grid)  # input value
+        threshold = threshold_li(background_grid)  # input value
         # Create binary occupancy grid
         binary_grid = (background_grid < threshold).astype(np.float)
         # Create occupancy grid for each time step
@@ -224,7 +236,12 @@ class Environment(Configurable):
                 self.background_image = rgb2gray(imread(background_image_path))
                 (self.image_height, self.image_width) = self.background_image.shape
                 # crop background image
-                self.background_image_cropped, self.cropped_dims = self.crop_image_interactively(background_image_path)
+                if self.clipping_type == "manual":
+                    self.background_image_cropped, self.cropped_dims = self.crop_image_manually(
+                        background_image_path)
+                elif self.clipping_type == "automatic":
+                    self.background_image_cropped, self.cropped_dims = self.crop_image_automatically(
+                        background_image_path)
             else:
                 raise Exception("Background image not found!")
         else:
@@ -284,16 +301,16 @@ class Environment(Configurable):
                     # fetch the PDF of the 2D gaussian
                     _, _, PDF = self.mvpdf(x_cntr, y_cntr,
                                            self.grid_2d[0].flatten(), self.grid_2d[1].flatten(),
-                                           length=length/2+self.spread/self.scale_down_factor,
-                                           width=width/2+self.spread/self.scale_down_factor,
-                                           velocity=np.linalg.norm([x_velocity, y_velocity],ord=2),
+                                           length=length / 2 + self.spread / self.scale_down_factor,
+                                           width=width / 2 + self.spread / self.scale_down_factor,
+                                           velocity=np.linalg.norm([x_velocity, y_velocity], ord=2),
                                            theta=heading)
                     # normalize PDF by shifting and scaling, so that the smallest value is 0 and the largest is 1
                     normPDF = PDF - PDF.min()
                     normPDF = normPDF / normPDF.max()
                     normPDF = normPDF.reshape(self.grid_2d[0].shape)
                     # Populate grid with obstacle
-                    indx = normPDF>=1e-1
+                    indx = normPDF >= 1e-1
                     self.grid[:, :, frame_idx][indx] = torch.tensor(normPDF[indx])
                     # fig, ax= self.plotmv(self, y_cntr, x_cntr, self.grid_2d[1].flatten(), self.grid_2d[0].flatten(),
                     #             radius=length,
@@ -324,8 +341,8 @@ class Environment(Configurable):
                     # fetch the PDF of the 2D gaussian
                     _, _, PDF = self.mvpdf(x_cntr, y_cntr,
                                            self.grid_2d[0].flatten(), self.grid_2d[1].flatten(),
-                                           length=0.5/2/12, width=0.5/ 2,
-                                           velocity=np.linalg.norm([x_velocity, y_velocity],ord=2),
+                                           length=0.5 / 2 / 12, width=0.5 / 2,
+                                           velocity=np.linalg.norm([x_velocity, y_velocity], ord=2),
                                            theta=heading)
                     # normalize PDF by shifting and scaling, so that the smallest value is 0 and the largest is 1
                     normPDF = PDF - PDF.min()
@@ -333,7 +350,7 @@ class Environment(Configurable):
                     normPDF = normPDF.reshape(self.grid_2d[0].shape)
 
                     # Populate grid with obstacle
-                    indx = normPDF>=1e-1
+                    indx = normPDF >= 1e-1
                     self.grid[:, :, frame_idx][indx] = torch.tensor(normPDF[indx])
 
         # time.sleep(0.2)
@@ -469,7 +486,7 @@ class Environment(Configurable):
         # noinspection PyUnreachableCode
         return top_left + bottom_right
 
-    def crop_image_interactively(self, path):
+    def crop_image_manually(self, path):
         """
         Crop the image interactively.
         :param path: path to the image
@@ -477,6 +494,40 @@ class Environment(Configurable):
         """
         screen, px = self.__setup_display(path)
         left, upper, right, lower = self.__interactive_image_crop(screen, px)
+        # ensure output rect always has positive width, height
+        if right < left:
+            left, right = right, left
+        if lower < upper:
+            lower, upper = upper, lower
+        # make sure that environment doesn't go out of bounds
+        max_env_size = np.array(self.config['grid']['max_size']) / self.scale_down_factor
+        max_size_px_x = int(max_env_size[0] / self.__recording_meta['orthoPxToMeter'])
+        max_size_px_y = int(max_env_size[1] / self.__recording_meta['orthoPxToMeter'])
+        if right - left > max_size_px_y:
+            right = left + max_size_px_y
+        if lower - upper > max_size_px_x:
+            lower = upper + max_size_px_x
+        # crop the image
+        img = rgb2gray(imread(path))[upper:lower, left:right]
+        return img, (left, upper, right, lower)
+
+    def crop_image_automatically(self, path):
+        """
+        Crop the image with predetermined sizes based on environment case.
+        :param path: path to the image
+        :return: cropped image, top left corner, bottom right corner
+        """
+        recording = int(self.config['dataset']["recording"])
+        if 0 <= recording <= 6:
+            upper, lower, left, right = (204, 706, 616, 1152)
+        elif 7 <= recording <= 17:
+            upper, lower, left, right = (173, 663, 286, 953)
+        elif 18 <= recording <= 29:
+            upper, lower, left, right = (85, 565, 214, 994)
+        elif 30 <= recording <= 32:
+            upper, lower, left, right = (14, 571, 31, 914)
+        else:
+            raise ValueError("Invalid recording number")
         # ensure output rect always has positive width, height
         if right < left:
             left, right = right, left
@@ -502,16 +553,16 @@ class Environment(Configurable):
             [np.sin(theta), np.cos(theta)]
         ])
 
-    def getcov(self, length:float=1/12, width:float=1/12, theta:float=0):
+    def getcov(self, length: float = 1 / 12, width: float = 1 / 12, theta: float = 0):
         cov = np.array([
-            [length**2, 0],
-            [0, width**2]
+            [length ** 2, 0],
+            [0, width ** 2]
         ])
 
         r = self.rot(theta)
         return r @ cov @ r.T
 
-    def mvpdf(self, x, y, XX, YY, length:float=1/12, width:float=1/12, velocity= 0, theta:float=0):
+    def mvpdf(self, x, y, XX, YY, length: float = 1 / 12, width: float = 1 / 12, velocity=0, theta: float = 0):
         """Creates a grid of data that represents the PDF of a multivariate gaussian.
 
         x, y: The center of the returned PDF
@@ -537,18 +588,18 @@ class Environment(Configurable):
 
         return XX, YY, PDF
 
-
     @classmethod
     def default_config(cls):
         return dict(dataset=dict(
             dataset_dir="./env/inD-dataset-v1.0/data/",
-            recording=1,
+            recording=30,
+            clipping="automatic",
         ),
             grid=dict(
-                resolution=0.5,  # [m]
+                resolution=0.2,  # [m]
                 max_size=[100, 100],  # [x, y]
                 certainty=0,  # np.random.randint(3, 10) / 10,
-                spread=3
+                spread=0.2
             ),
             environment=dict(
                 visualize=True,
