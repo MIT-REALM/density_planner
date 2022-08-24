@@ -108,7 +108,7 @@ class StaticObstacle:
                 min_y = max(grid_pos_y[0] - i, 0)
                 max_y = min(grid_pos_y[1] + i + 1, self.grid.shape[1])
                 self.grid[min_x:max_x, min_y:max_y, self.current_timestep] += certainty / spread
-            limits = torch.tensor([[min_x, max_x - 1, min_y, max_y - 1]])
+            limits = torch.tensor([grid_pos_x[0] - i, grid_pos_x[1] + i, grid_pos_y[0] - i, grid_pos_y[1] + i])
             if self.bounds[self.current_timestep] is None:
                 self.bounds[self.current_timestep] = limits
             else:
@@ -144,8 +144,8 @@ class DynamicObstacle(StaticObstacle):
         for i in range(step_size):
             self.grid[:, :, self.current_timestep + 1 + i] = shift_array(self.grid[:, :, self.current_timestep + i],
                                                                          self.velocity_x, self.velocity_y)
-            self.bounds.append(self.bounds[self.current_timestep] +
-                               torch.tensor([[self.velocity_x, self.velocity_x, self.velocity_y, self.velocity_y]]))
+            self.bounds.append(self.bounds[self.current_timestep + i] +
+                               torch.tensor([self.velocity_x, self.velocity_x, self.velocity_y, self.velocity_y]))
         self.current_timestep += step_size
 
 

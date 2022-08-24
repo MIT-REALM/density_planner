@@ -1,9 +1,10 @@
 from motion_planning.utils import sample_pdf, pred2grid
 from motion_planning.simulation_objects import Environment, EgoVehicle
-from motion_planning.example_objects import create_environment, create_crossing4w, create_pedRL, create_street, create_turnR, create_pedLR
+from motion_planning.example_objects import create_environment, create_crossing4w, create_pedRL, create_street, \
+    create_turnR, create_pedLR
+from env.environment import Environment as Env
 import hyperparams
 import torch
-from env.environment import Environment as Env
 from plots.plot_functions import plot_grid
 from systems.sytem_CAR import Car
 import pickle
@@ -12,10 +13,8 @@ import logging
 import sys
 from MotionPlannerGrad import MotionPlannerGrad
 from MotionPlannerNLP import MotionPlannerNLP, MotionPlannerMPC
-#import MotionPlannerNLP
+# import MotionPlannerNLP
 import numpy as np
-
-
 
 if __name__ == '__main__':
     args = hyperparams.parse_args()
@@ -35,16 +34,15 @@ if __name__ == '__main__':
         results["grad"] = {"time": [], "cost": [], "u": []}
 
         ### create environment and motion planning problem
-        env = Env(args, init_time=0, end_time=30)
+        env = Env(args, init_time=0, end_time=12)
         # Compute grid from trajectory data
         env.run()
-        #env = create_environment(args, timestep=100)  # @Andres: replace / adapt to use real data
         plot_grid(env, args, timestep=0, save=False)
         plot_grid(env, args, timestep=20, save=False)
         plot_grid(env, args, timestep=40, save=False)
         plot_grid(env, args, timestep=60, save=False)
         plot_grid(env, args, timestep=80, save=False)
-        plot_grid(env, args, save=False)
+        #plot_grid(env, args, save=False)
 
         xref0 = torch.tensor([0, -28, 1.5, 3, 0]).reshape(1, -1, 1).type(torch.FloatTensor)
         xrefN = torch.tensor([0., 8, 4, 1, 0]).reshape(1, -1, 1)

@@ -1,4 +1,4 @@
-from motion_planning.utils import sample_pdf, pred2grid
+from motion_planning.utils import bounds2array, sample_pdf, pred2grid
 from motion_planning.simulation_objects import Environment, EgoVehicle
 from motion_planning.example_objects import create_environment, create_crossing4w, create_pedRL, create_street, create_turnR, create_pedLR
 import hyperparams
@@ -13,6 +13,7 @@ from MotionPlannerGrad import MotionPlannerGrad
 from MotionPlannerNLP import MotionPlannerNLP, MotionPlannerMPC
 #import MotionPlannerNLP
 import numpy as np
+import scipy.io
 
 
 if __name__ == '__main__':
@@ -20,42 +21,51 @@ if __name__ == '__main__':
     #os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus
     args.device ="cpu"  #"cuda" if torch.cuda.is_available() else
 
-    torch.manual_seed(args.random_seed)
-    np.random.seed(args.random_seed)
 
-    plot = True
+    plot = False
     path_log = None
     num_initial = 10  # number of different initial state which will be evaluated
 
     ### loop through different environments
-    for k in range(1):
+    for k in range(5):
+        seed = args.random_seed + k
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+
         results= {}
         results["grad"] = {"time": [], "cost": [], "u": []}
         results["MPC"] = {"time": [], "cost": [], "u": []}
+        #results["MPC2"] = {"time": [], "cost": [], "u": []}
         results["NLP_up_cold"] = {"time": [], "cost": [], "u": []}
-        results["NLP_up_warm"] = {"time": [], "cost": [], "u": []}
+        #results["NLP_up_warm"] = {"time": [], "cost": [], "u": []}
         results["NLP_utraj_cold"] = {"time": [], "cost": [], "u": []}
-        results["NLP_utraj_warm"] = {"time": [], "cost": [], "u": []}
+        #results["NLP_utraj_warm"] = {"time": [], "cost": [], "u": []}
 
         ### create environment and motion planning problem
-        env = create_environment(args, timestep=100) # @Andres: replace / adapt to use real data
-        # plot_grid(env, args, timestep=0, save=False)
-        # plot_grid(env, args, timestep=20, save=False)
-        # plot_grid(env, args, timestep=40, save=False)
-        # plot_grid(env, args, timestep=60, save=False)
-        # plot_grid(env, args, timestep=80, save=False)
-        # plot_grid(env, args, save=False)
+        env = create_environment(args, timestep=100)
+        #scipy.io.savemat(args.path_matlab + "env%d.mat" % k, mdict={'arr': np.array(env.grid)})
+        #array_bounds = bounds2array(env, args)
+        #scipy.io.savemat(args.path_matlab + "bounds%d.mat" % k, mdict={'arr': array_bounds})
+
+
+        plot_grid(env, args, timestep=0, save=False)
+        plot_grid(env, args, timestep=20, save=False)
+        plot_grid(env, args, timestep=40, save=False)
+        plot_grid(env, args, timestep=60, save=False)
+        plot_grid(env, args, timestep=80, save=False)
+        plot_grid(env, args, save=False)
 
         xref0 = torch.tensor([0, -28, 1.5, 3, 0]).reshape(1, -1, 1).type(torch.FloatTensor)
         xrefN = torch.tensor([0., 8, 4, 1, 0]).reshape(1, -1, 1)
         ego = EgoVehicle(xref0, xrefN, env, args)
 
         ### plan motion with density planner
-        planner_grad = MotionPlannerGrad(ego, name="grad%d" % k, plot=plot, path_log=path_log)
+        planner_grad = MotionPlannerGrad(ego, name="grad%d" % seed, plot=plot, path_log=path_log)
         if k == 0:
             path_log = planner_grad.path_log
 
         up_grad, cost_grad, time_grad = planner_grad.plan_motion()
+        results["grad"]["time"].append(time_grad)
         # up_grad = torch.Tensor([[[0.9255, -0.6596, -0.3638, 0.1527, 0.2528, -0.1136, -0.2866,
         #           0.0067, -0.1316, -0.3437],
         #          [0.2499, 0.4296, -0.1355, -0.0274, 0.6027, 0.3089, -0.5549,
@@ -66,7 +76,6 @@ if __name__ == '__main__':
         #           -0.2717,  0.6058, -0.4975]]]) # for seed 1
 
         results["grad"]["u"].append(up_grad)
-        results["grad"]["time"].append(time_grad)
 
         ### compare with other motion planners from different initial states
         for j in range(num_initial):
@@ -77,46 +86,48 @@ if __name__ == '__main__':
                 xe0[:, 4, :] = 0
 
             ### evaluate trajectory for planner_grad
+            logging.info("")
+            logging.info("##### %s" % planner_grad.name)
             cost = planner_grad.validate_traj(up_grad, xe0=xe0)
             results["grad"]["cost"].append(cost)
 
             ### compute trajectory with MPC
-            planner_MPC = MotionPlannerMPC(ego, xe0=xe0, name="MPC%d.%d" % (k, j), plot=plot, path_log=path_log)
+            planner_MPC = MotionPlannerMPC(ego, xe0=xe0, name="MPC%d.%d" % (seed, j), plot=plot, path_log=path_log)
             u, cost, time = planner_MPC.plan_motion()
             results["MPC"]["u"].append(u)
             results["MPC"]["cost"].append(cost)
             results["MPC"]["time"].append(time)
 
-            ### compute trajectory with MPC
-            # planner_MPC = MotionPlannerMPC(ego, xe0=xe0, name="MPC%d.%d" % (k, j), plot=plot, path_log=path_log, N_MPC=20)
-            # u, cost, time = planner_MPC.plan_motion()
-            # results["MPC"]["u"].append(u)
-            # results["MPC"]["cost"].append(cost)
-            # results["MPC"]["time"].append(time)
+            # ### compute trajectory with MPC
+            # planner_MPC2 = MotionPlannerMPC(ego, xe0=xe0, name="MPC2s%d.%d" % (seed, j), plot=plot, path_log=path_log, N_MPC=20)
+            # u, cost, time = planner_MPC2.plan_motion()
+            # results["MPC2"]["u"].append(u)
+            # results["MPC2"]["cost"].append(cost)
+            # results["MPC2"]["time"].append(time)
 
             ### compute input parameters with NLP
-            planner_oracle = MotionPlannerNLP(ego, xe0=xe0, name="Oracle%d.%d" % (k, j), u0=None, plot=plot, path_log=path_log)
+            planner_oracle = MotionPlannerNLP(ego, xe0=xe0, name="Oracle%d.%d" % (seed, j), u0=None, plot=plot, path_log=path_log)
             u, cost, time = planner_oracle.plan_motion()
             results["NLP_up_cold"]["u"].append(u)
             results["NLP_up_cold"]["cost"].append(cost)
             results["NLP_up_cold"]["time"].append(time)
 
             # ### compute input parameters with NLP with warm start
-            # planner_oracle = MotionPlannerNLP(ego, xe0=xe0, name="OracleWarm%d.%d" % (k, j), u0=up_grad, plot=plot, path_log=path_log)
+            # planner_oracle = MotionPlannerNLP(ego, xe0=xe0, name="OracleWarm%d.%d" % (seed, j), u0=up_grad, plot=plot, path_log=path_log)
             # u, cost, time = planner_oracle.plan_motion()
             # results["NLP_up_warm"]["u"].append(u)
             # results["NLP_up_warm"]["cost"].append(cost)
             # results["NLP_up_warm"]["time"].append(time)
             #
-            # ### compute the whole input trajectory
-            # planner_oracle = MotionPlannerNLP(ego, xe0=xe0, name="OracleUtraj%d.%d" % (k, j), use_up=False, plot=plot, path_log=path_log)
-            # u, cost, time = planner_oracle.plan_motion()
-            # results["NLP_utraj_cold"]["u"].append(u)
-            # results["NLP_utraj_cold"]["cost"].append(cost)
-            # results["NLP_utraj_cold"]["time"].append(time)
+            ### compute the whole input trajectory
+            planner_oracle = MotionPlannerNLP(ego, xe0=xe0, name="OracleUtraj%d.%d" % (seed, j), use_up=False, plot=plot, path_log=path_log)
+            u, cost, time = planner_oracle.plan_motion()
+            results["NLP_utraj_cold"]["u"].append(u)
+            results["NLP_utraj_cold"]["cost"].append(cost)
+            results["NLP_utraj_cold"]["time"].append(time)
             #
             # ### compute the whole input trajectory with warm start
-            # planner_oracle = MotionPlannerNLP(ego, xe0=xe0, u0=up_grad, name="OracleUtrajWarm%d.%d" % (k, j), use_up=False, plot=plot, path_log=path_log)
+            # planner_oracle = MotionPlannerNLP(ego, xe0=xe0, u0=up_grad, name="OracleUtrajWarm%d.%d" % (seed, j), use_up=False, plot=plot, path_log=path_log)
             # u, cost, time = planner_oracle.plan_motion()
             # results["NLP_utraj_warm"]["u"].append(u)
             # results["NLP_utraj_warm"]["cost"].append(cost)
@@ -129,13 +140,18 @@ if __name__ == '__main__':
         # planner_search = MotionPlannerSearch(ego, plot=plot)
         # up_search, cost_search = planner_search.plan_motion()
 
-        with open(path_log + "results%d" % k, "wb") as f:
+        with open(path_log + "results%d" % seed, "wb") as f:
             pickle.dump(results, f)
         for key_method in results.keys():
-            print("#### Method: %s" % key_method)
-            print("Average time: %.2f" % np.array(results[key_method]["time"]).mean())
+            logging.info("#### Method: %s" % key_method)
+            for l in range(num_initial):
+                if results[key_method]["cost"][l] is not None:
+                    logging.info("coll_cost: %.3f" % results[key_method]["cost"][l]["cost_coll"].item())
+                    logging.info("goal_cost: %.3f" % results[key_method]["cost"][l]["cost_goal"].item())
+                else:
+                    logging.info("NO SOLUTION FOUND.")
             if key_method != "grad":
-                print("Failure rate: %.2f" % ((np.array(results[key_method]["u"]) == None).sum() / num_initial))
+                logging.info("Failure rate: %.2f" % ((np.array(results[key_method]["u"]) == None).sum() / num_initial))
     print("end")
 
 
