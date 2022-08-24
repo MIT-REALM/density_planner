@@ -1,10 +1,9 @@
 from motion_planning.utils import sample_pdf, pred2grid
 from motion_planning.simulation_objects import Environment, EgoVehicle
-from motion_planning.example_objects import create_environment, create_crossing4w, create_pedRL, create_street, \
-    create_turnR, create_pedLR
-from env.environment import Environment as Env
+from motion_planning.example_objects import create_environment, create_crossing4w, create_pedRL, create_street, create_turnR, create_pedLR
 import hyperparams
 import torch
+from env.environment import Environment as Env
 from plots.plot_functions import plot_grid
 from systems.sytem_CAR import Car
 import pickle
@@ -13,8 +12,10 @@ import logging
 import sys
 from MotionPlannerGrad import MotionPlannerGrad
 from MotionPlannerNLP import MotionPlannerNLP, MotionPlannerMPC
-# import MotionPlannerNLP
+#import MotionPlannerNLP
 import numpy as np
+
+
 
 if __name__ == '__main__':
     args = hyperparams.parse_args()
@@ -38,12 +39,12 @@ if __name__ == '__main__':
         # Compute grid from trajectory data
         env.run()
         #env = create_environment(args, timestep=100)  # @Andres: replace / adapt to use real data
-        # plot_grid(env, args, timestep=0, save=False)
-        # plot_grid(env, args, timestep=20, save=False)
-        # plot_grid(env, args, timestep=40, save=False)
-        # plot_grid(env, args, timestep=60, save=False)
-        # plot_grid(env, args, timestep=80, save=False)
-        # plot_grid(env, args, save=False)
+        plot_grid(env, args, timestep=0, save=False)
+        plot_grid(env, args, timestep=20, save=False)
+        plot_grid(env, args, timestep=40, save=False)
+        plot_grid(env, args, timestep=60, save=False)
+        plot_grid(env, args, timestep=80, save=False)
+        plot_grid(env, args, save=False)
 
         xref0 = torch.tensor([0, -28, 1.5, 3, 0]).reshape(1, -1, 1).type(torch.FloatTensor)
         xrefN = torch.tensor([0., 8, 4, 1, 0]).reshape(1, -1, 1)
@@ -54,18 +55,10 @@ if __name__ == '__main__':
         if k == 0:
             path_log = planner_grad.path_log
 
-        # up_grad, cost_grad, time_grad = planner_grad.plan_motion()
-        up_grad = torch.Tensor([[[0.9255, -0.6596, -0.3638, 0.1527, 0.2528, -0.1136, -0.2866,
-                                  0.0067, -0.1316, -0.3437],
-                                 [0.2499, 0.4296, -0.1355, -0.0274, 0.6027, 0.3089, -0.5549,
-                                  0.0684, -0.0828, 0.2266]]])  # for seed 0
-        # up_grad = torch.Tensor([[[-0.4295,  0.4854,  0.3976,  0.1772, -0.3519, -0.5208, -0.0646,
-        #            0.8481, -0.5238, -0.7427],
-        #          [-0.2112,  0.3185,  0.3122,  0.5391, -0.0937, -0.1417,  0.7684,
-        #           -0.2717,  0.6058, -0.4975]]]) # for seed 1
+        up_grad, cost_grad, time_grad = planner_grad.plan_motion()
 
         results["grad"]["u"].append(up_grad)
-        # results["grad"]["time"].append(time_grad)
+        results["grad"]["time"].append(time_grad)
 
         ### compare with other motion planners from different initial states
         for j in range(num_initial):
@@ -79,13 +72,13 @@ if __name__ == '__main__':
             cost = planner_grad.validate_traj(up_grad, xe0=xe0)
             results["grad"]["cost"].append(cost)
 
-
         with open(path_log + "results%d" % k, "wb") as f:
             pickle.dump(results, f)
-        # for key_method in results.keys():
-        #     print("#### Method: %s" % key_method)
-        #     print("Average time: %.2f" % np.array(results[key_method]["time"]).mean())
-            # print("Failure rate: %.2f" % (np.array(results[key_method]["up"]) == None).sum() / num_initial)
+        for key_method in results.keys():
+            print("#### Method: %s" % key_method)
+            print("Average time: %.2f" % np.array(results[key_method]["time"]).mean())
+            if key_method != "grad":
+                print("Failure rate: %.2f" % ((np.array(results[key_method]["u"]) == None).sum() / num_initial))
     print("end")
 
 '''

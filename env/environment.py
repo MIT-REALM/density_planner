@@ -41,7 +41,7 @@ class Environment(Configurable):
         self.args = args
         self.map_anim = None
         self.name = name
-        self.current_time = init_time
+        self.current_timestep = init_time
         self.init_time = init_time
         self.end_time = end_time
         self.scale_down_factor = 12
@@ -75,12 +75,12 @@ class Environment(Configurable):
         self.visualize = self.config['environment']['visualize']
 
         # Find limits of grid based on center of grid in meters [-xlim, xlim] and [-ylim, ylim]
-        env_size = np.array([0, self.grid_size[0], 0, self.grid_size[1]])
+        env_size = np.array([0, self.grid_size[0], self.grid_size[1], 0])
         # Compute center of grid in meters
         env_center = env_size / 2
         # Shift limits based on center of grid in meters
-        args.environment_size = np.hstack((env_size[0:2] - env_center[1], env_size[2:4] - env_center[3]))
-        args.grid_size = [self.grid.shape[1], self.grid.shape[0]]
+        args.environment_size = np.hstack((env_size[0:2] - env_center[1], env_size[2:4] - env_center[2]))
+        args.grid_size = [self.grid.shape[0], self.grid.shape[1]]
 
     # noinspection PyTypeChecker
     def run(self) -> torch.Tensor:
@@ -548,7 +548,7 @@ class Environment(Configurable):
                 resolution=0.5,  # [m]
                 max_size=[100, 100],  # [x, y]
                 certainty=0,  # np.random.randint(3, 10) / 10,
-                spread=1
+                spread=3
             ),
             environment=dict(
                 visualize=True,
