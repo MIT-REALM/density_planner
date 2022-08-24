@@ -45,6 +45,7 @@ class Environment(Configurable):
         self.init_time = init_time
         self.end_time = end_time
         self.scale_down_factor = 12
+        self.max_frame_rate = self.config['environment']["fps"]
 
         # Initialize the environment
         self.clipping_type = self.config['dataset']['clipping']  # [m]
@@ -53,7 +54,6 @@ class Environment(Configurable):
         # Initialize tracks
         self.__initialize_tracks(self.__tracks, self.__tracks_meta)
         # Initialize environmental parameters
-
         self.step_size = 1 / self.__recording_meta['frameRate']  # in seconds
         self.grid_resolution = self.config['grid']['resolution'] / self.scale_down_factor  # [m]
         self.max_env_size = np.array(self.config['grid']['max_size']) / self.scale_down_factor  # [m]
@@ -62,7 +62,7 @@ class Environment(Configurable):
         self.num_vehicles = self.__recording_meta['numVehicles']
         self.num_vrus = self.__recording_meta['numVRUs']
         self.num_obstacles = self.__recording_meta['numTracks']
-        self.num_frames = self.maximum_frame - self.minimum_frame
+        self.num_frames = int((self.maximum_frame - self.minimum_frame)/(1/(self.max_frame_rate*self.step_size)))
         self.current_frame = self.minimum_frame
 
         # Uncertainty parameters
@@ -83,35 +83,45 @@ class Environment(Configurable):
         env_center = env_size / 2
         # Shift limits based on center of grid in meters
         args.environment_size = np.hstack((env_size[0:2] - env_center[1], env_size[2:4] - env_center[2]))
+        self.environment_size = args.environment_size
         args.grid_size = [self.grid.shape[0], self.grid.shape[1]]
 
-    def generate_random_waypoints(self, time: float, num_waypoints: int = 1):
+    def generate_random_waypoint(self, time: float):
         """Generate random waypoints in the environment for the given number of waypoints. It checks if the waypoints
         are valid by making sure that the waypoints are in a free space and if not, it generates new waypoints.
         The waypoints are chosen based on the time and the number of waypoints."""
+        # Find the time step for the given time
+        time_step = int(time / (1/(self.step_size*self.max_frame_rate)))
+        # Generate random waypoints
+        while True:
+            wpt_x = np.random.uniform(0, self.grid_size[0])
+            wpt_y = np.random.uniform(0, self.grid_size[1])
+            if self.is_free(wpt_x, wpt_y, time_step):
+                break
+        # Return waypoints
+        return wpt_x-self.grid_size[0]/2, wpt_y-self.grid_size[1]/2
 
-        waypoints = np.random.rand(num_waypoints, 2) * self.grid_size
-        return waypoints
-
+    def is_free(self, x, y, frame_idx):
+        """Check if the given position is free"""
+        # Trasnform position to grid coordinates
+        x_indx = self.find_nearest_index(self._x_pts, x)[0]
+        y_indx = self.find_nearest_index(self._y_pts, y)[0]
+        # Check if position is free
+        return self.grid[y_indx, x_indx, frame_idx] == 0
 
     # noinspection PyTypeChecker
     def run(self) -> torch.Tensor:
         # iterate frames and update the grid
-        total_frames = self.num_frames - self.current_frame
-
-        if self.config['environment']["parallel"]:
-            logger.info("Iterating through {} frames on {} cores", total_frames, os.cpu_count())
-            pool = Pool(os.cpu_count())
-            inputs = tqdm(range(self.current_frame, self.num_frames))
-            pool.imap_unordered(self.update_grid, inputs, chunksize=os.cpu_count())
-            # close the pool and wait for the work to finish
-            pool.close()
-            pool.join()
-            logger.info("Closing pool")
+        if not np.isinf(self.end_time):
+            end_frame = int(self.__recording_meta['frameRate'] * self.end_time)
         else:
-            logger.info("Iterating through {} frames", total_frames)
-            for frame_idx in tqdm(range(self.current_frame, self.num_frames)):
-                self.update_grid(frame_idx)
+            end_frame = self.maximum_frame
+
+        total_frames = self.num_frames - self.current_frame
+        logger.info("Iterating through {} frames", total_frames)
+        for frame_idx in tqdm(range(self.current_frame, end_frame, int(1/(self.step_size*self.max_frame_rate)))):
+            self.update_grid(frame_idx)
+
         logger.info("...Done")
         return self.grid
 
@@ -126,7 +136,7 @@ class Environment(Configurable):
         # Create animation
         # noinspection PyTypeChecker
         self.map_anim = anim.FuncAnimation(self.fig, self.__update_animation,
-                                           frames=tqdm(np.arange(self.minimum_frame, self.num_frames)),
+                                           frames=tqdm(np.arange(self.grid.shape[2])),
                                            interval=1000 / self.config['environment']["fps"])
         # Save animation
         self.map_anim.save(self.output_file, writer=self.writer_video)
@@ -199,8 +209,10 @@ class Environment(Configurable):
         threshold = threshold_li(background_grid)  # input value
         # Create binary occupancy grid
         binary_grid = (background_grid < threshold).astype(np.float)
+        self.binary_grid = binary_grid
         # Create occupancy grid for each time step
-        self.grid = torch.tensor(np.repeat(binary_grid[:, :, np.newaxis], self.num_frames, axis=2))
+        self.grid = torch.tensor(binary_grid[:, :, np.newaxis])
+        # self.grid = torch.tensor(np.repeat(binary_grid[:, :, np.newaxis], self.num_frames, axis=2))
         # Create spacing points for the grid
         self._x_pts = np.linspace(left, right, binary_grid.shape[1])
         self._y_pts = np.linspace(-upper, -lower, binary_grid.shape[0])
@@ -256,6 +268,7 @@ class Environment(Configurable):
         :return: torch tensor with current occupancy grid in the shape of (x_dim, y_dim)
         """
         # Iterate through all tracks in current frame and update the grid
+        binary_grid = self.binary_grid.copy()
         for track_idx in self.frame_to_track_idxs[frame_idx]:
             # Get track data
             track = self.__tracks[track_idx]
@@ -265,7 +278,6 @@ class Environment(Configurable):
             initial_frame = track_meta["initialFrame"]
 
             current_index = frame_idx - initial_frame
-
             # Instantiate obstacle on grid
             # Vehicles are represented as polygons
             if track["bbox"] is not None:
@@ -282,7 +294,8 @@ class Environment(Configurable):
                             x_indx = np.where(self._x_pts == inside_pt[0])[0]
                             y_indx = np.where(self._y_pts == inside_pt[1])[0]
                             # Populate grid with obstacle
-                            self.grid[y_indx, x_indx, frame_idx] = 1
+                            binary_grid[y_indx, x_indx] = 1
+                            #self.grid[y_indx, x_indx, frame_idx] = 1
                 else:
                     # extract obstacle bounding box
                     bounding_box = track["bbox"][current_index] / self.scale_down_factor
@@ -311,7 +324,8 @@ class Environment(Configurable):
                     normPDF = normPDF.reshape(self.grid_2d[0].shape)
                     # Populate grid with obstacle
                     indx = normPDF >= 1e-1
-                    self.grid[:, :, frame_idx][indx] = torch.tensor(normPDF[indx])
+                    binary_grid[indx] = normPDF[indx]
+                    #self.grid[:, :, frame_idx][indx] = torch.tensor(normPDF[indx])
                     # fig, ax= self.plotmv(self, y_cntr, x_cntr, self.grid_2d[1].flatten(), self.grid_2d[0].flatten(),
                     #             radius=length,
                     #             velocity=[x_velocity, y_velocity],
@@ -327,7 +341,8 @@ class Environment(Configurable):
                     x_indx = self.find_nearest_index(self._x_pts, x_cntr)[0]
                     y_indx = self.find_nearest_index(self._y_pts, y_cntr)[0]
                     # Populate occupancy grid
-                    self.grid[y_indx, x_indx, frame_idx] = 1
+                    binary_grid[y_indx, x_indx] = 1
+                    # self.grid[y_indx, x_indx, frame_idx] = 1
                 else:
                     # extract obstacle centroid position
                     x_cntr = track['xCenter'][current_index] / self.scale_down_factor
@@ -351,10 +366,16 @@ class Environment(Configurable):
 
                     # Populate grid with obstacle
                     indx = normPDF >= 1e-1
-                    self.grid[:, :, frame_idx][indx] = torch.tensor(normPDF[indx])
+                    binary_grid[indx] = normPDF[indx]
+                    #self.grid[:, :, frame_idx][indx] = torch.tensor(normPDF[indx])
 
-        # time.sleep(0.2)
-        return self.grid[:, :, frame_idx]
+        # Append occupancy grid to grid
+        if frame_idx == 0:
+            self.grid = torch.tensor(binary_grid[:, :, np.newaxis])
+        else:
+            self.grid = torch.cat((self.grid, torch.tensor(binary_grid[:, :, np.newaxis])), dim=2)
+
+        return torch.tensor(binary_grid)
 
     def enlarge_shape(self, table=None):
         """enlarge the shape of all obstacles and update the grid to do motion planning for a point"""
@@ -599,7 +620,7 @@ class Environment(Configurable):
                 resolution=0.2,  # [m]
                 max_size=[100, 100],  # [x, y]
                 certainty=0,  # np.random.randint(3, 10) / 10,
-                spread=0.2
+                spread=0.2,
             ),
             environment=dict(
                 visualize=True,

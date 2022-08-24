@@ -44,8 +44,12 @@ if __name__ == '__main__':
         plot_grid(env, args, timestep=80, save=False)
         #plot_grid(env, args, save=False)
 
-        xref0 = torch.tensor([0, -28, 1.5, 3, 0]).reshape(1, -1, 1).type(torch.FloatTensor)
-        xrefN = torch.tensor([0., 8, 4, 1, 0]).reshape(1, -1, 1)
+        # Create random initial state
+        wpts_0 = env.generate_random_waypoint(0)
+        wpts_N = env.generate_random_waypoint(12)
+
+        xref0 = torch.tensor([wpts_0[0], wpts_0[1], 1.5, 3, 0]).reshape(1, -1, 1).type(torch.FloatTensor)
+        xrefN = torch.tensor([wpts_N[0], wpts_N[1], 4, 1, 0]).reshape(1, -1, 1)
         ego = EgoVehicle(xref0, xrefN, env, args)
 
         ### plan motion with density planner
