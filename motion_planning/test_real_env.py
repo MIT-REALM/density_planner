@@ -37,8 +37,8 @@ if __name__ == '__main__':
 
         # Compute grid from trajectory data
         env.run()
-        env.grid = torch.transpose(env.grid, 0, 1) #@Andres: include in env.run()
-        args.grid_size = [args.grid_size[1], args.grid_size[0]] #@Andres: include in env.run()
+        # env.grid = torch.transpose(env.grid, 0, 1) #@Andres: include in env.run()
+        # args.grid_size = [args.grid_size[1], args.grid_size[0]] #@Andres: include in env.run()
 
         plot_grid(env, args, timestep=0, save=False)
         plot_grid(env, args, timestep=20, save=False)

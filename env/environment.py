@@ -79,13 +79,10 @@ class Environment(Configurable):
         # Check if visualization should be included
         self.visualize = self.config['environment']['visualize']
 
-        # Find limits of grid based on center of grid in meters [-xlim, xlim] and [-ylim, ylim]
-        env_size = np.array([0, self.grid_size[0], self.grid_size[1], 0])
         # Compute center of grid in meters
-        env_center = env_size / 2
+        self.env_center = [(self.grid_size[1]-self.grid_size[0])/2,-(self.grid_size[3]-self.grid_size[2])/2]
         # Shift limits based on center of grid in meters
-        args.environment_size = np.hstack((env_size[0:2] - env_center[1], env_size[2:4] - env_center[2]))
-        self.environment_size = args.environment_size
+        args.environment_size = np.hstack((self.grid_size[0:2] - self.env_center[0], self.grid_size[2:4] - self.env_center[1]))
         args.grid_size = [self.grid.shape[0], self.grid.shape[1]]
 
     def generate_random_waypoint(self, time: float):
@@ -96,12 +93,12 @@ class Environment(Configurable):
         time_step = int(time / (1/(self.step_size*self.max_frame_rate)))
         # Generate random waypoints
         while True:
-            wpt_x = np.random.uniform(0, self.grid_size[0])
-            wpt_y = np.random.uniform(0, self.grid_size[1])
-            if self.is_free(wpt_x, wpt_y, time_step):
+            wpt_x = np.random.uniform(self.grid_size[0],self.grid_size[1])
+            wpt_y = np.random.uniform(self.grid_size[2],self.grid_size[3])
+            if self.is_free(wpt_x/self.scale_down_factor, wpt_y/self.scale_down_factor, time_step):
                 break
         # Return waypoints
-        return wpt_x-self.grid_size[0]/2, wpt_y-self.grid_size[1]/2
+        return wpt_x-self.env_center[0], wpt_y-self.env_center[1]
 
     def is_free(self, x, y, frame_idx):
         """Check if the given position is free"""
@@ -201,7 +198,7 @@ class Environment(Configurable):
         x_dim = right - left  # [m]
         y_dim = -(lower - upper)  # [m]
         # compute environment size
-        self.grid_size = np.array([x_dim, y_dim]) * self.scale_down_factor  # [m]
+        self.grid_size = np.array([left, right, -lower, -upper]) * self.scale_down_factor  # [m]
         self.grid_size_px = [int((x_dim / self.grid_resolution)), int((-y_dim / self.grid_resolution))]  # [px]
         # Populate static obstacles and road boundaries
         x_scale = int(np.round(self.grid_resolution / self.scaling_factor))
@@ -213,7 +210,7 @@ class Environment(Configurable):
         binary_grid = (background_grid < threshold).astype(np.float)
         self.binary_grid = binary_grid
         # Create occupancy grid for each time step
-        self.grid = torch.tensor(binary_grid[:, :, np.newaxis])
+        self.grid = torch.tensor(binary_grid[:, :, np.newaxis].transpose(1, 0, 2))
         # self.grid = torch.tensor(np.repeat(binary_grid[:, :, np.newaxis], self.num_frames, axis=2))
         # Create spacing points for the grid
         self._x_pts = np.linspace(left, right, binary_grid.shape[1])
@@ -373,11 +370,13 @@ class Environment(Configurable):
 
         # Append occupancy grid to grid
         if frame_idx == 0:
-            self.grid = torch.tensor(binary_grid[:, :, np.newaxis])
+            self.grid = torch.tensor(binary_grid[:, :, np.newaxis].transpose(1, 0, 2))
+            # self.grid = torch.tensor(binary_grid[:, :, np.newaxis])
         else:
-            self.grid = torch.cat((self.grid, torch.tensor(binary_grid[:, :, np.newaxis])), dim=2)
+            # self.grid = torch.cat((self.grid, torch.tensor(binary_grid[:, :, np.newaxis])), dim=2)
+            self.grid = torch.cat((self.grid, torch.tensor(binary_grid[:, :, np.newaxis].transpose(1, 0, 2))), dim=2)
 
-        return torch.tensor(binary_grid)
+        return torch.tensor(binary_grid.transpose())
 
     def enlarge_shape(self, table=None):
         """enlarge the shape of all obstacles and update the grid to do motion planning for a point"""
