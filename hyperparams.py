@@ -13,7 +13,7 @@ def parse_args():
     parser.add_argument('--dt_sim', type=int, default=0.01)
     parser.add_argument('--N_sim_max', type=int, default=1001)
     parser.add_argument('--factor_pred', type=int, default=10)
-    parser.add_argument('--random_seed', type=int, default=15)
+    parser.add_argument('--random_seed', type=int, default=0)
 
     ### DATA GENERATION
     # data generation
@@ -127,7 +127,7 @@ def parse_args():
 
     # optimization with NLP
     parser.add_argument('--iter_NLP', type=int, default=5000) #1000
-    parser.add_argument('--iter_MPC', type=int, default=5000) #1000
+    parser.add_argument('--iter_MPC', type=int, default=2000) #1000
     parser.add_argument('--goal_reached_MPC', type=float, default=1)
 
 

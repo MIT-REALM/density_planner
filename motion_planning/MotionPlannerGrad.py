@@ -38,6 +38,7 @@ class MotionPlannerGrad(MotionPlanner):
         start motion planner: call optimization/planning function and compute cost
         """
 
+        logging.info("")
         logging.info("##### %s: Starting motion planning %s" % (self.name, self.ego.args.mp_name))
         tall = time.time()
 
@@ -409,7 +410,7 @@ class MotionPlannerGrad(MotionPlanner):
                                                                                  cost_dict["cost_uref"]))
         return cost_dict
 
-    def validate_traj(self, up, xe0=None):
+    def validate_traj(self, up, xe0=None, return_time=False):
         """
         evaluate input parameters (plot and compute final cost), assume that reference trajectory starts at ego.xref0
 
@@ -426,6 +427,8 @@ class MotionPlannerGrad(MotionPlanner):
             contains the unweighted cost tensors
         """
 
+        logging.info("")
+        logging.info("##### %s: Validate trajectory" % self.name)
         if xe0 is None:
             xe0 = torch.zeros(1, self.ego.system.DIM_X, 1)
         rho0 = torch.ones(1, 1, 1)
@@ -436,10 +439,10 @@ class MotionPlannerGrad(MotionPlanner):
             path_final = None
 
         # TO-DO: get u_traj and compute "true" u_cost
+        t0 = time.time()
         uref_traj, xref_traj, x_traj, _ = self.get_traj(up, name="validated_traj", xe0=xe0, rho0=rho0,
                                                                compute_density=False, plot=self.plot_final, use_nn=False,
                                                                folder=path_final)
-
         rho_traj = torch.ones(1, 1, x_traj.shape[2])
 
         if self.plot_final:
@@ -447,10 +450,14 @@ class MotionPlannerGrad(MotionPlanner):
 
         cost, cost_dict = self.get_cost(uref_traj, x_traj, rho_traj, evaluate=True)
         cost_dict = self.remove_cost_factor(cost_dict)
+        t_plan = time.time() - t0
+        logging.info("%s: Evaluation finished in %.2fs" % (self.name, t_plan))
         logging.info("%s: True cost coll %.4f, goal %.4f, bounds %.4f, uref %.4f" % (self.name, cost_dict["cost_coll"],
                                                                                  cost_dict["cost_goal"],
                                                                                  cost_dict["cost_bounds"],
                                                                                  cost_dict["cost_uref"]))
+        if return_time:
+            return cost_dict, t_plan
         return cost_dict
 
 
@@ -480,6 +487,7 @@ class MotionPlannerSearch(MotionPlanner):
         start motion planner: call optimization/planning function and compute cost
         """
 
+        logging.info("")
         logging.info("##### %s: Starting motion planning %s" % (self.name, self.ego.args.mp_name))
         t0 = time.time()
         up, cost = self.plan_traj()

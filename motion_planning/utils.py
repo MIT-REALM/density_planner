@@ -4,6 +4,9 @@ from scipy.stats import multivariate_normal
 from systems.utils import get_mesh_pos
 from datetime import datetime
 import os
+import logging
+import sys
+import shutil
 
 class MultivariateGaussians():
     def __init__(self, means, cov_diags, weights, x_min, x_max):
@@ -23,6 +26,23 @@ class MultivariateGaussians():
                                 torch.any(x[:, :, 0] > self.max[[0], :, 0], 1))
         prob[mask] = 0
         return prob
+
+def initialize_logging(args, name):
+    """
+    create folder for saving plots and create logger
+    """
+    path_log = make_path(args.path_plot_motion, name)
+    shutil.copyfile('hyperparams.py', path_log + 'hyperparams.py')
+    shutil.copyfile('motion_planning/simulation_objects.py', path_log + 'simulation_objects.py')
+    shutil.copyfile('motion_planning/MotionPlanner.py', path_log + 'MotionPlanner.py')
+    shutil.copyfile('motion_planning/MotionPlannerGrad.py', path_log + 'MotionPlannerGrad.py')
+    shutil.copyfile('motion_planning/MotionPlannerNLP.py', path_log + 'MotionPlannerNLP.py')
+    shutil.copyfile('motion_planning/plan_motion.py', path_log + 'plan_motion.py')
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s",
+                        handlers=[
+                            logging.FileHandler(path_log + '/logfile.txt'),
+                            logging.StreamHandler(sys.stdout)])
+    return path_log
 
 def pos2gridpos(args, pos_x=None, pos_y=None):
     if pos_x is not None:

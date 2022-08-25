@@ -34,7 +34,7 @@ from tracks_import import read_from_csv
 class Environment(Configurable):
     """Combined grip map of multiple OccupancyObjects"""
 
-    def __init__(self, args, name="environment", init_time=0, end_time=np.inf, config=None):
+    def __init__(self, args, name="environment", init_time=0, end_time=None, config=None):
         # Initialize superclass
         super().__init__()
         Configurable.__init__(self, config)
@@ -43,6 +43,8 @@ class Environment(Configurable):
         self.name = name
         self.current_timestep = init_time
         self.init_time = init_time
+        if end_time is None:
+            end_time = init_time + 11
         self.end_time = end_time
         self.scale_down_factor = 12
         self.max_frame_rate = self.config['environment']["fps"]
@@ -107,7 +109,7 @@ class Environment(Configurable):
         x_indx = self.find_nearest_index(self._x_pts, x)[0]
         y_indx = self.find_nearest_index(self._y_pts, y)[0]
         # Check if position is free
-        return self.grid[y_indx, x_indx, frame_idx] == 0
+        return self.grid[x_indx, y_indx, frame_idx] == 0
 
     # noinspection PyTypeChecker
     def run(self) -> torch.Tensor:

@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from motion_planning.utils import pos2gridpos, check_collision, idx2time, gridpos2pos, traj2grid, shift_array, \
+from motion_planning.utils import pos2gridpos, initialize_logging, check_collision, idx2time, gridpos2pos, traj2grid, shift_array, \
     pred2grid, get_mesh_sample_points, time2idx, sample_pdf, enlarge_grid, get_closest_free_cell, get_closest_obs_cell, \
     make_path
 from density_training.utils import load_nn, get_nn_prediction
@@ -41,25 +41,11 @@ class MotionPlanner(ABC):
         else:
             self.plot_final = plot_final
         if path_log is None:
-            self.initialize_logging()
+            self.path_log = initialize_logging(self.ego.args, self.ego.args.mp_name + "_" + self.name)
         else:
             self.path_log = path_log
 
-    def initialize_logging(self):
-        """
-        create folder for saving plots and create logger
-        """
-        self.path_log = make_path(self.ego.args.path_plot_motion, self.name + "_" + self.ego.args.mp_name)
-        shutil.copyfile('hyperparams.py', self.path_log + 'hyperparams.py')
-        shutil.copyfile('motion_planning/simulation_objects.py', self.path_log + 'simulation_objects.py')
-        shutil.copyfile('motion_planning/MotionPlanner.py', self.path_log + 'MotionPlannerNLP.py')
-        shutil.copyfile('motion_planning/MotionPlannerGrad.py', self.path_log + 'MotionPlannerNLP.py')
-        shutil.copyfile('motion_planning/MotionPlannerNLP.py', self.path_log + 'MotionPlannerNLP.py')
-        shutil.copyfile('motion_planning/plan_motion.py', self.path_log + 'plan_motion.py')
-        logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s",
-                            handlers=[
-                                logging.FileHandler(self.path_log + '/logfile.txt'),
-                                logging.StreamHandler(sys.stdout)])
+
 
     @abstractmethod
     def plan_motion(self):
@@ -132,7 +118,7 @@ class MotionPlanner(ABC):
 
         cost_uref = self.get_cost_uref(uref_traj)
         cost_goal, goal_reached = self.get_cost_goal(x_traj, rho_traj, evaluate=evaluate)
-        cost_bounds, in_bounds = self.get_cost_bounds(x_traj, rho_traj)
+        cost_bounds, in_bounds = self.get_cost_bounds(x_traj, rho_traj, evaluate=evaluate)
         cost_coll = self.get_cost_coll(x_traj, rho_traj)  # for xref: 0.044s
 
         cost = self.weight_goal * cost_goal \
@@ -195,7 +181,7 @@ class MotionPlanner(ABC):
         #     close = torch.all(close)
         return cost_goal, close
 
-    def get_cost_bounds(self, x_traj, rho_traj):
+    def get_cost_bounds(self, x_traj, rho_traj, evaluate=False):
         """
         compute the cost for traying in the valid state space
 
@@ -215,16 +201,22 @@ class MotionPlanner(ABC):
         """
 
         cost = torch.zeros(1)
+        if eval:
+            x_min = self.ego.system.X_MIN
+            x_max = self.ego.system.X_MAX_MP
+        else:
+            x_min = self.ego.system.X_MIN_MP
+            x_max = self.ego.system.X_MAX_MP
 
         in_bounds = torch.ones(x_traj.shape[0], dtype=torch.bool)
-        if torch.any(x_traj < self.ego.system.X_MIN_MP):
-            idx = (x_traj < self.ego.system.X_MIN_MP).nonzero(as_tuple=True)
-            sq_error = ((x_traj[idx] - self.ego.system.X_MIN_MP[0, idx[1], 0]) ** 2)
+        if torch.any(x_traj < x_min):
+            idx = (x_traj < x_min).nonzero(as_tuple=True)
+            sq_error = ((x_traj[idx] - x_min[0, idx[1], 0]) ** 2)
             cost += (rho_traj[idx[0], 0, idx[2]] * sq_error).sum()
             in_bounds[idx[0]] = False
-        if torch.any(x_traj > self.ego.system.X_MAX_MP):
-            idx = (x_traj > self.ego.system.X_MAX_MP).nonzero(as_tuple=True)
-            sq_error = ((x_traj[idx] - self.ego.system.X_MAX_MP[0, idx[1], 0]) ** 2)
+        if torch.any(x_traj > x_max):
+            idx = (x_traj > x_max).nonzero(as_tuple=True)
+            sq_error = ((x_traj[idx] - x_max[0, idx[1], 0]) ** 2)
             cost += (rho_traj[idx[0], 0, idx[2]] * sq_error).sum()
             in_bounds[idx[0]] = False
         in_bounds = torch.all(in_bounds)
