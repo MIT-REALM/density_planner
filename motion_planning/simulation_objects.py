@@ -1,17 +1,14 @@
 import numpy as np
 import torch
-from motion_planning.utils import pos2gridpos, check_collision, idx2time, gridpos2pos, traj2grid, shift_array, \
-    pred2grid, get_mesh_sample_points, time2idx, sample_pdf, enlarge_grid, compute_gradient, get_closest_free_cell, get_closest_obs_cell
+from motion_planning.utils import pos2gridpos, traj2grid, shift_array, \
+    pred2grid, get_mesh_sample_points, sample_pdf, enlarge_grid, compute_gradient
 from density_training.utils import load_nn, get_nn_prediction
 from data_generation.utils import load_inputmap, load_outputmap
-from systems.utils import listDict2dictList
-from plots.plot_functions import plot_ref, plot_grid, plot_cost
-import pickle
-from datetime import datetime
-import os
+from plots.plot_functions import plot_ref, plot_grid, plot_motion
+import matplotlib.animation as animation
+import matplotlib.pyplot as plt
 from matplotlib import cm
-from matplotlib.colors import ListedColormap, LinearSegmentedColormap
-import shutil
+from matplotlib.colors import ListedColormap
 from systems.sytem_CAR import Car
 
 
@@ -150,13 +147,14 @@ class DynamicObstacle(StaticObstacle):
 
 
 class EgoVehicle:
-    def __init__(self, xref0, xrefN, env, args, pdf0=None, name="egoVehicle"):
+    def __init__(self, xref0, xrefN, env, args, pdf0=None, name="egoVehicle", video=False):
         self.xref0 = xref0
         self.xrefN = xrefN
         self.system = Car()
         self.name = name
         self.env = env
         self.args = args
+        self.video = video
         if pdf0 is None:
             pdf0 = sample_pdf(self.system, args.mp_gaussians)
         self.initialize_predictor(pdf0)
@@ -215,9 +213,9 @@ class EgoVehicle:
 
         if compute_density:
             rho_max, _ = rho_log_unnorm.max(dim=0)
-            rho_unnorm = torch.exp(rho_log_unnorm - rho_max.unsqueeze(0))
+            rho_unnorm = torch.exp(rho_log_unnorm - rho_max.unsqueeze(0)) * rho0.reshape(-1, 1, 1)
             rho_traj = rho_unnorm / rho_unnorm.sum(dim=0).unsqueeze(0)
-            rho_traj = rho_traj + rho0.reshape(-1, 1, 1)
+            rho_traj = rho_traj #+ rho0.reshape(-1, 1, 1)
         else:
             rho_traj = None
 
@@ -251,6 +249,13 @@ class EgoVehicle:
         cmap = ListedColormap(colorarray)
 
         grid_env_sc = 127 * self.env.grid
+
+        if self.video:
+
+            animation_1 = animation.FuncAnimation(plt.gcf(), plot_motion, fargs=(cmap, x_traj, rho_traj, xref_traj, self.args, grid_env_sc), frames=xref_traj.shape[2], interval=2000./xref_traj.shape[2])
+            #animation_1.save('output2.gif', writer='imagemagick')
+            animation_1.save('output1.mp4', writer='ffmpeg')
+            plt.show()
 
         for i in range(xref_traj.shape[2]):
             with torch.no_grad():

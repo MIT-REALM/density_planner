@@ -7,7 +7,7 @@ from systems.utils import get_density_map
 import scipy
 import matplotlib
 import matplotlib.colors as pltcol
-from motion_planning.utils import pos2gridpos, traj2grid
+from motion_planning.utils import pos2gridpos, traj2grid, pred2grid
 from matplotlib import cm
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 plt.style.use('seaborn-paper')
@@ -419,6 +419,33 @@ def plot_grid(object, args, timestep=None, cmap='binary', name=None,
         plt.show()
     plt.clf()
 
+
+def plot_motion(i, cmap, x_traj, rho_traj, xref_traj, args, grid_env_sc):
+
+    with torch.no_grad():
+        # 3. compute marginalized density grid
+        grid_pred = pred2grid(x_traj[:, :, [i]], rho_traj[:, :, [i]], args, return_gridpos=False)
+
+    grid_pred_sc = 127 * torch.clamp(grid_pred / grid_pred.max(), 0, 1)
+    grid_pred_sc[grid_pred_sc != 0] += 128
+    grid_traj = traj2grid(xref_traj[:, :, :i + 1], args)
+    grid_traj[grid_traj != 0] = 256
+    grid_all = torch.clamp(grid_env_sc[:, :, i] + grid_traj + grid_pred_sc[:, :, 0], 0, 256)
+
+    x_wide = max(np.abs((args.environment_size[1] - args.environment_size[0])) / 10, 3)
+    y_wide = np.abs((args.environment_size[3] - args.environment_size[2])) / 10
+    plt.figure(figsize=(x_wide, y_wide), dpi=200)
+    plt.pcolormesh(grid_all.T, cmap=cmap, norm=None)
+    plt.axis('scaled')
+
+    ticks_x = np.concatenate((np.arange(0, args.environment_size[1]+1, 10), np.arange(-10, args.environment_size[0]-1, -10)), 0)
+    ticks_y = np.concatenate((np.arange(0, args.environment_size[3]+1, 10), np.arange(-10, args.environment_size[2]-1, -10)), 0)
+    ticks_x_grid, ticks_y_grid = pos2gridpos(args, ticks_x, ticks_y)
+    plt.xticks(ticks_x_grid, ticks_x)
+    plt.yticks(ticks_y_grid, ticks_y)
+
+    plt.title("Predicted States at Time %.1f s" % (i / 10.))
+    plt.tight_layout()
 
 
 # def plot_density_heatmap2(x, rho, name, args, plot_limits=None, combine="mean", save=True, show=True, filename=None, include_date=False):

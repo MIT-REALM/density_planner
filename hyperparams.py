@@ -92,6 +92,8 @@ def parse_args():
     parser.add_argument('--weight_goal_far', type=float, default=10) #1 if no influence
     parser.add_argument('--weight_uref_effort', type=float, default=1e-2) #0 if no influence
     parser.add_argument('--close2goal_thr', type=float, default=3)
+    parser.add_argument('--mp_num_envs', type=int, default=20)
+    parser.add_argument('--mp_num_initial', type=int, default=1)
     # ego vehicle
     parser.add_argument('--mp_gaussians', type=int, default=5)
     parser.add_argument('--mp_sampling', type=str, default='random')
@@ -104,7 +106,7 @@ def parse_args():
     parser.add_argument('--mp_optimizer', type=str, default="Adam")
     parser.add_argument('--mp_epochs', type=int, default=100) #100
     parser.add_argument('--mp_epochs_density', type=int, default=100) #100
-    parser.add_argument('--mp_numtraj', type=float, default=30) #30
+    parser.add_argument('--mp_numtraj', type=float, default=100) #30
     parser.add_argument('--mp_lr', type=float, default=1e-2)
     parser.add_argument('--mp_lr_step', type=int, default=0)
     parser.add_argument('--max_gradient', type=float, default=0.02)
@@ -117,17 +119,17 @@ def parse_args():
     # optimization with search
     parser.add_argument('--du_search', type=list, default=[1, 1])
     # cost parameters
-    parser.add_argument('--search_weight_goal', type=float, default=1e-2)
-    parser.add_argument('--search_weight_coll', type=float, default=1e-1)
-    parser.add_argument('--search_weight_uref', type=float, default=1e-4)
-    parser.add_argument('--search_weight_bounds', type=float, default=1e1)
+    # parser.add_argument('--search_weight_goal', type=float, default=2e-2)
+    # parser.add_argument('--search_weight_coll', type=float, default=1e-1)
+    # parser.add_argument('--search_weight_uref', type=float, default=1e-4)
+    # parser.add_argument('--search_weight_bounds', type=float, default=1e1)
     parser.add_argument('--goal_thr', type=float, default=4)
     parser.add_argument('--coll_thr', type=float, default=4)
-    parser.add_argument('--opt_time_limit', type=float, default=3600)
+    parser.add_argument('--opt_time_limit', type=float, default=300)
 
     # optimization with NLP
     parser.add_argument('--iter_NLP', type=int, default=5000) #1000
-    parser.add_argument('--iter_MPC', type=int, default=2000) #1000
+    parser.add_argument('--iter_MPC', type=int, default=1000) #2000
     parser.add_argument('--goal_reached_MPC', type=float, default=1)
 
 

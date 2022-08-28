@@ -95,7 +95,7 @@ class MotionPlanner(ABC):
 
         return uref_traj, xref_traj, x_traj, rho_traj
 
-    def get_cost(self, uref_traj, x_traj, rho_traj, evaluate=False):
+    def get_cost(self, uref_traj, x_traj, rho_traj, evaluate=False, get_max=False):
         """
         compute cost of a given trajectory
 
@@ -117,9 +117,9 @@ class MotionPlanner(ABC):
         """
 
         cost_uref = self.get_cost_uref(uref_traj)
-        cost_goal, goal_reached = self.get_cost_goal(x_traj, rho_traj, evaluate=evaluate)
-        cost_bounds, in_bounds = self.get_cost_bounds(x_traj, rho_traj, evaluate=evaluate)
-        cost_coll = self.get_cost_coll(x_traj, rho_traj)  # for xref: 0.044s
+        cost_goal, goal_reached = self.get_cost_goal(x_traj, rho_traj, evaluate=evaluate, get_max=get_max)
+        cost_bounds, in_bounds = self.get_cost_bounds(x_traj, rho_traj, evaluate=evaluate, get_max=get_max)
+        cost_coll = self.get_cost_coll(x_traj, rho_traj, get_max=get_max)  # for xref: 0.044s
 
         cost = self.weight_goal * cost_goal \
                + self.weight_uref * cost_uref \
@@ -151,7 +151,7 @@ class MotionPlanner(ABC):
         cost = self.ego.args.weight_uref_effort * (uref_traj ** 2).sum(dim=(1, 2))
         return cost
 
-    def get_cost_goal(self, x_traj, rho_traj, evaluate=False):
+    def get_cost_goal(self, x_traj, rho_traj, evaluate=False, get_max=False):
         """
         compute cost for reaching the goal
 
@@ -172,6 +172,8 @@ class MotionPlanner(ABC):
         sq_dist = ((x_traj[:, :2, -1] - self.ego.xrefN[:, :2, 0]) ** 2).sum(dim=1)
         if rho_traj is None:  # is none for initialize method of grad motion planner
             cost_goal = sq_dist
+        elif get_max:
+            cost_goal = (rho_traj[:, 0, -1] * sq_dist).max()
         else:
             cost_goal = (rho_traj[:, 0, -1] * sq_dist).sum()
         close = cost_goal < self.ego.args.close2goal_thr
@@ -181,7 +183,7 @@ class MotionPlanner(ABC):
         #     close = torch.all(close)
         return cost_goal, close
 
-    def get_cost_bounds(self, x_traj, rho_traj, evaluate=False):
+    def get_cost_bounds(self, x_traj, rho_traj, evaluate=False, get_max=False):
         """
         compute the cost for traying in the valid state space
 
@@ -201,28 +203,34 @@ class MotionPlanner(ABC):
         """
 
         cost = torch.zeros(1)
-        if eval:
+        if evaluate:
             x_min = self.ego.system.X_MIN
-            x_max = self.ego.system.X_MAX_MP
+            x_max = self.ego.system.X_MAX
         else:
             x_min = self.ego.system.X_MIN_MP
             x_max = self.ego.system.X_MAX_MP
 
         in_bounds = torch.ones(x_traj.shape[0], dtype=torch.bool)
-        if torch.any(x_traj < x_min):
+        if torch.any(x_traj[:, :4, :] < x_min[:, :4, :]):
             idx = (x_traj < x_min).nonzero(as_tuple=True)
             sq_error = ((x_traj[idx] - x_min[0, idx[1], 0]) ** 2)
-            cost += (rho_traj[idx[0], 0, idx[2]] * sq_error).sum()
+            if get_max:
+                cost += (rho_traj[idx[0], 0, idx[2]] * sq_error).max()
+            else:
+                cost += (rho_traj[idx[0], 0, idx[2]] * sq_error).sum()
             in_bounds[idx[0]] = False
-        if torch.any(x_traj > x_max):
+        if torch.any(x_traj[:, :4, :] > x_max[:, :4, :]):
             idx = (x_traj > x_max).nonzero(as_tuple=True)
             sq_error = ((x_traj[idx] - x_max[0, idx[1], 0]) ** 2)
-            cost += (rho_traj[idx[0], 0, idx[2]] * sq_error).sum()
+            if get_max:
+                cost += (rho_traj[idx[0], 0, idx[2]] * sq_error).max()
+            else:
+                cost += (rho_traj[idx[0], 0, idx[2]] * sq_error).sum()
             in_bounds[idx[0]] = False
         in_bounds = torch.all(in_bounds)
         return cost, in_bounds
 
-    def get_cost_coll(self, x_traj, rho_traj):
+    def get_cost_coll(self, x_traj, rho_traj, get_max=False):
         """
         compute cost for high collision probabilities
 
@@ -254,7 +262,10 @@ class MotionPlanner(ABC):
                 des_pos_x, des_pos_y = gridpos2pos(self.ego.args, pos_x=des_gridpos_x, pos_y=des_gridpos_y)
                 sq_dist = (des_pos_x - x_traj[idx, 0, i]) ** 2 + (des_pos_y - x_traj[idx, 1, i]) ** 2
                 coll_prob = self.ego.env.grid[gridpos_x[idx, i], gridpos_y[idx, i], i]
-                cost += (rho_traj[idx, 0, i] * coll_prob * sq_dist).sum()
+                if get_max:
+                    cost += (rho_traj[idx, 0, i] * coll_prob * sq_dist).max()
+                else:
+                    cost += (rho_traj[idx, 0, i] * coll_prob * sq_dist).sum()
         return cost
 
     def remove_cost_factor(self, cost_dict):

@@ -1,20 +1,10 @@
-from motion_planning.utils import sample_pdf, pred2grid
-from motion_planning.simulation_objects import Environment, EgoVehicle
-from motion_planning.example_objects import create_environment, create_crossing4w, create_pedRL, create_street, \
-    create_turnR, create_pedLR
+from motion_planning.simulation_objects import EgoVehicle
 from env.environment import Environment as Env
 import hyperparams
 import torch
-from plots.plot_functions import plot_grid
-from systems.sytem_CAR import Car
-import pickle
-import os
-import logging
-import sys
-from MotionPlannerGrad import MotionPlannerGrad
-from MotionPlannerNLP import MotionPlannerNLP, MotionPlannerMPC
-# import MotionPlannerNLP
+from motion_planning.MotionPlannerGrad import MotionPlannerGrad
 import numpy as np
+from plots.plot_functions import plot_grid
 
 if __name__ == '__main__':
     args = hyperparams.parse_args()
@@ -23,23 +13,27 @@ if __name__ == '__main__':
     torch.manual_seed(args.random_seed)
     np.random.seed(args.random_seed)
 
-    plot = True
+    plot = False
+    plot_final = True
     path_log = None
     num_initial = 10  # number of different initial state which will be evaluated
+    init_time = 0
 
     ### loop through different environments
-    for k in range(1):
+    for k in range(10):
         results = {}
         results["grad"] = {"time": [], "cost": [], "u": []}
 
+        grid_sum = 0
         ### create environment and motion planning problem
-        env = Env(args, init_time=0, end_time=12)
+        while grid_sum < 11e5:
+            env = Env(args, init_time=init_time, end_time=init_time + 11)
+            env.run()
+            init_time += np.random.randint(12, 20)
+            grid_sum = env.grid[env.grid != 1].sum()
+            print(grid_sum)
 
         # Compute grid from trajectory data
-        env.run()
-        # env.grid = torch.transpose(env.grid, 0, 1) #@Andres: include in env.run()
-        # args.grid_size = [args.grid_size[1], args.grid_size[0]] #@Andres: include in env.run()
-
         plot_grid(env, args, timestep=0, save=False)
         plot_grid(env, args, timestep=20, save=False)
         plot_grid(env, args, timestep=40, save=False)
@@ -48,37 +42,34 @@ if __name__ == '__main__':
         plot_grid(env, args, timestep=100, save=False)
 
         # Create random initial state
-        wpts_0 = env.generate_random_waypoint(0)
-        wpts_N = env.generate_random_waypoint(12)
-
-        xref0 = torch.tensor([wpts_0[0], wpts_0[1], 1.5, 3, 0]).reshape(1, -1, 1).type(torch.FloatTensor)
-        xrefN = torch.tensor([wpts_N[0], wpts_N[1], 4, 1, 0]).reshape(1, -1, 1)
+        dist_start_goal = 0
+        while dist_start_goal < 10 or dist_start_goal > 70:
+            pos_0 = np.array([-15, -15]) + 10 * np.random.rand(2) #env.generate_random_waypoint(0)
+            theta_0 = 1.6 * np.random.rand(1)
+            v_0 = 1 + 8 * np.random.rand(1)
+            pos_N = np.array([25, 15]) + 10 * np.random.rand(2) #env.generate_random_waypoint(10)
+            dist_start_goal = np.sqrt((pos_0[0]-pos_N[0])**2 + (pos_0[1]-pos_N[1])**2)
+        print("start")
+        print(pos_0)
+        print("end")
+        print(pos_N)
+        xref0 = torch.tensor([pos_0[0], pos_0[1], theta_0[0], v_0[0], 0]).reshape(1, -1, 1).type(torch.FloatTensor)
+        xrefN = torch.tensor([pos_N[0], pos_N[1], 0, 0, 0]).reshape(1, -1, 1)
         ego = EgoVehicle(xref0, xrefN, env, args)
         ego.system.X_MIN_MP[0, 0, 0] = args.environment_size[0] + 0.1
-        ego.system.X_MIN_MP[0, 0, 0] = args.environment_size[2] + 0.1
+        ego.system.X_MIN_MP[0, 1, 0] = args.environment_size[2] + 0.1
         ego.system.X_MAX_MP[0, 0, 0] = args.environment_size[1] - 0.1
-        ego.system.X_MAX_MP[0, 0, 0] = args.environment_size[3] - 0.1
+        ego.system.X_MAX_MP[0, 1, 0] = args.environment_size[3] - 0.1
 
         ### plan motion with density planner
-        planner_grad = MotionPlannerGrad(ego, name="grad%d" % k, plot=plot, path_log=path_log)
+        planner_grad = MotionPlannerGrad(ego, name="grad%d" % k, plot=plot, path_log=path_log, plot_final=plot_final)
         if k == 0:
             path_log = planner_grad.path_log
 
         up_grad, cost_grad, time_grad = planner_grad.plan_motion()
         results["grad"]["u"].append(up_grad)
         results["grad"]["time"].append(time_grad)
-
-        ### compare cost from different initial states
-        for j in range(num_initial):
-            if j == 5:
-                xe0 = torch.zeros(1, ego.system.DIM_X, 1)
-            else:
-                xe0 = ego.system.sample_xe0(1)
-                xe0[:, 4, :] = 0
-
-            ### evaluate trajectory for planner_grad
-            cost = planner_grad.validate_traj(up_grad, xe0=xe0)
-            results["grad"]["cost"].append(cost)
+        results["grad"]["cost"].append(cost_grad)
 
     print("end")
 

@@ -15,6 +15,7 @@ import matplotlib.path as mplt_path
 from multiprocessing import Pool
 from tqdm import tqdm
 from loguru import logger
+import logging
 from skimage.io import imread
 from skimage.measure import block_reduce
 from skimage.transform import downscale_local_mean
@@ -98,7 +99,7 @@ class Environment(Configurable):
             if self.is_free(wpt_x/self.scale_down_factor, wpt_y/self.scale_down_factor, time_step):
                 break
         # Return waypoints
-        return wpt_x-self.env_center[0], wpt_y-self.env_center[1]
+        return wpt_x-self.env_center[0], -(wpt_y-self.env_center[1])
 
     def is_free(self, x, y, frame_idx):
         """Check if the given position is free"""
@@ -117,11 +118,11 @@ class Environment(Configurable):
             end_frame = self.maximum_frame
 
         total_frames = self.num_frames - self.current_frame
-        logger.info("Iterating through {} frames", total_frames)
+        logging.debug("Iterating through {} frames", total_frames)
         for frame_idx in tqdm(range(self.current_frame, end_frame, int(1/(self.step_size*self.max_frame_rate)))):
             self.update_grid(frame_idx)
 
-        logger.info("...Done")
+        logging.debug("...Done")
         return self.grid
 
     def create_animation(self):
@@ -131,7 +132,7 @@ class Environment(Configurable):
         if not self.visualize:
             raise Exception('Visualization is not enabled on configuration file.')
         """create the animation"""
-        logger.info("Creating animation!")
+        logging.debug("Creating animation!")
         # Create animation
         # noinspection PyTypeChecker
         self.map_anim = anim.FuncAnimation(self.fig, self.__update_animation,
@@ -139,7 +140,7 @@ class Environment(Configurable):
                                            interval=1000 / self.config['environment']["fps"])
         # Save animation
         self.map_anim.save(self.output_file, writer=self.writer_video)
-        logger.info("...Done!")
+        logging.debug("...Done!")
         # Close figure
         plt.close(self.fig)
 
@@ -149,21 +150,21 @@ class Environment(Configurable):
         error_message = "The tracks file and the tracksMeta file is not matching each other. " \
                         "Please check whether you modified any of these files."
         if len(tracks) != len(tracks_meta):
-            logger.error(error_message)
+            logging.error(error_message)
             raise DataError("Failed", error_message)
         for track, track_meta in zip(tracks, tracks_meta):
             if track["trackId"] != track_meta["trackId"]:
-                logger.error(error_message)
+                logging.error(error_message)
                 raise DataError("Failed", error_message)
         # Determine the first and last frame
         self.minimum_frame = min(meta["initialFrame"] for meta in tracks_meta)
         self.maximum_frame = max(meta["finalFrame"] for meta in tracks_meta)
-        logger.info("The recording contains tracks from frame {} to {}.", self.minimum_frame, self.maximum_frame)
+        logging.debug("The recording contains tracks from frame {} to {}.", self.minimum_frame, self.maximum_frame)
         # crop minimum time if specified in config
         init_frame = int(self.__recording_meta['frameRate'] * self.init_time)
         if self.minimum_frame < init_frame:
             self.minimum_frame = init_frame
-            logger.info("Cropping minimum frame to {}.", self.minimum_frame)
+            logging.debug("Cropping minimum frame to {}.", self.minimum_frame)
         # crop maximum time if specified by config
         if not np.isinf(self.end_time):
             end_frame = int(self.__recording_meta['frameRate'] * self.end_time)
@@ -172,7 +173,7 @@ class Environment(Configurable):
 
         if not np.isinf(self.end_time) and end_frame < self.maximum_frame:
             self.maximum_frame = end_frame
-            logger.info("Cropping maximum frame to {} frames.", self.maximum_frame)
+            logging.debug("Cropping maximum frame to {} frames.", self.maximum_frame)
 
         # Create a mapping between frame and idxs of tracks for quick lookup during playback
         self.frame_to_track_idxs = {}
@@ -203,7 +204,7 @@ class Environment(Configurable):
         # Populate static obstacles and road boundaries
         x_scale = int(np.round(self.grid_resolution / self.scaling_factor))
         y_scale = int(np.round(self.grid_resolution / self.scaling_factor))
-        logger.info("Rescaling image with pool of size {}.", np.array([x_scale, y_scale]))
+        logging.debug("Rescaling image with pool of size {}.", np.array([x_scale, y_scale]))
         background_grid = downscale_local_mean(self.background_image_cropped, (x_scale, y_scale))
         threshold = threshold_li(background_grid)  # input value
         # Create binary occupancy grid
@@ -243,7 +244,7 @@ class Environment(Configurable):
             # Bring image background
             background_image_path = dataset_dir + recording + "_background.png"
             if background_image_path and os.path.exists(background_image_path):
-                logger.info("Loading background image from {}", background_image_path)
+                logging.debug("Loading background image from {}", background_image_path)
                 self.background_image = rgb2gray(imread(background_image_path))
                 (self.image_height, self.image_width) = self.background_image.shape
                 # crop background image
@@ -621,7 +622,7 @@ class Environment(Configurable):
                 resolution=0.2,  # [m]
                 max_size=[100, 100],  # [x, y]
                 certainty=0,  # np.random.randint(3, 10) / 10,
-                spread=0.2,
+                spread=1,
             ),
             environment=dict(
                 visualize=True,
