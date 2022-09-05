@@ -78,6 +78,7 @@ class MotionPlannerNLP(MotionPlanner):
             cost_dict_min = self.validate_traj(u_min)
             if self.plot and x_min is not None:
                 self.ego.visualize_xref(x_min, name=self.name + " trajectory", save=True, show=False, folder=self.path_log)
+        self.x_traj = x_traj
         return u_min, cost_dict_min, t_plan
 
     def solve_nlp(self):
@@ -136,8 +137,8 @@ class MotionPlannerNLP(MotionPlanner):
 
         ix_min, iy_min = pos2gridpos(self.ego.args, pos_x=x_min, pos_y=y_min)
         ix_max, iy_max = pos2gridpos(self.ego.args, pos_x=x_max, pos_y=y_max)
-        xgrid = np.arange(x_min, x_max + 0.0001, self.ego.args.grid_wide)
-        ygrid = np.arange(y_min, y_max + 0.0001, self.ego.args.grid_wide)
+        xgrid = np.linspace(x_min, x_max, self.ego.env.grid.shape[0]) # np.arange(x_min, x_max + 0.0001, self.ego.args.grid_wide)
+        ygrid = np.linspace(y_min, y_max, self.ego.env.grid.shape[1]) # np.arange(y_min, y_max + 0.0001, self.ego.args.grid_wide)
 
         for k in range(self.N):  # timesteps
             grid_coll_prob = self.ego.env.grid[ix_min:ix_max + 1, iy_min:iy_max + 1, k + 1].numpy().ravel(order='F')
@@ -301,7 +302,7 @@ class MotionPlannerMPC(MotionPlannerNLP):
         logging.info("")
         logging.info("##### %s: Starting motion planning %s" % (self.name, self.ego.args.mp_name))
         t0 = time.time()
-        u_traj, x_traj = self.solve_nlp()
+        u_traj, x_traj, mean_time = self.solve_nlp()
         t_plan = time.time() - t0
         logging.info("%s: Planning finished in %.2fs" % (self.name, t_plan))
         if u_traj is not None:  # up is None if MPC didn't find solution
@@ -314,7 +315,8 @@ class MotionPlannerMPC(MotionPlannerNLP):
             cost = None
         if self.plot and x_traj is not None:
             self.ego.visualize_xref(x_traj, name=self.name + " trajectory", save=True, show=False, folder=self.path_log)
-        return u_traj, cost, t_plan
+        self.x_traj = x_traj
+        return u_traj, cost, mean_time
 
     def solve_nlp(self):
         quiet = True
@@ -336,13 +338,16 @@ class MotionPlannerMPC(MotionPlannerNLP):
         y_max = self.ego.args.environment_size[3]  # self.ego.system.X_MAX[0, 1, 0]
         ix_min, iy_min = pos2gridpos(self.ego.args, pos_x=x_min, pos_y=y_min)
         ix_max, iy_max = pos2gridpos(self.ego.args, pos_x=x_max, pos_y=y_max)
-        xgrid = np.arange(x_min, x_max + 0.0001, self.ego.args.grid_wide)
-        ygrid = np.arange(y_min, y_max + 0.0001, self.ego.args.grid_wide)
+        xgrid = np.linspace(x_min, x_max, self.ego.env.grid.shape[0]) # np.arange(x_min, x_max + 0.0001, self.ego.args.grid_wide)
+        ygrid = np.linspace(y_min, y_max, self.ego.env.grid.shape[1]) # np.arange(y_min, y_max + 0.0001, self.ego.args.grid_wide)
         times = []
 
         ### optimizer settings
         p_opts = {"expand": False}
-        s_opts = {"max_iter": self.ego.args.iter_MPC}
+        if self.tube == 0:
+            s_opts = {"max_iter": self.ego.args.iter_MPC, "max_cpu_time": 0.1}
+        else:
+            s_opts = {"max_iter": self.ego.args.iter_tubeMPC, "max_cpu_time": 0.1}
         if quiet:
             p_opts["print_time"] = 0
             s_opts["print_level"] = 0
@@ -480,18 +485,19 @@ class MotionPlannerMPC(MotionPlannerNLP):
         x_traj = torch.from_numpy(x_traj)
         xref_traj = self.ego.system.compute_xref_traj(x0, u_traj.repeat_interleave(10, dim=2), self.ego.args, short=True)
         error = (x_traj - xref_traj).abs().sum()
-        logging.info("%s: Average computation time: %.4f, maximum computation time: %.4f" % (self.name, np.array(times).mean(), np.array(times).max()))
+        mean_time = np.array(times).mean()
+        logging.info("%s: Average computation time: %.4f, maximum computation time: %.4f" % (self.name, mean_time, np.array(times).max()))
         logging.info("%s: State trajectory error: %.2f, number failures: %d" % (self.name, error, num_failures))
 
         if error > 10:
             logging.info("%s: Solution not valid (trajectory error too big)" % (self.name))
             u_traj = None
             x_traj = None
-        if self.tube != 0:
-            x_traj = x_traj.repeat((len(vectors), 1, 1))
-            for i_v, v in enumerate(vectors):
-                x_traj[i_v, 0, :] += v[0]
-                x_traj[i_v, 1, :] += v[1]
+        # if self.tube != 0:
+        #     x_traj = x_traj.repeat((len(vectors), 1, 1))
+        #     for i_v, v in enumerate(vectors):
+        #         x_traj[i_v, 0, :] += v[0]
+        #         x_traj[i_v, 1, :] += v[1]
 
-        return u_traj, x_traj
+        return u_traj, x_traj, mean_time
 

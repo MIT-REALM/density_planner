@@ -39,6 +39,8 @@ class Environment(Configurable):
         # Initialize superclass
         super().__init__()
         Configurable.__init__(self, config)
+        self.config["dataset"]["recording"] = args.mp_recording
+        self.config["grid"]["spread"] = args.mp_realData_spread
         self.args = args
         self.map_anim = None
         self.name = name
@@ -615,14 +617,14 @@ class Environment(Configurable):
     def default_config(cls):
         return dict(dataset=dict(
             dataset_dir="./env/inD-dataset-v1.0/data/",
-            recording=30,
+            recording=26,
             clipping="automatic",
         ),
             grid=dict(
                 resolution=0.2,  # [m]
                 max_size=[100, 100],  # [x, y]
                 certainty=0,  # np.random.randint(3, 10) / 10,
-                spread=1,
+                spread=0.1,
             ),
             environment=dict(
                 visualize=True,

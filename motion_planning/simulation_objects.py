@@ -269,7 +269,6 @@ class EgoVehicle:
             grid_all = torch.clamp(grid_env_sc[:, :, i] + grid_traj + grid_pred_sc[:, :, 0], 0, 256)
             plot_grid(grid_all, self.args, name="iter%d" % i, cmap=cmap, show=False, save=True, folder=folder)
 
-
     def set_start_grid(self):  # certainty=None, spread=2, pdf_form='squared'):
         self.grid = pred2grid(self.xref0 + self.xe0, self.rho0, self.args)  # 20s for 100iter
         # self.grid = pdf2grid(pdf0, self.xref0, self.system, args) #65s for 100iter

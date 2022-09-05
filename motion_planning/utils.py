@@ -8,6 +8,7 @@ import logging
 import sys
 import shutil
 
+
 class MultivariateGaussians():
     def __init__(self, means, cov_diags, weights, x_min, x_max):
         self.means = means
@@ -38,11 +39,16 @@ def initialize_logging(args, name):
     shutil.copyfile('motion_planning/MotionPlannerGrad.py', path_log + 'MotionPlannerGrad.py')
     shutil.copyfile('motion_planning/MotionPlannerNLP.py', path_log + 'MotionPlannerNLP.py')
     shutil.copyfile('motion_planning/plan_motion.py', path_log + 'plan_motion.py')
+    if args.mp_use_realEnv:
+        shutil.copyfile('env/environment.py', path_log + 'environment.py')
+
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s",
                         handlers=[
                             logging.FileHandler(path_log + '/logfile.txt'),
                             logging.StreamHandler(sys.stdout)])
     return path_log
+
+
 
 def pos2gridpos(args, pos_x=None, pos_y=None):
     if pos_x is not None:
@@ -251,3 +257,140 @@ def make_path(path0, name):
     path = path0 + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_" + name + "/"
     os.makedirs(path)
     return path
+
+def get_cost_increase(methods, results, thr_coll=10, thr_goal=20, max_iter=None):
+    with torch.no_grad():
+        # look for failures (cost_coll > failure_thr)
+        for method in methods:
+            if max_iter is None:
+                num_iter = len(results[method]["cost"])
+            else:
+                num_iter = max_iter
+            for k in range(num_iter):
+                if results[method]["cost"][k] is not None and (results[method]["cost"][k]["cost_coll"] > thr_coll or
+                                                               results[method]["cost"][k]["cost_goal"] > thr_goal or
+                                                               results[method]["cost"][k]["cost_bounds"] > 1e-4):
+                    results[method]["cost"][k] = None
+                    results[method]["num_valid"] -= 1
+
+        # set initial cost_increase to zero
+        for method in methods:
+            for s in ["cost_coll", "cost_goal", "cost_bounds", "cost_uref"]:
+                results[method][s] = 0
+
+        # compute cost_increase
+        for k in range(num_iter):
+            for s in ["cost_coll", "cost_goal", "cost_bounds", "cost_uref"]:
+                cost_min = np.inf
+                for method in methods:
+                    if results[method]["cost"][k] is not None and \
+                            results[method]["cost"][k][s] < cost_min:
+                        cost_min = results[method]["cost"][k][s].item()
+                for method in methods:
+                    if results[method]["cost"][k] is not None:
+                        results[method][s] += results[method]["cost"][k][s] - cost_min
+    print_cost_increase(methods, results)
+    return results
+
+def print_cost_increase(methods, results):
+    for method in methods:
+        print("%s: number valid: %d" % (method, results[method]["num_valid"]))
+        for s in ["cost_coll", "cost_goal", "cost_bounds", "cost_uref", "sum_time"]:
+            print("%s: %s: %.2f" % (method, s, results[method][s] / results[method]["num_valid"]))
+
+def get_cost_table(methods, results, max_iter=None):
+    print("#### TABLE:")
+    for s in ["cost_coll", "cost_goal", "cost_bounds", "cost_uref", "time"]:
+        print("#### %s:" % s)
+        if max_iter is None:
+            num_iter = len(results[methods[0]]["cost"])
+        else:
+            num_iter = max_iter
+        for l in range(num_iter):
+            print("%d" % l, end=" & ")
+            for method in methods:
+                if results[method]["cost"][l] is not None:
+                    if s == "time":
+                        if "grad" in method:
+                            continue
+                        print("%.2f" % results[method]["time"][l], end=" & ")
+                    else:
+                        print("%.3f" % results[method]["cost"][l][s].item(), end=" & ")
+                else:
+                    print(" - ", end=" & ")
+            print(" \\ ")
+
+def find_start_goal(env, args):
+    iter = 0
+    valid = False
+
+    while not valid:
+        if env.config["dataset"]["recording"] >= 18 and env.config["dataset"]["recording"] <= 29:
+            if np.random.randint(0, 2) == 0:
+                pos_0 = np.array([-20, -10]) + np.array([20, 7]) * np.random.rand(2)
+            else:
+                pos_0 = np.array([-15, -30]) + np.array([15, 17]) * np.random.rand(2)
+            if np.random.randint(0, 2) == 0:
+                pos_N = np.array([10, -20]) + np.array([30, 8]) * np.random.rand(2)
+            else:
+                pos_N = np.array([0, -5]) + np.array([20, 7]) * np.random.rand(2)
+        elif env.config["dataset"]["recording"] >= 30:
+            pos_0 = np.array([-15, -15]) + 10 * np.random.rand(2)
+            pos_N = np.array([25, 15]) + 10 * np.random.rand(2)  # env.generate_random_waypoint(0)
+        elif env.config["dataset"]["recording"] >= 7 and env.config["dataset"]["recording"] <= 10:
+            pos_0 = np.array([0, -40]) + np.array([10, 20]) * np.random.rand(2)
+            pos_N = np.array([30, -10]) + 10 * np.random.rand(2) 
+        theta_0 = 1.6 * np.random.rand(1)
+        v_0 = 1 + 8 * np.random.rand(1)
+        valid = check_start_goal(env.grid, pos_0, pos_N, theta_0, v_0, args)
+        iter += 1
+        if iter > 2000 and env.config["dataset"]["recording"] != 26: # to make thesis results reproducible
+            return None, None
+
+    return torch.tensor([pos_0[0], pos_0[1], theta_0[0], v_0[0], 0]).reshape(1, -1, 1).type(torch.FloatTensor), torch.tensor([pos_N[0], pos_N[1], 0, 0, 0]).reshape(1, -1, 1)
+
+def check_start_goal(grid, pos_0, pos_N, theta_0, v_0, args):
+    dist_start_goal = np.sqrt((pos_0[0] - pos_N[0]) ** 2 + (pos_0[1] - pos_N[1]) ** 2)
+    pos_1s = pos_0 + np.array([v_0[0] * np.cos(theta_0[0]), v_0[0] * np.sin(theta_0[0])])
+    gridpos_x, gridpos_y = pos2gridpos(args, pos_x=[pos_0[0], pos_0[0] - 0.5, pos_0[0] + 0.5, pos_1s[0], pos_N[0],
+                                                    pos_N[0] - 0.5, pos_N[0] + 0.5],
+                                       pos_y=[pos_0[1], pos_0[1] - 0.5, pos_0[1] + 0.5, pos_1s[1], pos_N[1],
+                                              pos_N[1] - 0.5, pos_N[1] + 0.5])
+    for k in range(len(gridpos_x)):
+        if gridpos_x[k] < 0 or gridpos_y[k] < 0 or gridpos_x[k] > grid.shape[0] - 1 or gridpos_y[k] > grid.shape[1] - 1:
+            return False
+    density_0 = grid[gridpos_x[0], gridpos_y[0], 0]
+    density_01 = grid[gridpos_x[1], gridpos_y[1], 0]
+    density_02 = grid[gridpos_x[2], gridpos_y[1], 0]
+    density_03 = grid[gridpos_x[1], gridpos_y[2], 0]
+    density_04 = grid[gridpos_x[2], gridpos_y[2], 0]
+    density_0 = max(density_0, density_01, density_02, density_03, density_04)
+    density_1s = grid[gridpos_x[3], gridpos_y[3], 10]
+    density_N = grid[gridpos_x[4], gridpos_y[4], 100]
+    density_N1 = grid[gridpos_x[5], gridpos_y[5], 100]
+    density_N2 = grid[gridpos_x[6], gridpos_y[5], 100]
+    density_N3 = grid[gridpos_x[5], gridpos_y[6], 100]
+    density_N4 = grid[gridpos_x[6], gridpos_y[6], 100]
+    density_N = max(density_N, density_N1, density_N2, density_N3, density_N4)
+    return not (dist_start_goal < 10 or dist_start_goal > 70 or density_0 > 0.1 or density_1s > 0.3 or density_N > 0.1)
+
+
+
+    # density_0 = grid[np.clip(gridpos_x[0], 0, grid.shape[0]-1), np.clip(gridpos_y[0], 0, grid.shape[1]-1), 0]
+    # density_01 = grid[np.clip(gridpos_x[1], 0, grid.shape[0]-1), np.clip(gridpos_y[1], 0, grid.shape[1]-1), 10]
+    # density_02 = grid[np.clip(gridpos_x[2], 0, grid.shape[0]-1), np.clip(gridpos_y[1], 0, grid.shape[1]-1), 10]
+    # density_03 = grid[np.clip(gridpos_x[1], 0, grid.shape[0]-1), np.clip(gridpos_y[2], 0, grid.shape[1]-1), 10]
+    # density_04 = grid[np.clip(gridpos_x[2], 0, grid.shape[0]-1), np.clip(gridpos_y[2], 0, grid.shape[1]-1), 10]
+    # density_0 = max(density_0, density_01, density_02, density_03, density_04)
+    # density_1s = grid[np.clip(gridpos_x[3], 0, grid.shape[0]-1), np.clip(gridpos_y[3], 0, grid.shape[1]-1), 10]
+    # density_N = grid[np.clip(gridpos_x[4], 0, grid.shape[0]-1), np.clip(gridpos_y[4], 0, grid.shape[1]-1), 100]
+    # density_N1 = grid[np.clip(gridpos_x[5], 0, grid.shape[0]-1), np.clip(gridpos_y[5], 0, grid.shape[1]-1), 10]
+    # density_N2 = grid[np.clip(gridpos_x[6], 0, grid.shape[0]-1), np.clip(gridpos_y[5], 0, grid.shape[1]-1), 10]
+    # density_N3 = grid[np.clip(gridpos_x[5], 0, grid.shape[0]-1), np.clip(gridpos_y[6], 0, grid.shape[1]-1), 10]
+    # density_N4 = grid[np.clip(gridpos_x[6], 0, grid.shape[0]-1), np.clip(gridpos_y[6], 0, grid.shape[1]-1), 10]
+
+def convert_color(s):
+    if type(s) == str:
+        return np.array([[float(int(s[1:3], 16)) / 255, float(int(s[3:5], 16)) / 255, float(int(s[5:], 16)) / 255, 1]])
+    return np.array([[s[0], s[1], s[2], 1]])
+

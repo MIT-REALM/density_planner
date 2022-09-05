@@ -26,12 +26,13 @@ class MotionPlannerGrad(MotionPlanner):
     """
     class to use proposed density algorithm for motion planning
     """
-    def __init__(self, ego, plot=True, path_log=None, name="grad", plot_final=None):
+    def __init__(self, ego, plot=True, path_log=None, name="grad", plot_final=None, plot_cost=False):
         super().__init__(ego, plot=plot, name=name, path_log=path_log, plot_final=plot_final)
         self.initial_traj = []
         self.improved_traj = []
         self.beta1 = 0.9
         self.beta2 = 0.999
+        self.plot_cost = plot_cost
 
     def plan_motion(self):
         """
@@ -143,8 +144,9 @@ class MotionPlannerGrad(MotionPlanner):
             costs_dict.append(cost_dict)
 
         costs_dict = listDict2dictList(costs_dict)
-        if self.plot:
-            plot_cost(costs_dict, self.ego.args, folder=self.path_log_opt)
+        if self.plot_cost:
+            path_log_cost = make_path(self.path_log, self.name + "_initialTrajCost")
+            plot_cost(costs_dict, self.ego.args, folder=path_log_cost)
         return up, costs_dict
 
     def get_traj_initialize(self, up, name="traj", plot=True, folder=None):
@@ -401,13 +403,14 @@ class MotionPlannerGrad(MotionPlanner):
 
         if self.plot_final:
             self.ego.animate_traj(path_final, xref_traj, x_traj, rho_traj)
-
+        self.xref_traj = xref_traj
         cost, cost_dict = self.get_cost(uref_traj, x_traj, rho_traj, evaluate=True)
         cost_dict = self.remove_cost_factor(cost_dict)
         logging.info("%s: True cost coll %.4f, goal %.4f, bounds %.4f, uref %.4f" % (self.name, cost_dict["cost_coll"],
                                                                                  cost_dict["cost_goal"],
                                                                                  cost_dict["cost_bounds"],
                                                                                  cost_dict["cost_uref"]))
+        self.plot_final = False
         return cost_dict
 
     def validate_traj(self, up, xe0=None, return_time=False, biased=False):
@@ -446,6 +449,7 @@ class MotionPlannerGrad(MotionPlanner):
                                                                compute_density=False, plot=self.plot_final, use_nn=False,
                                                                folder=path_final)
         rho_traj = torch.ones(1, 1, x_traj.shape[2])
+        self.x_traj = x_traj
 
         if self.plot_final:
             self.ego.animate_traj(path_final, xref_traj, x_traj, rho_traj)
@@ -503,6 +507,7 @@ class MotionPlannerSearch(MotionPlanner):
             logging.debug(up)
             cost = self.validate_ref(up)
         else:
+            self.xref_traj = None
             logging.info("%s: No valid solution found" % self.name)
         return up, cost, t_plan
 
@@ -531,7 +536,7 @@ class MotionPlannerSearch(MotionPlanner):
 
         if self.plot_final:
             self.ego.animate_traj(path_final, xref_traj, x_traj, rho_traj)
-
+        self.xref_traj = xref_traj
         cost, cost_dict = self.get_cost(uref_traj, x_traj, rho_traj, evaluate=True)
         cost_dict = self.remove_cost_factor(cost_dict)
         logging.info("%s: True cost coll %.4f, goal %.4f, bounds %.4f, uref %.4f" % (self.name, cost_dict["cost_coll"],
@@ -668,7 +673,9 @@ class MotionPlannerSampling(MotionPlannerSearch):
                                                                        plot=False, use_nn=False, folder=None)
             cost, cost_dict = self.get_cost(uref_traj, x_traj, rho_traj)
             cost_min = self.remove_cost_factor(cost_dict)
+            self.xref_traj = xref_traj
         else:
+            self.xref_traj = None
             cost_min = None
             up_ext = None
         return up_ext, cost_min

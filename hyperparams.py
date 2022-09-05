@@ -94,6 +94,20 @@ def parse_args():
     parser.add_argument('--close2goal_thr', type=float, default=3)
     parser.add_argument('--mp_num_envs', type=int, default=20)
     parser.add_argument('--mp_num_initial', type=int, default=1)
+    parser.add_argument('--mp_plot', type=bool, default=False)
+    parser.add_argument('--mp_plot_cost', type=bool, default=False)
+    parser.add_argument('--mp_plot_traj', type=bool, default=False)
+    parser.add_argument('--mp_plot_envgrid', type=bool, default=False)
+    parser.add_argument('--mp_plot_final', type=bool, default=False)
+    parser.add_argument('--mp_video', type=bool, default=False)
+    parser.add_argument('--mp_use_realEnv', type=bool, default=False)
+    parser.add_argument('--mp_save_results', type=bool, default=True)
+    parser.add_argument('--mp_load_old_opt', type=bool, default=False)
+    parser.add_argument('--mp_load_old_mp', type=bool, default=False)
+
+    # real world data
+    parser.add_argument('--mp_recording', type=int, default=26)  #8   #18 / #26   #30
+
     # ego vehicle
     parser.add_argument('--mp_gaussians', type=int, default=5)
     parser.add_argument('--mp_sampling', type=str, default='random')
@@ -123,20 +137,39 @@ def parse_args():
     # parser.add_argument('--search_weight_coll', type=float, default=1e-1)
     # parser.add_argument('--search_weight_uref', type=float, default=1e-4)
     # parser.add_argument('--search_weight_bounds', type=float, default=1e1)
-    parser.add_argument('--goal_thr', type=float, default=4)
+    parser.add_argument('--goal_thr', type=float, default=3.8)
     parser.add_argument('--coll_thr', type=float, default=4)
     parser.add_argument('--opt_time_limit', type=float, default=300)
 
     # optimization with NLP
     parser.add_argument('--iter_NLP', type=int, default=5000) #1000
-    parser.add_argument('--iter_MPC', type=int, default=1000) #2000
+    parser.add_argument('--iter_MPC', type=int, default=300) #300 #2000
+    parser.add_argument('--iter_tubeMPC', type=int, default=10) #10 #2000
     parser.add_argument('--goal_reached_MPC', type=float, default=1)
-
-
-
 
     args = parser.parse_args()
     args.grid_size = [int((args.environment_size[1]-args.environment_size[0]) / args.grid_wide)+1,
                       int((args.environment_size[3]-args.environment_size[2]) / args.grid_wide)+1]
     args.size_hidden = [args.number_units] * args.number_layers
+    if args.mp_recording >= 18 and args.mp_recording <= 29:
+        if args.mp_recording == 18:
+            args.mp_realData_spread = 0.7
+            args.mp_min_gridSum = 8e5
+        else:
+            args.mp_realData_spread = 0.1
+            args.mp_min_gridSum = 8e5
+    elif args.mp_recording >= 30:
+        args.mp_realData_spread = 1.5
+        args.mp_min_gridSum = 12e5
+    elif args.mp_recording >= 7 and args.mp_recording <= 10:
+        args.mp_realData_spread = 0.7
+        args.mp_min_gridSum = 4.5e5
+    elif args.mp_recording <= 6:
+        args.mp_realData_spread = 1.5
+        args.mp_min_gridSum = 12e5
+        print('Not tested yet')
+        #?? args.mp_realData_spread = 1.5
+        #?? args.mp_min_gridSum = 12e5
+    else:
+        print("Not a valid recording.")
     return args

@@ -1,60 +1,90 @@
-from motion_planning.utils import bounds2array, sample_pdf, pred2grid
-from motion_planning.simulation_objects import Environment, EgoVehicle
-from motion_planning.example_objects import create_environment, create_crossing4w, create_pedRL, create_street, create_turnR, create_pedLR
 import hyperparams
 import torch
-from plots.plot_functions import plot_grid
-from env.environment import Environment as Env
 import pickle
 import os
 import logging
 import sys
-from motion_planning.utils import make_path, initialize_logging
+from motion_planning.example_objects import create_mp_task
+from motion_planning.utils import make_path, initialize_logging, get_cost_table, get_cost_increase
 from motion_planning.MotionPlannerGrad import MotionPlannerGrad, MotionPlannerSearch, MotionPlannerSampling
 from motion_planning.MotionPlannerNLP import MotionPlannerNLP, MotionPlannerMPC
+from plots.plot_functions import plot_cost, plot_traj
 import numpy as np
 import scipy.io
 
 
 if __name__ == '__main__':
     args = hyperparams.parse_args()
-    args.device = "cpu"
+    #args.mp_use_realEnv = True
+    #args.mp_plot_envgrid = True
+    args.random_seed = 10
+    # args.mp_plot = True
+    #args.mp_plot_traj = True
+    stationary = True
+    args.mp_load_old_opt = True
 
-
-    ### generate plots
-    plot = False
-    plot_envgrid = False
-    plot_final = False
-    save_results = True
-    load_old = False
-    video = False
-    use_realEnv = True
-    
     ### choose methods
-    opt_methods = ["grad"] #["grad", "search", "sampl"]#["sampl"] #
-    mp_methods = ["grad", "grad_biased", "MPC", "MPC_biased", "tubeMPC", "tubeMPC_biased", "oracle"] #["tubeMPC"] #[]
+    opt_methods = ["grad", "search", "sampl"]#["sampl"] #["grad"] #
+    mp_methods = ["grad", "MPC", "tube2MPC", "oracle"]
+    #["grad", "grad_biased", "MPC", "MPC_biased", "tube2MPC", "tube2MPC_biased", "oracle"]
+    #["grad", "grad_biased", "MPC", "MPC_biased", "tubeMPC", "tubeMPC_biased", "tube2MPC", "tube2MPC_biased", "tube3MPC","tube3MPC_biased", "oracle"]
+    ##
+    #["tubeMPC", "tubeMPC_biased", "tube2MPC", "tube2MPC_biased", "tube3MPC", "tube3MPC_biased"]
+    #["grad", "grad_biased", "MPC", "MPC_biased", "tubeMPC", "tubeMPC_biased", "tube2MPC", "tube2MPC_biased", "tube3MPC","tube3MPC_biased", "oracle"]
+    ##["grad", "grad_biased", "MPC", "MPC_biased", "tube2MPC", "tube2MPC_biased", "oracle"]
+    #["grad", "grad_biased", "MPC", "MPC_biased", "tubeMPC", "tubeMPC_biased", "tube2MPC", "tube2MPC_biased", "tube3MPC","tube3MPC_biased", "oracle"]
 
     ### settings
-    biased = True
-    tube_size = 0.5
-    path_log = initialize_logging(args, "testMPC_seed%d" % args.random_seed)
+    filename_opt = "plots/motion/2022-09-04-07-30-12_statPlots_mpOpt_seed10-19/"
+    filename_mp = "plots/motion/2022-09-04-07-30-12_statPlots_mpOpt_seed10-19/"
+    #2022-09-03-09-16-27_compMP_tubeMPConeReturnTraj_seed41-49/" #2022-09-02-01-35-07_compMP_tubeMPConeReturnTraj_seed0-40/" #2022-09-01-10-56-42_compMP_seed40-49/"  #2022-09-01-22-50-55_test_seed0/" #2022-08-31-15-40-46_compMP_seed24-39/" #
+    filename_mp2 = "plots/motion/2022-09-03-18-23-57_compMP_realEnv26_seed0-9/"
+    filename_mp3 = "plots/motion/2022-09-04-04-08-51_compMP_realEnv8_seed7-10/"
+
+    tube_size = 0.3
+    tube2_size = 0.5
+    tube3_size = 1
+
+    ### generate plots
+    plot = args.mp_plot
+    plot_cost = args.mp_plot_cost
+    plot_envgrid = args.mp_plot_envgrid
+    plot_final = args.mp_plot_final
+    save_results = args.mp_save_results
+    load_old_opt = args.mp_load_old_opt
+    load_old_mp = args.mp_load_old_mp
+    video = args.mp_video
+    use_realEnv = args.mp_use_realEnv
+
+    path_log = initialize_logging(args, "test_realEnv_seed%d" % args.random_seed)
 
     if save_results:
-        if load_old:
-            with open("plots/motion/2022-08-27-18-30-19_compOpt_server_seed0-19/" + "opt_results", "rb") as f:
+        if load_old_opt:
+            with open(filename_opt + "opt_results", "rb") as f:
                 opt_results = pickle.load(f)
         else:
             opt_results = {}
-        for opt_method in opt_methods:
-            opt_results[opt_method] = {"time": [], "cost": [], "u": [], "cost_coll": 0, "cost_goal": 0, "cost_bounds": 0,
+            for opt_method in opt_methods:
+                opt_results[opt_method] = {"time": [], "cost": [], "u": [], "x_traj": [], "cost_coll": 0, "cost_goal": 0, "cost_bounds": 0,
                                        "cost_uref": 0, "sum_time": 0, "num_valid": 0}
-        mp_results = {}
-        for mp_method in mp_methods:
-            mp_results[mp_method] = {"time": [], "cost": [], "u": [], "cost_coll": 0, "cost_goal": 0, "cost_bounds": 0,
-                                     "cost_uref": 0, "sum_time": 0, "num_valid": 0}
+        if load_old_mp:
+            with open(filename_mp + "mp_results", "rb") as f:
+                mp_results = pickle.load(f)
+            # with open(filename_mp2 + "mp_results", "rb") as f:
+            #     mp_results2 = pickle.load(f)
+            # for key, val in mp_results2.items():
+            #     for key2 in val.keys():
+            #         mp_results[key][key2] += mp_results2[key][key2]
+            # mp_results = get_cost_increase(mp_methods, mp_results, 1000, 1000)
+            # get_cost_table(mp_methods, mp_results)
+            # mp_results = get_cost_increase(mp_methods, mp_results)
+        else:
+            mp_results = {}
+            for mp_method in mp_methods:
+                mp_results[mp_method] = {"time": [], "cost": [], "u": [], "x_traj": [], "cost_coll": 0, "cost_goal": 0,
+                                     "cost_bounds": 0, "cost_uref": 0, "sum_time": 0, "num_valid": 0}
 
     ### loop through different environments
-    init_time = 0
     for k in range(args.mp_num_envs):
 
         seed = args.random_seed + k
@@ -62,37 +92,15 @@ if __name__ == '__main__':
         np.random.seed(seed)
 
         ### create environment and motion planning problem
-        if use_realEnv:
-            grid_sum = 0
-            ### create environment and motion planning problem
-            while grid_sum < 11e5:
-                env = Env(args, init_time=init_time, end_time=init_time + 11)
-                env.run()
-                init_time += np.random.randint(12, 20)
-                grid_sum = env.grid[env.grid != 1].sum()
-        else:
-            env = create_environment(args, timestep=100)
-        #scipy.io.savemat(args.path_matlab + "env%d.mat" % k, mdict={'arr': np.array(env.grid)})
-        #array_bounds = bounds2array(env, args)
-        #scipy.io.savemat(args.path_matlab + "bounds%d.mat" % k, mdict={'arr': array_bounds})
-
-        if plot_envgrid:
-            plot_grid(env, args, timestep=0, save=False)
-            plot_grid(env, args, timestep=20, save=False)
-            plot_grid(env, args, timestep=40, save=False)
-            plot_grid(env, args, timestep=60, save=False)
-            plot_grid(env, args, timestep=80, save=False)
-            plot_grid(env, args, save=False)
-
-        xref0 = torch.tensor([0, -28, 1.5, 3, 0]).reshape(1, -1, 1).type(torch.FloatTensor)
-        xrefN = torch.tensor([0., 8, 4, 1, 0]).reshape(1, -1, 1)
-        ego = EgoVehicle(xref0, xrefN, env, args, video=video)
+        ego = create_mp_task(args, seed, stationary)
+        plot_traj(ego, opt_results, opt_methods, args, folder=filename_mp, traj_idx=k)
+        continue
         
         ### test optimization methods
         for opt_method in opt_methods:
             name = opt_method + "%d" % (seed)
             if opt_method == "grad":
-                planner = MotionPlannerGrad(ego, name=name, plot=plot, path_log=path_log, plot_final=plot_final)
+                planner = MotionPlannerGrad(ego, name=name, plot=plot, path_log=path_log, plot_final=plot_final, plot_cost=plot_cost)
             elif opt_method == "search":
                 planner = MotionPlannerSearch(ego, name=name, plot=plot, path_log=path_log, plot_final=plot_final)
             elif opt_method == "sampl":
@@ -103,22 +111,13 @@ if __name__ == '__main__':
                 opt_results[opt_method]["u"].append(up)
                 opt_results[opt_method]["cost"].append(cost)
                 opt_results[opt_method]["time"].append(time)
+                opt_results[opt_method]["x_traj"].append(planner.xref_traj)
                 if cost is not None:
                     opt_results[opt_method]["num_valid"] += 1
                     opt_results[opt_method]["sum_time"] += time
             if opt_method == "grad":
                 planner_grad = planner
                 up_grad = up
-
-        if save_results and len(opt_methods) != 0:
-            for s in ["cost_coll", "cost_goal", "cost_bounds", "cost_uref"]:
-                cost_min = np.inf
-                for opt_method in opt_methods:
-                    if opt_results[opt_method]["cost"][-1] is not None and opt_results[opt_method]["cost"][-1][s] < cost_min:
-                        cost_min = opt_results[opt_method]["cost"][-1][s]
-                for opt_method in opt_methods:
-                    if opt_results[opt_method]["cost"][-1] is not None:
-                        opt_results[opt_method][s] += opt_results[opt_method]["cost"][-1][s] - cost_min
 
         ### compare with other motion planners from different initial states
         if len(mp_methods) != 0:
@@ -142,13 +141,23 @@ if __name__ == '__main__':
                         up = up_grad
                     else:
                         if "tubeMPC" in mp_method:
-                            planner = MotionPlannerMPC(ego, xe0=xe0.clone(), name=name, plot=plot, path_log=path_log, plot_final=plot_final, biased=biased, tube=tube_size)
+                            planner = MotionPlannerMPC(ego, xe0=xe0.clone(), name=name, plot=plot, path_log=path_log,
+                                                       plot_final=plot_final, biased=biased, tube=tube_size)
+                        elif "tube2MPC" in mp_method:
+                            planner = MotionPlannerMPC(ego, xe0=xe0.clone(), name=name, plot=plot, path_log=path_log,
+                                                       plot_final=plot_final, biased=biased, tube=tube2_size)
+                        elif "tube3MPC" in mp_method:
+                            planner = MotionPlannerMPC(ego, xe0=xe0.clone(), name=name, plot=plot, path_log=path_log,
+                                                       plot_final=plot_final, biased=biased, tube=tube3_size)
                         elif "safeMPC" in mp_method:
-                            planner = MotionPlannerMPC(ego, xe0=xe0.clone(), name=name, plot=plot, path_log=path_log, plot_final=plot_final, biased=biased, safe=True)
+                            planner = MotionPlannerMPC(ego, xe0=xe0.clone(), name=name, plot=plot, path_log=path_log,
+                                                       plot_final=plot_final, biased=biased, safe=True)
                         elif "MPC" in mp_method:
-                            planner = MotionPlannerMPC(ego, xe0=xe0.clone(), name=name, plot=plot, path_log=path_log, plot_final=plot_final, biased=biased)
+                            planner = MotionPlannerMPC(ego, xe0=xe0.clone(), name=name, plot=plot, path_log=path_log,
+                                                       plot_final=plot_final, biased=biased)
                         elif "oracle" in mp_method:
-                            planner = MotionPlannerNLP(ego, xe0=xe0.clone(), name=name, plot=plot, path_log=path_log, plot_final=plot_final, biased=biased)
+                            planner = MotionPlannerNLP(ego, xe0=xe0.clone(), name=name, plot=plot, path_log=path_log,
+                                                       plot_final=plot_final, biased=biased)
                         else:
                             continue
                         up, cost, time = planner.plan_motion()
@@ -156,68 +165,42 @@ if __name__ == '__main__':
                         mp_results[mp_method]["u"].append(up)
                         mp_results[mp_method]["cost"].append(cost)
                         mp_results[mp_method]["time"].append(time)
+                        mp_results[mp_method]["x_traj"].append(planner.x_traj)
                         if cost is not None:
                             mp_results[mp_method]["num_valid"] += 1
                             mp_results[mp_method]["sum_time"] += time
 
-                if save_results:
-                    for s in ["cost_coll", "cost_goal", "cost_bounds", "cost_uref"]:
-                        cost_min = np.inf
-                        for mp_method in mp_methods:
-                            if mp_results[mp_method]["cost"][-1] is not None and \
-                                    mp_results[mp_method]["cost"][-1][s] < cost_min:
-                                cost_min = mp_results[mp_method]["cost"][-1][s]
-                        for mp_method in mp_methods:
-                            if mp_results[mp_method]["cost"][-1] is not None:
-                                mp_results[mp_method][s] += mp_results[mp_method]["cost"][-1][s] - cost_min
+        if save_results:
+            with open(path_log + "opt_results", "wb") as f:
+                pickle.dump(opt_results, f)
+            with open(path_log + "mp_results", "wb") as f:
+                pickle.dump(mp_results, f)
+        if args.mp_plot_traj:
+            plot_traj(ego, mp_results, mp_methods, args, folder=path_log)
+            #plot_traj(ego, opt_results, opt_methods, args, folder=path_log)
 
-
-    if save_results:
-        with open(path_log + "opt_results", "wb") as f:
-            pickle.dump(opt_results, f)
-        with open(path_log + "mp_results", "wb") as f:
-            pickle.dump(mp_results, f)
     if save_results:
         if len(opt_methods) != 0:
-            for opt_method in opt_methods:
-                logging.info("%s: number valid: %d" % (opt_method, opt_results[opt_method]["num_valid"]))
-                for s in ["cost_coll", "cost_goal", "cost_bounds", "cost_uref", "sum_time"]:
-                    logging.info("%s: %s: %.2f" % (opt_method, s, opt_results[opt_method][s] / opt_results[opt_method]["num_valid"]))
-
-            print("#### TABLE:")
-            for s in ["cost_coll", "cost_goal", "cost_bounds", "cost_uref", "sum_time"]:
-                print("#### %s:" % s)
-                for l in range(args.mp_num_envs):
-                    print("%d" % l, end=" & ")
-                    for opt_method in opt_methods:
-                        if opt_results[opt_method]["cost"][l] is not None:
-                            if s == "sum_time":
-                                print("%.3f" % opt_results[opt_method]["time"][l], end=" & ")
-                            else:
-                                print("%.3f" % opt_results[opt_method]["cost"][l][s].item(), end=" & ")
-                        else:
-                            print(" - ", end=" & ")
-                    print(" \\ ")
+            opt_results = get_cost_increase(opt_methods, opt_results)
+            get_cost_table(opt_methods, opt_results)
         if len(mp_methods) != 0:
-            for mp_method in mp_methods:
-                logging.info("%s: number valid: %d" % (mp_method, mp_results[mp_method]["num_valid"]))
-                for s in ["cost_coll", "cost_goal", "cost_bounds", "cost_uref", "sum_time"]:
-                    logging.info("%s: %s: %.2f" % (mp_method, s, mp_results[mp_method][s] / mp_results[mp_method]["num_valid"]))
-            print("#### TABLE:")
-            for s in ["cost_coll", "cost_goal", "cost_bounds", "cost_uref", "sum_time"]:
-                print("#### %s:" % s)
-                for l in range(args.mp_num_envs):
-                    print("%d" % l, end=" & ")
-                    for mp_method in mp_methods:
-                        if mp_results[mp_method]["cost"][l] is not None:
-                            if s == "sum_time":
-                                print("%.3f" % mp_results[mp_method]["time"][l], end=" & ")
-                            else:
-                                print("%.3f" % mp_results[mp_method]["cost"][l][s].item(), end=" & ")
-                        else:
-                            print(" - ", end=" & ")
-                    print(" \\ ")
+            mp_results = get_cost_increase(mp_methods, mp_results)#, thr_coll=100, thr_goal=100)
+            get_cost_table(mp_methods, mp_results)
 
     print("end")
+
+# with open(filename_mp2 + "mp_results", "rb") as f:
+#     mp_results2 = pickle.load(f)
+# for method in mp_methods:
+#     mp_results2[method] = mp_results[method]
+# for method in mp_methods:
+#     for key in ["time", "cost", "u", "x_traj"]:
+#         mp_results2[method][key] = mp_results2[method][key][:41]
+
+# for method in mp_methods:
+#     for key in ["time", "cost", "u", "x_traj"]:
+#         mp_results[method][key] += mp_results2[method][key]
+#         mp_results[method][key] += mp_results3[method][key]
+#     mp_results[method]["num_valid"] += mp_results2[method]["num_valid"] + mp_results3[method]["num_valid"]
 
 

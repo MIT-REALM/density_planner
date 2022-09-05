@@ -7,7 +7,7 @@ from systems.utils import get_density_map
 import scipy
 import matplotlib
 import matplotlib.colors as pltcol
-from motion_planning.utils import pos2gridpos, traj2grid, pred2grid
+from motion_planning.utils import pos2gridpos, traj2grid, pred2grid, convert_color
 from matplotlib import cm
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 plt.style.use('seaborn-paper')
@@ -256,23 +256,38 @@ def plot_losscurves(result, name, args, type="Loss",
 def plot_cost(costs_dict, args, plot_log=True, name="", save=True, show=True, filename=None, include_date=True, folder=None):
     num_plots = len(costs_dict["cost_sum"][0])
     for i in range(num_plots):
-        plt.figure(figsize=(6.4, 4.8))
-        plt.title("Cost Curve %d for Motion Planning \n %s" % (i, name))
-        for key, val in costs_dict.items():
+        plt.figure(figsize=(8, 5))
+        #plt.figure(figsize=(6.4, 4.8))
+        #plt.title("Cost Curve %d for Motion Planning \n %s" % (i, name))
+        #for key, val in costs_dict.items():
+        for key in ["cost_goal", "cost_uref", "cost_bounds", "cost_coll", "cost_sum"]:
+            val = costs_dict[key]
             if (val[0]).dim() == 0:
                 cost = [val[k].item() for k in range(len(val))]
             else:
                 cost = [val[k][i].item() for k in range(len(val))]
             if key == "cost_sum":
-                plt.plot(cost, linestyle='-', label="sum")
+                plt.plot(cost, linestyle='-', label="Total cost $J$", color=MITRed)
             else:
-                plt.plot(cost, linestyle=':', label=key)
-        plt.ylabel("Costs")
+                if key == "cost_goal":
+                    label = "$\\alpha_{\\textrm{\\LARGE{goal}}} ~J_{\\textrm{\\LARGE{goal}}}$"
+                    col = TUMBlue
+                elif key == "cost_uref":
+                    label = "$\\alpha_{\\textrm{\\LARGE{input}}} ~J_{\\textrm{\\LARGE{input}}}$"
+                    col = TUMGray_light
+                elif key == "cost_bounds":
+                    label = "$\\alpha_{\\textrm{\\LARGE{bounds}}} ~J_{\\textrm{\\LARGE{bounds}}}$"
+                    col = TUMOrange_acc
+                elif key == "cost_coll":
+                    label = "$\\alpha_{\\textrm{\\LARGE{coll}}} ~J_{{\\textrm{\\LARGE{coll}}}}$"
+                    col = TUMGreen_acc
+                plt.plot(cost, linestyle=':', label=label, color=col)
+        plt.ylabel("Cost")
         if plot_log:
             plt.yscale('log')
-        plt.legend()
+        plt.legend(bbox_to_anchor=(0.5, -0.2), loc="upper center", ncol=3)
         plt.grid()
-        plt.xlabel("Episodes")
+        plt.xlabel("Iterations")
         plt.tight_layout()
         if save:
             if folder is None:
@@ -447,6 +462,99 @@ def plot_motion(i, cmap, x_traj, rho_traj, xref_traj, args, grid_env_sc):
     plt.title("Predicted States at Time %.1f s" % (i / 10.))
     plt.tight_layout()
 
+def plot_traj(ego, mp_results, mp_methods, args, folder=None, traj_idx=None):
+    if traj_idx is None:
+        traj_idx = len(mp_results[mp_methods[0]]["x_traj"]) - 1
+    grid = ego.env.grid[:, :, [1]]
+    x_traj_list = []
+    for method in mp_methods:
+        if mp_results[method]["x_traj"][traj_idx] is None:
+            x_traj_list.append(None)
+            continue
+        x_traj = np.array(mp_results[method]["x_traj"][traj_idx].detach())
+        x0 = x_traj[:, :, [0]]
+        idx_old = np.linspace(0, x_traj.shape[2]-1, x_traj.shape[2])
+        idx_new = np.linspace(0, x_traj.shape[2]-1, (x_traj.shape[2] -1) * 10 + 1)
+        x_traj_long = np.zeros((1, x_traj.shape[1], (x_traj.shape[2] -1) * 10 + 1))
+        for j in range(x_traj.shape[1]):
+            x_traj_long[0, j, :] = np.interp(idx_new, idx_old, x_traj[0, j, :])
+        x_traj_list.append(torch.from_numpy(x_traj_long))
+
+    colorarray = np.concatenate((convert_color(TUMBlue),
+                                 convert_color(TUMGray),
+                                 convert_color(TUMGreen_acc),
+                                 convert_color(TUMOrange_acc),
+                                 convert_color(TUMBlue_light),
+                                 convert_color(TUMGray_light),
+                                 convert_color(TUMBlue_med)))
+    col_start = convert_color(MITRed)
+    grid_all = 1 - np.repeat(grid, 4, axis=2)
+    grid_all[:, :, 3] = 1
+
+    plt.close("all")
+    if args.mp_use_realEnv:
+        div = 6
+    else:
+        div = 4
+    x_wide = np.abs((args.environment_size[1] - args.environment_size[0])) / div
+    y_wide = np.abs((args.environment_size[3] - args.environment_size[2])) / div
+    plt.figure(figsize=(x_wide, y_wide), dpi=300)
+    for i, x_traj in enumerate(x_traj_list):
+        if mp_methods[i] == "grad" and "search" in mp_methods:
+            label = "Gradient-based Method" #"Density planner"
+        elif mp_methods[i] == "search":
+            label = "Search-based Method"
+        elif mp_methods[i] == "sampl":
+            label = "Sampling-based Method"
+        elif mp_methods[i] == "grad":
+            label = "Density planner"
+        elif mp_methods[i] == "oracle":
+            label = "Oracle"
+        elif mp_methods[i] == "tube2MPC":
+            label = "MPC with $r_\\textrm{tube}=0.5m$"
+        elif mp_methods[i] == "tube3MPC":
+            label = "MPC with $r_\\textrm{tube}=1m$"
+        else:
+            label = mp_methods[i]
+        plt.plot(0, 0, "-", color=colorarray[i, :], label=label)
+        if x_traj is None:
+            continue
+        grid_traj = traj2grid(x_traj, args)
+        idx = grid_traj != 0
+        grid_idx = grid_all[idx]
+        grid_idx[:, :] = torch.from_numpy(colorarray[[i], :]) #.unsqueeze(0)
+        grid_all[idx] = grid_idx
+    #plot_grid(grid_all, self.args, name="Trajectories" % i, cmap=cmap, show=False, save=True, folder=folder)
+
+    plt.imshow(torch.transpose(grid_all, 0, 1), origin="lower")
+    gridpos_x, gridpos_y = pos2gridpos(args, pos_x=[x0[0, 0, 0], ego.xrefN[0, 0, 0]],
+                                       pos_y=[x0[0, 1, 0], ego.xrefN[0, 1, 0]])
+    plt.scatter(gridpos_x[0], gridpos_y[0], c=col_start, marker='o', s=80, label="Start")
+    plt.scatter(gridpos_x[1], gridpos_y[1], c=col_start, marker='x', s=100, label="Goal")
+    #plt.pcolormesh(grid_all.T, cmap=cmap, norm=norm)
+    plt.axis('scaled')
+    if args.mp_use_realEnv == False:
+        plt.legend(bbox_to_anchor=(0.5, -0.11), loc="upper center")
+    elif args.mp_recording == 26:
+        plt.legend(loc="upper right")
+    else:
+        plt.legend(loc="upper left")
+
+    ticks_x = np.concatenate((np.arange(0, args.environment_size[1]+1, 10), np.arange(-10, args.environment_size[0]-1, -10)), 0)
+    ticks_y = np.concatenate((np.arange(0, args.environment_size[3]+1, 10), np.arange(-10, args.environment_size[2]-1, -10)), 0)
+    ticks_x_grid, ticks_y_grid = pos2gridpos(args, ticks_x, ticks_y)
+    plt.xticks(ticks_x_grid, ticks_x)
+    plt.yticks(ticks_y_grid, ticks_y)
+    plt.xlabel("$p_x$")
+    plt.ylabel("$p_y$")
+
+    #plt.title(f"{name}" + str_timestep)
+    plt.tight_layout()
+    if folder is None:
+        folder = args.path_plot_grid
+    filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_GridTraj%d" % traj_idx + ".jpg"
+    plt.savefig(folder + filename, dpi=200)
+    plt.clf()
 
 # def plot_density_heatmap2(x, rho, name, args, plot_limits=None, combine="mean", save=True, show=True, filename=None, include_date=False):
 #     """
