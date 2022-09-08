@@ -5,17 +5,19 @@ import os
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 
 import pygame
-
+import logging
 import sys
 import matplotlib.pyplot as plt
 import matplotlib.animation as anim
 from matplotlib.patches import Circle
 import matplotlib.path as mplt_path
-
+from matplotlib import patches
+from matplotlib.widgets import TextBox
+from datetime import datetime
 from multiprocessing import Pool
 from tqdm import tqdm
 from loguru import logger
-import logging
+from motion_planning.simulation_objects import EgoVehicle
 from skimage.io import imread
 from skimage.measure import block_reduce
 from skimage.transform import downscale_local_mean
@@ -67,7 +69,7 @@ class Environment(Configurable):
         self.num_vehicles = self.__recording_meta['numVehicles']
         self.num_vrus = self.__recording_meta['numVRUs']
         self.num_obstacles = self.__recording_meta['numTracks']
-        self.num_frames = int((self.maximum_frame - self.minimum_frame)/(1/(self.max_frame_rate*self.step_size)))
+        self.num_frames = int((self.maximum_frame - self.minimum_frame) / (1 / (self.max_frame_rate * self.step_size)))
         self.current_frame = self.minimum_frame
 
         # Uncertainty parameters
@@ -82,10 +84,29 @@ class Environment(Configurable):
         # Check if visualization should be included
         self.visualize = self.config['environment']['visualize']
 
+        # Visualization variables
+        if self.visualize:
+            self.plot_handles = []
+            self.point_index = 0
+            # Dictionaries for the style of the different objects that are visualized
+            self.bbox_style = dict(fill=True, edgecolor="r", alpha=0.9, zorder=19)
+            self.bbox_style_goal = dict(fill=False, edgecolor="b", alpha=1, zorder=20)
+            self.bbox_style_ego = dict(fill=True, edgecolor="white", alpha=0.9, zorder=21)
+            self.ellipsoid_style = dict(fill=True, edgecolor="k", alpha=0.4, zorder=23)
+            self.orientation_style = dict(facecolor="k", fill=True, edgecolor="k", lw=0.1, alpha=0.6, zorder=20)
+            self.text_style = dict(picker=True, size=8, color='k', zorder=22, ha="center")
+            self.text_box_style = dict(boxstyle="round,pad=0.2", alpha=.6, ec="black", lw=0.2, zorder=21)
+            self.trajectory_style = dict(linewidth=1, zorder=10)
+            self.future_trajectory_style = dict(color="linen", linewidth=1, alpha=0.7, zorder=10)
+            self.centroid_style = dict(fill=True, edgecolor="black", lw=0.1, alpha=1, radius=0.5, zorder=30)
+            self.class_colors = dict(car="red", van="purple", truck_bus="orange", bus="orange", truck="orange",
+                                     pedestrian="black", bicycle="yellow", motorcycle="yellow", default="green")
+            self.method_colors = dict(grad="purple",oracle="orange",tube2MPC="green",tube3MPC="lightgreen",default="blue")
         # Compute center of grid in meters
-        self.env_center = [(self.grid_size[1]-self.grid_size[0])/2,-(self.grid_size[3]-self.grid_size[2])/2]
+        self.env_center = [(self.grid_size[1] - self.grid_size[0]) / 2, -(self.grid_size[3] - self.grid_size[2]) / 2]
         # Shift limits based on center of grid in meters
-        args.environment_size = np.hstack((self.grid_size[0:2] - self.env_center[0], self.grid_size[2:4] - self.env_center[1]))
+        args.environment_size = np.hstack(
+            (self.grid_size[0:2] - self.env_center[0], self.grid_size[2:4] - self.env_center[1]))
         args.grid_size = [self.grid.shape[0], self.grid.shape[1]]
 
     def generate_random_waypoint(self, time: float):
@@ -93,15 +114,15 @@ class Environment(Configurable):
         are valid by making sure that the waypoints are in a free space and if not, it generates new waypoints.
         The waypoints are chosen based on the time and the number of waypoints."""
         # Find the time step for the given time
-        time_step = int(time / (1/(self.step_size*self.max_frame_rate)))
+        time_step = int(time / (1 / (self.step_size * self.max_frame_rate)))
         # Generate random waypoints
         while True:
-            wpt_x = np.random.uniform(self.grid_size[0],self.grid_size[1])
-            wpt_y = np.random.uniform(self.grid_size[2],self.grid_size[3])
-            if self.is_free(wpt_x/self.scale_down_factor, wpt_y/self.scale_down_factor, time_step):
+            wpt_x = np.random.uniform(self.grid_size[0], self.grid_size[1])
+            wpt_y = np.random.uniform(self.grid_size[2], self.grid_size[3])
+            if self.is_free(wpt_x / self.scale_down_factor, wpt_y / self.scale_down_factor, time_step):
                 break
         # Return waypoints
-        return wpt_x-self.env_center[0], -(wpt_y-self.env_center[1])
+        return wpt_x - self.env_center[0], (wpt_y - self.env_center[1])
 
     def is_free(self, x, y, frame_idx):
         """Check if the given position is free"""
@@ -121,13 +142,13 @@ class Environment(Configurable):
 
         total_frames = self.num_frames - self.current_frame
         logging.debug("Iterating through {} frames", total_frames)
-        for frame_idx in tqdm(range(self.current_frame, end_frame, int(1/(self.step_size*self.max_frame_rate)))):
+        for frame_idx in tqdm(range(self.current_frame, end_frame, int(1 / (self.step_size * self.max_frame_rate)))):
             self.update_grid(frame_idx)
 
         logging.debug("...Done")
         return self.grid
 
-    def create_animation(self):
+    def create_no_ego_grid_animation(self):
         if self.visualize:
             # Initialize visualization
             self.__initialize_visualization()
@@ -137,9 +158,44 @@ class Environment(Configurable):
         logging.debug("Creating animation!")
         # Create animation
         # noinspection PyTypeChecker
-        self.map_anim = anim.FuncAnimation(self.fig, self.__update_animation,
+        self.map_anim = anim.FuncAnimation(self.fig, self.__update_animation_no_ego,
                                            frames=tqdm(np.arange(self.grid.shape[2])),
                                            interval=1000 / self.config['environment']["fps"])
+        # Save animation
+        self.map_anim.save(self.output_file, writer=self.writer_video)
+        logging.debug("...Done!")
+        # Close figure
+        plt.close(self.fig)
+
+    # def create_overlay_animation(self, ego: EgoVehicle, xref_traj, x_traj=None, rho_traj=None, path: str = None):
+    def create_overlay_animation(self, initial_waypoint=None, goal_waypoint=None, trajectories=None):
+        if self.visualize:
+            # Initialize visualization
+            self.__initialize_visualization()
+        if not self.visualize:
+            raise Exception('Visualization is not enabled on configuration file.')
+        """Define Time and Frame"""
+        if not np.isinf(self.end_time):
+            end_frame = int(self.__recording_meta['frameRate'] * self.end_time)
+        else:
+            end_frame = self.maximum_frame
+            total_frames = self.num_frames - self.minimum_frame
+        """create the animation"""
+        logging.debug("Creating animation!")
+        # Show background image
+        self.ax.imshow(self.background_image_color)
+        # Define axes for the widgets
+        self.ax_textbox = self.fig.add_axes([0.27, 0.035, 0.04, 0.04])
+        # Define the widgets
+        self.textbox_frame = TextBox(self.ax_textbox, 'Set Frame ', initial=str(self.minimum_frame))
+        # Create animation
+
+        self.map_anim = anim.FuncAnimation(self.fig, self.__update_animation_overlay,
+                                           frames=tqdm(range(self.minimum_frame, end_frame,
+                                                             int(1 / (self.step_size * self.max_frame_rate)))),
+                                           fargs=(initial_waypoint, goal_waypoint, trajectories),
+                                           interval=1000 / self.config['environment']["fps"],
+                                           init_func=self._clear_figure, cache_frame_data=False, blit=True)
         # Save animation
         self.map_anim.save(self.output_file, writer=self.writer_video)
         logging.debug("...Done!")
@@ -190,8 +246,12 @@ class Environment(Configurable):
         self.fig, self.ax = plt.subplots(1, 1)
         self.fig.set_size_inches(15, 8)
         plt.subplots_adjust(left=0.0, right=1.0, bottom=0.10, top=1.00)
+        # Create title
+        self.fig.canvas.set_window_title("Recording {}".format(self.config["dataset"]["recording"]))
+
         # Create output folder
-        self.output_file = self.config['environment']["output_file"]
+        date_time = datetime.now().strftime("%m_%d_%Y_%H%M%S")
+        self.output_file = self.config['environment']["output_file"] + date_time + '.mp4'
         self.writer_video = anim.FFMpegWriter(fps=self.config['environment']["fps"])
 
     def __create_grid(self):
@@ -242,13 +302,15 @@ class Environment(Configurable):
             self.__tracks, self.__tracks_meta, self.__recording_meta = \
                 read_from_csv(tracks_file=tracks_file,
                               tracks_meta_file=tracks_meta_file,
-                              recording_meta_file=recording_meta_file)
+                              recording_meta_file=recording_meta_file,
+                              include_px_coordinates=True)
             # Bring image background
             background_image_path = dataset_dir + recording + "_background.png"
             if background_image_path and os.path.exists(background_image_path):
                 logging.debug("Loading background image from {}", background_image_path)
-                self.background_image = rgb2gray(imread(background_image_path))
-                (self.image_height, self.image_width) = self.background_image.shape
+                self.background_image_color = imread(background_image_path)
+                self.background_image_gray = rgb2gray(self.background_image_color)
+                (self.image_height, self.image_width) = self.background_image_gray.shape
                 # crop background image
                 if self.clipping_type == "manual":
                     self.background_image_cropped, self.cropped_dims = self.crop_image_manually(
@@ -297,7 +359,7 @@ class Environment(Configurable):
                             y_indx = np.where(self._y_pts == inside_pt[1])[0]
                             # Populate grid with obstacle
                             binary_grid[y_indx, x_indx] = 1
-                            #self.grid[y_indx, x_indx, frame_idx] = 1
+                            # self.grid[y_indx, x_indx, frame_idx] = 1
                 else:
                     # extract obstacle bounding box
                     bounding_box = track["bbox"][current_index] / self.scale_down_factor
@@ -327,7 +389,7 @@ class Environment(Configurable):
                     # Populate grid with obstacle
                     indx = normPDF >= 1e-1
                     binary_grid[indx] = normPDF[indx]
-                    #self.grid[:, :, frame_idx][indx] = torch.tensor(normPDF[indx])
+                    # self.grid[:, :, frame_idx][indx] = torch.tensor(normPDF[indx])
                     # fig, ax= self.plotmv(self, y_cntr, x_cntr, self.grid_2d[1].flatten(), self.grid_2d[0].flatten(),
                     #             radius=length,
                     #             velocity=[x_velocity, y_velocity],
@@ -358,7 +420,8 @@ class Environment(Configurable):
                     # fetch the PDF of the 2D gaussian
                     _, _, PDF = self.mvpdf(x_cntr, y_cntr,
                                            self.grid_2d[0].flatten(), self.grid_2d[1].flatten(),
-                                           length=0.5 / 2 / 12, width=0.5 / 2,
+                                           length=0.5 / 2 / 12 + self.spread / self.scale_down_factor,
+                                           width=0.5 / 2 / 12 + self.spread / self.scale_down_factor,
                                            velocity=np.linalg.norm([x_velocity, y_velocity], ord=2),
                                            theta=heading)
                     # normalize PDF by shifting and scaling, so that the smallest value is 0 and the largest is 1
@@ -369,7 +432,7 @@ class Environment(Configurable):
                     # Populate grid with obstacle
                     indx = normPDF >= 1e-1
                     binary_grid[indx] = normPDF[indx]
-                    #self.grid[:, :, frame_idx][indx] = torch.tensor(normPDF[indx])
+                    # self.grid[:, :, frame_idx][indx] = torch.tensor(normPDF[indx])
 
         # Append occupancy grid to grid
         if frame_idx == 0:
@@ -411,7 +474,7 @@ class Environment(Configurable):
             self.grid_gradientX = grid_gradient_x
             self.grid_gradientY = grid_gradient_y
 
-    def __update_animation(self, frame):
+    def __update_animation_no_ego(self, frame):
         """
         Update the animation with the current time step. It updates the current time step by one
         and updates the animation with the current time step.
@@ -424,6 +487,142 @@ class Environment(Configurable):
         # self.ax.set_xlim(0, self.grid.shape[1])
         # self.ax.set_ylim(0, self.grid.shape[0])
         self.ax.imshow(self.grid[:, :, frame], cmap='gray', origin='lower', vmin=0.0, vmax=1.0)
+
+    def __update_animation_overlay(self, frame_idx, init_waypoint=None, goal_waypoint=None, trajectories=None):
+        """
+        Main function to draw all tracks and selected annotations for the current frame.
+        :param args: Should be unused if called manually. If called by FuncAnimation, args contains a call counter.
+        :return: List of artist handles that have been updated. Needed for blitting.
+        """
+
+        # First remove all existing drawings
+        self._clear_figure()
+        # Generate bounding boxes for all tracks
+        plot_handles = []
+
+        for track_idx in self.frame_to_track_idxs[frame_idx]:
+            # Get track data
+            track = self.__tracks[track_idx]
+            track_meta = self.__tracks_meta[track_idx]
+            initial_frame = track_meta["initialFrame"]
+            current_index = frame_idx - initial_frame
+
+            # Get obstacle type
+            object_class = track_meta["class"]
+            # Extract pixel coordinates of the bounding box
+            if track["bboxVis"] is not None:
+                bounding_box = track["bboxVis"][current_index] / self.scale_down_factor
+                length = track["lengthVis"][current_index] / self.scale_down_factor
+                width = track["widthVis"][current_index] / self.scale_down_factor
+            else:
+                bounding_box = None
+                length = 2
+                width = 2
+            # Extract pixel coordinates of the center
+            heading = track["headingVis"][current_index]
+            x_velocity = (track['xVelocity'][current_index] / self.scaling_factor) / self.scale_down_factor
+            y_velocity = (track['yVelocity'][current_index] / self.scaling_factor) / self.scale_down_factor
+            center_points = track["centerVis"] / self.scale_down_factor
+            center_point = center_points[current_index]
+
+            # Get color
+            color = self.class_colors.get(object_class, self.class_colors["default"])
+
+            # Draw bounding box
+            if bounding_box is not None:
+                bbox = patches.Polygon(bounding_box, True, facecolor=color, **self.bbox_style)
+            else:
+                bbox = patches.Circle(center_point, radius=2, facecolor=color)
+            bbox.set_animated(True)
+            self.ax.add_patch(bbox)
+            plot_handles.append(bbox)
+            # Add uncertainty Boxes
+            if not self.certainty:
+                # scale down uncertainty
+                uncertainty = (self.spread / self.scaling_factor) / self.scale_down_factor
+                # displace xy by half the velocity
+                velocity = np.linalg.norm([x_velocity, -y_velocity])
+                # add uncertainty
+                ellipsoid = patches.Ellipse(xy=center_point, width=length + uncertainty * 2 + velocity / 2,
+                                            height=width + uncertainty * 2, angle=heading,
+                                            facecolor="lightblue", **self.ellipsoid_style)
+                ellipsoid.set_animated(True)
+                self.ax.add_patch(ellipsoid)
+                plot_handles.append(ellipsoid)
+
+        # Add waypoints as rectangles
+        if init_waypoint is not None:
+            x_init, y_init, theta_init = self._pos2px(init_waypoint[0], init_waypoint[1], init_waypoint[2])
+            init_polygon = self.define_ego_rectangle(x_init, y_init, theta_init, length=40, width=20)
+            bbox_init = patches.Polygon(init_polygon, True, facecolor='black', label='Start', **self.bbox_style_goal)
+            bbox_init.set_animated(True)
+            self.ax.add_patch(bbox_init)
+            plot_handles.append(bbox_init)
+        if goal_waypoint is not None:
+            x_goal, y_goal, theta_goal = self._pos2px(goal_waypoint[0], goal_waypoint[1], goal_waypoint[2])
+            goal_polygon = self.define_ego_triangle(x_goal, y_goal, theta_goal, length=40, width=20)
+            bbox_goal = patches.Polygon(goal_polygon, True, facecolor='red', label='Goal', **self.bbox_style_goal)
+            bbox_goal.set_animated(True)
+            self.ax.add_patch(bbox_goal)
+            plot_handles.append(bbox_goal)
+
+        # Add trajectories
+        if trajectories is not None:
+            for i in range(len(trajectories["xref_traj"])):
+                # Get Trajectory data
+                traj = trajectories["xref_traj"][i].detach().numpy()
+                method = trajectories["method"][i]
+                # Interpolate trajectory to match the frame rate of the animation
+                idx_old = np.linspace(0, traj.shape[2] - 1, traj.shape[2])
+                idx_new = np.linspace(0, self.grid.shape[2] - 1, self.grid.shape[2])
+                traj_long = np.zeros((1, traj.shape[1], self.grid.shape[2],))
+                for j in range(traj.shape[1]):
+                    traj_long[0, j, :] = np.interp(idx_new, idx_old, traj[0, j, :])
+                # Convert trajectory to pixel coordinates
+                x_ego, y_ego, theta_ego = self._pos2px(traj_long[0, 0, :], traj_long[0, 1, :], traj_long[0, 2, :])
+                # Get color
+                color = self.method_colors.get(method, self.method_colors["default"])
+                # Create ego triangle
+                ego_polygon = self.define_ego_triangle(x_ego[self.point_index], y_ego[self.point_index],
+                                                       theta_ego[self.point_index], length=40, width=20)
+                ego = patches.Polygon(ego_polygon, True, facecolor=color, label=method, **self.bbox_style_ego)
+                ego.set_animated(True)
+                self.ax.add_patch(ego)
+                plot_handles.append(ego)
+                # Create Scatter plot of trajectory
+                self.ax.plot(x_ego[:self.point_index], y_ego[:self.point_index], color=color, linewidth=1.5, alpha=0.8,
+                             marker=6, markersize=2)
+            # Update Point Index
+            self.point_index += 1
+            # Add legend
+            self.ax.legend(loc='upper right', bbox_to_anchor=(1.2, 1.0))
+
+        # Draw current frame number
+        x = self.ax.get_xlim()[0] + 5
+        y = self.ax.get_ylim()[1] + int((self.ax.get_ylim()[0] - self.ax.get_ylim()[1]) * 0.05)
+        label_current_frame = self.ax.text(x, y, "Frame: {}/{}".format(frame_idx, self.maximum_frame),
+                                           fontsize=12, color="white", animated=True)
+        # Update the textbox to new current frame
+        self.textbox_frame.set_val(frame_idx)
+        # Append to plot handles
+        plot_handles.append(label_current_frame)
+
+
+        self.plot_handles = plot_handles
+
+        return plot_handles
+
+    def _clear_figure(self):
+        """
+        Remove all dynamic objects (tracks including texts, bboxes, trajectories etc.)
+        """
+        for figure_object in self.plot_handles:
+            if isinstance(figure_object, list):
+                figure_object[0].remove()
+            else:
+                figure_object.remove()
+        self.plot_handles = []
+        return []
 
     @staticmethod
     # Create interpolator
@@ -603,15 +802,92 @@ class Environment(Configurable):
         XY = np.column_stack([XX, YY])
 
         # displace xy by half the velocity
-        x, y = self.rot(theta) @ (velocity / 2, 0) + (x, y)
+        # x, y = self.rot(theta) @ (velocity / 2, 0) + (x, y)
 
         # get the covariance matrix with the appropriate transforms
-        cov = self.getcov(length, width, theta=theta)
+        cov = self.getcov(length + velocity / 2, width, theta=theta)
 
         # generate the data grid that represents the PDF
         PDF = multivariate_normal([x, y], cov).pdf(XY)
 
         return XX, YY, PDF
+
+    def _pos2px(self, x, y, theta):
+        """
+        Convert position to pixel coordinates and translates reference center to left top corner.
+        :param x: x coordinate
+        :param y: y coordinate
+        :param theta: orientation
+        :return: x, y, theta in pixel coordinates
+        """
+        # Traslate reference center to left top corner
+        x = self.env_center[0] + x
+        # y = -self.env_center[1] -y
+        y = -y -self.env_center[1]
+        # Change orientation to match image
+        theta = -theta #* 180 / np.pi
+        if not theta.shape:
+            if theta < 0:
+                theta += 360
+        else:
+            theta[theta < 0] += 360
+
+        # Scale down
+        return (x / self.scaling_factor) / self.scale_down_factor, (
+                    y / self.scaling_factor) / self.scale_down_factor, theta
+
+    @staticmethod
+    def define_ego_rectangle(x, y, theta, length=1 / 12, width=1 / 12):
+        """
+        Define the ego rectangle.
+        :param x: x coordinate
+        :param y: y coordinate
+        :param theta: orientation
+        :param length: length of the ego rectangle
+        :param width: width of the ego rectangle
+        :return: ego rectangle
+        """
+        # Define ego rectangle
+        ego_rect = np.array([
+            [-length / 2, -width / 2],
+            [length / 2, -width / 2],
+            [length / 2, width / 2],
+            [-length / 2, width / 2]
+        ])
+        # Rotate ego rectangle
+        ego_rect = ego_rect @ np.array([
+            [np.cos(theta), -np.sin(theta)],
+            [np.sin(theta), np.cos(theta)]
+        ])
+        # Translate ego rectangle
+        ego_rect = ego_rect + np.array([x, y])
+        return ego_rect
+
+    @staticmethod
+    def define_ego_triangle(x, y, theta, length=1 / 12, width=1 / 12):
+        """
+        Define the ego triangle.
+        :param x: x coordinate
+        :param y: y coordinate
+        :param theta: orientation
+        :param length: length of the ego triangle
+        :param width: width of the ego triangle
+        :return: ego triangle
+        """
+        # Define ego triangle
+        ego_tri = np.array([
+            [-length / 2, -width / 2],
+            [length / 2, 0],
+            [-length / 2, width / 2]
+        ])
+        # Rotate ego triangle
+        ego_tri = ego_tri @ np.array([
+            [np.cos(theta), -np.sin(theta)],
+            [np.sin(theta), np.cos(theta)]
+        ])
+        # Translate ego triangle
+        ego_tri = ego_tri + np.array([x, y])
+        return ego_tri
 
     @classmethod
     def default_config(cls):
@@ -624,12 +900,12 @@ class Environment(Configurable):
                 resolution=0.2,  # [m]
                 max_size=[100, 100],  # [x, y]
                 certainty=0,  # np.random.randint(3, 10) / 10,
-                spread=0.1,
+                spread=1,
             ),
             environment=dict(
                 visualize=True,
                 parallel=False,
-                output_file=r"./env/animation.mp4",
+                output_file=r"./env/animation",
                 fps=10
             )
         )

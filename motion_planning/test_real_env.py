@@ -20,13 +20,14 @@ if __name__ == '__main__':
     init_time = 0
 
     ### loop through different environments
-    for k in range(10):
+    for k in range(1):
         results = {}
         results["grad"] = {"time": [], "cost": [], "u": []}
+        trajectory = {"method": [], "xref_traj": []}
 
         grid_sum = 0
         ### create environment and motion planning problem
-        while grid_sum < 11e5:
+        while grid_sum < 9.4e5:
             env = Env(args, init_time=init_time, end_time=init_time + 11)
             env.run()
             init_time += np.random.randint(12, 20)
@@ -43,11 +44,13 @@ if __name__ == '__main__':
 
         # Create random initial state
         dist_start_goal = 0
+        pos_0 = env.generate_random_waypoint(time=init_time)
         while dist_start_goal < 10 or dist_start_goal > 70:
-            pos_0 = np.array([-15, -15]) + 10 * np.random.rand(2) #env.generate_random_waypoint(0)
+            # pos_0 = np.array([-15, -15]) + 10 * np.random.rand(2) #env.generate_random_waypoint(0)
             theta_0 = 1.6 * np.random.rand(1)
             v_0 = 1 + 8 * np.random.rand(1)
-            pos_N = np.array([25, 15]) + 10 * np.random.rand(2) #env.generate_random_waypoint(10)
+            # pos_N = np.array([25, 15]) + 10 * np.random.rand(2) #env.generate_random_waypoint(10)
+            pos_N = env.generate_random_waypoint(time=init_time + 11)
             dist_start_goal = np.sqrt((pos_0[0]-pos_N[0])**2 + (pos_0[1]-pos_N[1])**2)
         print("start")
         print(pos_0)
@@ -70,6 +73,11 @@ if __name__ == '__main__':
         results["grad"]["u"].append(up_grad)
         results["grad"]["time"].append(time_grad)
         results["grad"]["cost"].append(cost_grad)
+        trajectory["method"].append("grad")
+        trajectory["xref_traj"].append(planner_grad.xref_traj)
+        # Create animation
+        env.create_overlay_animation(xref0.numpy().reshape((5,)), xrefN.numpy().reshape((5,)), trajectory)
+
 
     print("end")
 
