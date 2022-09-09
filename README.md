@@ -65,7 +65,7 @@ optional arguments:
   --mp_plot_traj PLOT_T     True if final optimized/ planned trajectories of all motion planners should be plotted in one plot (default: False)
 ```
 
-### Usage for Other Systems
+## Usage for Other Systems
 1. train contraction controller for the new system with "https://github.com/sundw2014/C3M", and save controller and model in "data/trained_controller/"  
 2. define the dynamics of the new system analog to "systems/system_CAR.py" and put path to the trained controller in function "system.load_controller"  
 3. generate trainings data  
