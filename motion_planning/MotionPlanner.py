@@ -1,29 +1,10 @@
-import numpy as np
 import torch
-from motion_planning.utils import pos2gridpos, initialize_logging, check_collision, idx2time, gridpos2pos, traj2grid, shift_array, \
-    pred2grid, get_mesh_sample_points, time2idx, sample_pdf, enlarge_grid, get_closest_free_cell, get_closest_obs_cell, \
-    make_path
-from density_training.utils import load_nn, get_nn_prediction
-from data_generation.utils import load_inputmap, load_outputmap
-from systems.utils import listDict2dictList
-from plots.plot_functions import plot_ref, plot_grid, plot_cost
-import pickle
-from datetime import datetime
-import os
-from matplotlib import cm
-from matplotlib.colors import ListedColormap, LinearSegmentedColormap
-import shutil
-from systems.sytem_CAR import Car
-import time
-import logging
-import sys
-import casadi
+from motion_planning.utils import pos2gridpos, initialize_logging, gridpos2pos
 from abc import ABC, abstractmethod
-import random
 
 
 class MotionPlanner(ABC):
-    def __init__(self, ego, plot=True, name="mp", path_log=None, plot_final=None):
+    def __init__(self, ego, name="mp", path_log=None):
         """
         initialize motion planner object (function is called by all child classes)
         """
@@ -35,16 +16,15 @@ class MotionPlanner(ABC):
         self.weight_uref = ego.args.weight_uref
         self.weight_bounds = ego.args.weight_bounds
         self.weight_coll = ego.args.weight_coll
-        self.plot = plot
-        if plot_final is None:
-            self.plot_final = plot
+        self.plot = ego.args.mp_plot
+        if ego.args.mp_plot_final is None:
+            self.plot_final = ego.args.mp_plot
         else:
-            self.plot_final = plot_final
+            self.plot_final = ego.args.mp_plot_final
         if path_log is None:
             self.path_log = initialize_logging(self.ego.args, self.ego.args.mp_name + "_" + self.name)
         else:
             self.path_log = path_log
-
 
 
     @abstractmethod

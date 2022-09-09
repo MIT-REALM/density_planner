@@ -1,21 +1,8 @@
 import numpy as np
 import torch
-from motion_planning.utils import pos2gridpos, bounds2array, check_collision, idx2time, gridpos2pos, traj2grid, shift_array, \
-    pred2grid, get_mesh_sample_points, time2idx, sample_pdf, enlarge_grid, get_closest_free_cell, get_closest_obs_cell, make_path
-from density_training.utils import load_nn, get_nn_prediction
-from data_generation.utils import load_inputmap, load_outputmap
-from systems.utils import listDict2dictList
-from plots.plot_functions import plot_ref, plot_grid, plot_cost
-import pickle
-from datetime import datetime
-import os
-from matplotlib import cm
-from matplotlib.colors import ListedColormap, LinearSegmentedColormap
-import shutil
-from systems.sytem_CAR import Car
+from motion_planning.utils import pos2gridpos, make_path
 import time
 import logging
-import sys
 import casadi
 from motion_planning.MotionPlanner import MotionPlanner
 
@@ -25,8 +12,8 @@ class MotionPlannerNLP(MotionPlanner):
     class using NLP solver for motion planning
     """
     
-    def __init__(self, ego, u0=None, xe0=None, plot=True, name="oracle", path_log=None, use_up=True, plot_final=None, biased=False):
-        super().__init__(ego, plot=plot, name=name, path_log=path_log, plot_final=plot_final)
+    def __init__(self, ego, u0=None, xe0=None,  name="oracle", path_log=None, use_up=True, biased=False):
+        super().__init__(ego, name=name, path_log=path_log)
         self.rho0 = torch.ones(1, 1, 1)
         self.u0 = u0
         self.xe0 = xe0
@@ -288,8 +275,8 @@ class MotionPlannerMPC(MotionPlannerNLP):
     class using NLP solver for motion planning
     """
 
-    def __init__(self, ego, u0=None, xe0=None, plot=True, name="MPC", path_log=None, N_MPC=10, plot_final=None, biased=False, safe=False, tube=0):
-        super().__init__(ego, u0=u0, xe0=xe0, plot=plot, name=name, path_log=path_log, use_up=False, plot_final=plot_final, biased=biased)
+    def __init__(self, ego, u0=None, xe0=None, name="MPC", path_log=None, N_MPC=10, biased=False, safe=False, tube=0):
+        super().__init__(ego, u0=u0, xe0=xe0, name=name, path_log=path_log, use_up=False, biased=biased)
         self.N_MPC = N_MPC
         self.safe = safe
         self.tube = tube

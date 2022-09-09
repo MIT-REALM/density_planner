@@ -1,38 +1,24 @@
 import numpy as np
 import torch
-from motion_planning.utils import pos2gridpos, check_collision, idx2time, gridpos2pos, traj2grid, shift_array, \
-    pred2grid, get_mesh_sample_points, time2idx, sample_pdf, enlarge_grid, get_closest_free_cell, get_closest_obs_cell, make_path
-from density_training.utils import load_nn, get_nn_prediction
-from data_generation.utils import load_inputmap, load_outputmap
+from motion_planning.utils import pos2gridpos, gridpos2pos, make_path
 from systems.utils import listDict2dictList
-from plots.plot_functions import plot_ref, plot_grid, plot_cost
-import pickle
-from datetime import datetime
-import os
-from matplotlib import cm
-from matplotlib.colors import ListedColormap, LinearSegmentedColormap
-import shutil
-from systems.sytem_CAR import Car
+from plots.plot_functions import plot_cost
 import time
 import logging
-import sys
-import casadi
-from abc import ABC, abstractmethod
-import random
 from motion_planning.MotionPlanner import MotionPlanner
 
 
 class MotionPlannerGrad(MotionPlanner):
     """
-    class to use proposed density algorithm for motion planning
+    class to use proposed density planner for motion planning
     """
-    def __init__(self, ego, plot=True, path_log=None, name="grad", plot_final=None, plot_cost=False):
-        super().__init__(ego, plot=plot, name=name, path_log=path_log, plot_final=plot_final)
+    def __init__(self, ego, path_log=None, name="grad"):
+        super().__init__(ego, name=name, path_log=path_log)
         self.initial_traj = []
         self.improved_traj = []
         self.beta1 = 0.9
         self.beta2 = 0.999
-        self.plot_cost = plot_cost
+        self.plot_cost = ego.args.mp_plot_cost
 
     def plan_motion(self):
         """
@@ -469,8 +455,8 @@ class MotionPlannerGrad(MotionPlanner):
 
 
 class MotionPlannerSearch(MotionPlanner):
-    def __init__(self, ego, plot=True, name="search", path_log=None, plot_final=None):
-        super().__init__(ego, name=name, plot=plot, path_log=path_log, plot_final=plot_final)
+    def __init__(self, ego, name="search", path_log=None):
+        super().__init__(ego, name=name, path_log=path_log)
         self.incl_cost_goal = True
         self.incl_cost_uref = True
         self.up_saved = []
@@ -628,8 +614,8 @@ class MotionPlannerSearch(MotionPlanner):
 
 
 class MotionPlannerSampling(MotionPlannerSearch):
-    def __init__(self, ego, plot=True, name="sampling", path_log=None, plot_final=None):
-        super().__init__(ego, plot=plot, name=name, path_log=path_log, plot_final=plot_final)
+    def __init__(self, ego, name="sampling", path_log=None):
+        super().__init__(ego, name=name, path_log=path_log)
         self.cost_path = np.array([])
         self.incl_cost_goal = True
         self.incl_cost_uref = False
@@ -637,7 +623,6 @@ class MotionPlannerSampling(MotionPlannerSearch):
         self.cost_chosen = 0.1
         self.weight_goal = 0.1
         self.weight_coll = 14
-        #self.sampl_cost_thr = 25
 
     def plan_traj(self):
         if self.plot:
@@ -655,7 +640,7 @@ class MotionPlannerSampling(MotionPlannerSearch):
                 self.check_up(up_add)
             else: # up_add extends an already saved parameter set
                 thr = np.mean(self.cost_path)
-                weights = thr - self.cost_path + 1e-8 #self.cost_path.max() - self.cost_path
+                weights = thr - self.cost_path + 1e-8
                 weights[self.cost_path > thr] = 0
                 decision_cost = np.random.choice(self.cost_path, p=weights / weights.sum())
                 idx_chosen = np.where(self.cost_path == decision_cost)[0][0]

@@ -1,6 +1,6 @@
 from motion_planning.simulation_objects import StaticObstacle, Environment, DynamicObstacle
 import numpy as np
-from motion_planning.utils import pos2gridpos, find_start_goal, check_start_goal
+from motion_planning.utils import find_start_goal, check_start_goal
 from motion_planning.simulation_objects import EgoVehicle
 from plots.plot_functions import plot_grid
 from env.environment import Environment as Env
@@ -8,7 +8,7 @@ import torch
 import logging
 
 
-def create_mp_task(args, seed, stationary=False):
+def create_mp_task(args, seed):
     logging.info("")
     logging.info("###################################################################")
     logging.info("###################################################################")
@@ -30,7 +30,7 @@ def create_mp_task(args, seed, stationary=False):
             if args.environment_size[3] > 50:
                 args.environment_size[2] -= (args.environment_size[3] - 50)
                 args.environment_size[3] = 50
-            if stationary:
+            if args.mp_stationary:
                 env.grid[:, :, :] = env.grid[:, :, [40]]
             logging.info("Loading Real Environment %d with spread %.2f, starting time = %.1f (seed %d)" % (
                                         env.config["dataset"]["recording"],
@@ -39,7 +39,7 @@ def create_mp_task(args, seed, stationary=False):
             if xref0 is None:
                 valid = False
     else:
-        env = create_environment(args, timestep=100, stationary=stationary)
+        env = create_environment(args, timestep=100, stationary=args.mp_stationary)
         logging.info("Loading Simulated Environment (seed %d)" % (seed))
         if seed < 20:
             xref0 = torch.tensor([0, -28, 1.5, 3, 0]).reshape(1, -1, 1).type(torch.FloatTensor)

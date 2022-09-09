@@ -9,7 +9,6 @@ def parse_args():
     # simulation parameter
     parser.add_argument('--N_sim', type=int, default=1001)
     parser.add_argument('--input_type', type=str, default="discr10")  # discr10, polyn3, sin, cust*, sins5
-    #parser.add_argument('--input_params_zero', type=list, default=[0])
     parser.add_argument('--dt_sim', type=int, default=0.01)
     parser.add_argument('--N_sim_max', type=int, default=1001)
     parser.add_argument('--factor_pred', type=int, default=10)
@@ -89,24 +88,30 @@ def parse_args():
     ### MOTION PLANNING
     # general motion planning options
     parser.add_argument('--mp_name', type=str, default="test")
-    parser.add_argument('--weight_goal_far', type=float, default=10) #1 if no influence
-    parser.add_argument('--weight_uref_effort', type=float, default=1e-2) #0 if no influence
-    parser.add_argument('--close2goal_thr', type=float, default=3)
-    parser.add_argument('--mp_num_envs', type=int, default=20)
+    parser.add_argument('--mp_setting', type=str, default="default")
+    parser.add_argument('--mp_use_realEnv', type=bool, default=False)
+    parser.add_argument('--mp_stationary', type=bool, default=False)
+    parser.add_argument('--mp_num_envs', type=int, default=10)
     parser.add_argument('--mp_num_initial', type=int, default=1)
+    parser.add_argument('--mp_recording', type=int, default=26)  # for real-world data: choose 8, 18/26 or 30
     parser.add_argument('--mp_plot', type=bool, default=False)
     parser.add_argument('--mp_plot_cost', type=bool, default=False)
     parser.add_argument('--mp_plot_traj', type=bool, default=False)
     parser.add_argument('--mp_plot_envgrid', type=bool, default=False)
     parser.add_argument('--mp_plot_final', type=bool, default=False)
+
+    # other options
+    parser.add_argument('--weight_goal_far', type=float, default=10) #1 if no influence
+    parser.add_argument('--weight_uref_effort', type=float, default=1e-2) #0 if no influence
+    parser.add_argument('--close2goal_thr', type=float, default=3)
     parser.add_argument('--mp_video', type=bool, default=False)
-    parser.add_argument('--mp_use_realEnv', type=bool, default=False)
     parser.add_argument('--mp_save_results', type=bool, default=True)
     parser.add_argument('--mp_load_old_opt', type=bool, default=False)
+    parser.add_argument('--mp_filename_opt', type=str,
+                        default="plots/motion/2022-09-04-07-30-12_statPlots_mpOpt_seed10-19/")
     parser.add_argument('--mp_load_old_mp', type=bool, default=False)
-
-    # real world data
-    parser.add_argument('--mp_recording', type=int, default=26)  #8   #18 / #26   #30
+    parser.add_argument('--mp_filename_mp', type=str,
+                        default="plots/motion/2022-09-03-09-16-27_compMP_tubeMPConeReturnTraj_seed41-49/")
 
     # ego vehicle
     parser.add_argument('--mp_gaussians', type=int, default=5)
@@ -132,11 +137,6 @@ def parse_args():
 
     # optimization with search
     parser.add_argument('--du_search', type=list, default=[1, 1])
-    # cost parameters
-    # parser.add_argument('--search_weight_goal', type=float, default=2e-2)
-    # parser.add_argument('--search_weight_coll', type=float, default=1e-1)
-    # parser.add_argument('--search_weight_uref', type=float, default=1e-4)
-    # parser.add_argument('--search_weight_bounds', type=float, default=1e1)
     parser.add_argument('--goal_thr', type=float, default=3.8)
     parser.add_argument('--coll_thr', type=float, default=4)
     parser.add_argument('--opt_time_limit', type=float, default=300)
