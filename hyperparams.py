@@ -1,6 +1,9 @@
 import argparse
 import torch
 
+"""
+hyperparameters and settings which can be adapted
+"""
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -12,7 +15,7 @@ def parse_args():
     parser.add_argument('--dt_sim', type=int, default=0.01)
     parser.add_argument('--N_sim_max', type=int, default=1001)
     parser.add_argument('--factor_pred', type=int, default=10)
-    parser.add_argument('--random_seed', type=int, default=0)
+    parser.add_argument('--random_seed', type=int, default=1)
 
     ### DATA GENERATION
     # data generation

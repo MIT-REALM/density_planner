@@ -38,30 +38,26 @@ class MotionPlanner(ABC):
         """
         compute trajectories from up
 
-        Parameters
-        ----------
-        up: torch.Tensor
+        :param up: torch.Tensor
             parameters specifying the reference input trajectory
-        name: string
+        :param name: string
             name of parameter set for plotting
-        compute_density: bool
+        :param compute_density: bool
             True if rho_traj is computed
-        use_nn: bool
+        :param use_nn: bool
             True if nn is used to predict density and state trajectory
-        plot: bool
+        :param plot: bool
             True if reference trajectory is plotted
-        folder: string
+        :param folder: string
             name of folder to save plot
 
-        Returns
-        -------
-        uref_traj: torch.Tensor
+        :return: uref_traj: torch.Tensor
             1 x 2 x N_sim_short -1
-        xref_traj: torch.Tensor
+        :return: xref_traj: torch.Tensor
             1 x 5 x N_sim_short
-        x_traj: torch.Tensor
+        :return: x_traj: torch.Tensor
             1 x 4 x N_sim_short
-        rho_traj: torch.Tensor
+        :return: rho_traj: torch.Tensor
             1 x 1 x N_sim_short
         """
         uref_traj, xref_traj = self.ego.system.up2ref_traj(self.ego.xref0, up, self.ego.args, short=True)
@@ -71,7 +67,6 @@ class MotionPlanner(ABC):
             self.ego.visualize_xref(xref_traj, name=name, save=True, show=False, folder=folder)
 
         x_traj, rho_traj = self.ego.predict_density(up, xref_traj, xe0=xe0, rho0=rho0, use_nn=use_nn, compute_density=compute_density)
-        #x_traj = x_all[:, :4, :]
 
         return uref_traj, xref_traj, x_traj, rho_traj
 
@@ -79,20 +74,16 @@ class MotionPlanner(ABC):
         """
         compute cost of a given trajectory
 
-        Parameters
-        ----------
-        uref_traj: torch.Tensor
+        :param uref_traj: torch.Tensor
             1 x 2 x N_sim -1
-        x_traj: torch.Tensor
+        :param x_traj: torch.Tensor
             1 x 4 x N_sim
-        rho_traj: torch.Tensor
+        :param rho_traj: torch.Tensor
             1 x 1 x N_sim
 
-        Returns
-        -------
-        cost: torch.Tensor
+        :return: cost: torch.Tensor
             overall cost for given trajectory
-        cost_dict: dictionary
+        :return: cost_dict: dictionary
             contains the weighted costs of all types
         """
 
@@ -118,14 +109,10 @@ class MotionPlanner(ABC):
         """
         compute cost for reference input trajectory
 
-        Parameters
-        ----------
-        uref_traj: torch.Tensor
+        :param uref_traj: torch.Tensor
             1 x 2 x N_sim -1
 
-        Returns
-        -------
-        cost: torch.Tensor
+        :return: cost: torch.Tensor
             control effort cost for given trajectory
         """
         cost = self.ego.args.weight_uref_effort * (uref_traj ** 2).sum(dim=(1, 2))
@@ -135,18 +122,14 @@ class MotionPlanner(ABC):
         """
         compute cost for reaching the goal
 
-        Parameters
-        ----------
-        x_traj: torch.Tensor
+        :param x_traj: torch.Tensor
             1 x 4 x N_sim
-        rho_traj: torch.Tensor
+        :param rho_traj: torch.Tensor
             1 x 1 x N_sim
 
-        Returns
-        -------
-        cost: torch.Tensor
+        :return: cost: torch.Tensor
             cost for distance to the goal in the last iteration
-        close: bool
+        :return: close: bool
             True if distance smaller than args.close2goal_thr
         """
         sq_dist = ((x_traj[:, :2, -1] - self.ego.xrefN[:, :2, 0]) ** 2).sum(dim=1)
@@ -167,18 +150,14 @@ class MotionPlanner(ABC):
         """
         compute the cost for traying in the valid state space
 
-        Parameters
-        ----------
-        x_traj: torch.Tensor
+        :param x_traj: torch.Tensor
             1 x 4 x N_sim
-        rho_traj: torch.Tensor
+        :param rho_traj: torch.Tensor
             1 x 1 x N_sim
 
-        Returns
-        -------
-        cost: torch.Tensor
+        :return: cost: torch.Tensor
             cost for staying in the admissible state space
-        in_bounds: bool
+        :return: in_bounds: bool
             True if inside of valid state space for all time steps
         """
 
@@ -214,16 +193,12 @@ class MotionPlanner(ABC):
         """
         compute cost for high collision probabilities
 
-        Parameters
-        ----------
-        x_traj: torch.Tensor
+        :param x_traj: torch.Tensor
             1 x 4 x N_sim
-        rho_traj: torch.Tensor
+        :param rho_traj: torch.Tensor
             1 x 1 x N_sim
 
-        Returns
-        -------
-        cost: torch.Tensor
+        :return: cost: torch.Tensor
             cost for collisions
         """
         cost = torch.zeros(1)
@@ -252,14 +227,10 @@ class MotionPlanner(ABC):
         """
         remove the weighting factors from the entries of the cost dictionary
 
-        Parameters
-        ----------
-        cost_dict: dictionary
+        :param cost_dict: dictionary
             contains the weighted cost tensors
 
-        Returns
-        -------
-        cost_dict: dictionary
+        :return: cost_dict: dictionary
             contains the unweighted cost tensors
         """
 
@@ -272,9 +243,3 @@ class MotionPlanner(ABC):
             cost_dict["cost_sum"] += cost_dict[key]
         return cost_dict
 
-    # @abstractmethod
-    # def validate_traj(self, up, xref0=None, xe0=None, rho0=None, compute_density=True):
-    #     """
-    #     method for evaluating the optimized input (plot resulting trajectory and compute its cost)
-    #     """
-    #     pass

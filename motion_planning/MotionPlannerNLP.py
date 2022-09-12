@@ -69,6 +69,9 @@ class MotionPlannerNLP(MotionPlanner):
         return u_min, cost_dict_min, t_plan
 
     def solve_nlp(self):
+        """
+        solve the nonlinear programming problem with casadi for the whole planning horizon
+        """
         quiet = True
         px_ref = self.ego.xrefN[0, 0, 0].item()
         py_ref = self.ego.xrefN[0, 1, 0].item()
@@ -189,26 +192,22 @@ class MotionPlannerNLP(MotionPlanner):
         """
         compute trajectories from up
 
-        Parameters
-        ----------
-        up: torch.Tensor
+        :param up: torch.Tensor
             parameters specifying the reference input trajectory
-        name: string
+        :param name: string
             name of parameter set for plotting
-        plot: bool
+        :param plot: bool
             True if reference trajectory is plotted
-        folder: string
+        :param folder: string
             name of folder to save plot
 
-        Returns
-        -------
-        uref_traj: torch.Tensor
+        :return: uref_traj: torch.Tensor
             1 x 2 x N_sim_short -1
-        xref_traj: torch.Tensor
+        :return: xref_traj: torch.Tensor
             1 x 5 x N_sim_short
-        x_traj: torch.Tensor
+        :return: x_traj: torch.Tensor
             1 x 4 x N_sim_short
-        rho_traj: torch.Tensor
+        :return: rho_traj: torch.Tensor
             1 x 1 x N_sim_short
         """
 
@@ -229,20 +228,16 @@ class MotionPlannerNLP(MotionPlanner):
         """
         evaluate input parameters (plot and compute final cost), assume that reference trajectory starts at ego.xref0+self.xe0
 
-        Parameters
-        ----------
-        up: torch.Tensor
+        :param up: torch.Tensor
             parameters specifying the reference input trajectory
-        xe0: torch.Tensor
+        :param xe0: torch.Tensor
             batch_size x 4 x 1: tensor of initial deviation of reference trajectory
-        rho0: torch.Tensor
+        :param rho0: torch.Tensor
             batch_size x 1 x 1: tensor of initial densities
-        compute_density: bool
+        :param compute_density: bool
             True if rho_traj is computed
 
-        Returns
-        -------
-        cost_dict: dictionary
+        :return: cost_dict: dictionary
             contains the unweighted cost tensors
         """
 
@@ -306,6 +301,9 @@ class MotionPlannerMPC(MotionPlannerNLP):
         return u_traj, cost, mean_time
 
     def solve_nlp(self):
+        """
+        solve the nonlinear programming problem with casadi in a receding horizon fashion
+        """
         quiet = True
         px_ref = self.ego.xrefN[0, 0, 0].item()
         py_ref = self.ego.xrefN[0, 1, 0].item()
@@ -480,11 +478,6 @@ class MotionPlannerMPC(MotionPlannerNLP):
             logging.info("%s: Solution not valid (trajectory error too big)" % (self.name))
             u_traj = None
             x_traj = None
-        # if self.tube != 0:
-        #     x_traj = x_traj.repeat((len(vectors), 1, 1))
-        #     for i_v, v in enumerate(vectors):
-        #         x_traj[i_v, 0, :] += v[0]
-        #         x_traj[i_v, 1, :] += v[1]
 
         return u_traj, x_traj, mean_time
 

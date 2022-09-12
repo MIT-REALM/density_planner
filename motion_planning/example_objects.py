@@ -9,11 +9,20 @@ import logging
 
 
 def create_mp_task(args, seed):
+    """
+    function to load the environment and sample the initial state and the goal position
+
+    :param args:    settings
+    :param seed:    random seed
+    :return: ego:   object for the ego vehicle which contains the start and goal position and the environment
+                        occupation map
+    """
     logging.info("")
     logging.info("###################################################################")
     logging.info("###################################################################")
+    ### create environment and motion planning problem
     if args.mp_use_realEnv:
-        ### create environment and motion planning problem
+        # generate environment from real-world dataset
         init_time = seed * 100
         valid = False
         while not valid:
@@ -39,6 +48,7 @@ def create_mp_task(args, seed):
             if xref0 is None:
                 valid = False
     else:
+        # generate random environment
         env = create_environment(args, timestep=100, stationary=args.mp_stationary)
         logging.info("Loading Simulated Environment (seed %d)" % (seed))
         if seed < 20:
@@ -59,10 +69,8 @@ def create_mp_task(args, seed):
             plot_grid(env, args, timestep=t, save=False)
     logging.info("Start State: [%.1f, %.1f, %.1f, %.1f]" % (xref0[0, 0, 0], xref0[0, 1, 0], xref0[0, 2, 0], xref0[0, 3, 0]))
     logging.info("Goal Position: [%.1f, %.1f]" % (xrefN[0, 0, 0], xrefN[0, 1, 0]))
-    # scipy.io.savemat(args.path_matlab + "env%d.mat" % k, mdict={'arr': np.array(env.grid)})
-    # array_bounds = bounds2array(env, args)
-    # scipy.io.savemat(args.path_matlab + "bounds%d.mat" % k, mdict={'arr': array_bounds})
 
+    # create the ego vehicle
     ego = EgoVehicle(xref0, xrefN, env, args, video=args.mp_video)
     if args.mp_use_realEnv:
         ego.system.X_MIN_MP[0, 0, 0] = args.environment_size[0] + 0.1
@@ -73,6 +81,16 @@ def create_mp_task(args, seed):
 
 
 def create_environment(args, object_str_list=None, name="environment", timestep=0, stationary=False):
+    """
+    create random environment
+
+    :param args:            settings
+    :param object_str_list: list of objects (if None: objects will be randomly generated)
+    :param name:            name of the environment
+    :param timestep:        time duration of the prediction
+    :param stationary:      True if environment contains only stationary obstacles
+    :return: environment
+    """
     objects = create_street(args)
     if object_str_list is not None:
         for obj_str in object_str_list:
@@ -107,6 +125,12 @@ def create_environment(args, object_str_list=None, name="environment", timestep=
     return environment
 
 def create_street(args):
+    """
+    create stationary obstacles to form a straight street
+
+    :param args:
+    :return: obstacles
+    """
     static_obstacles = {
         "left": np.array([args.environment_size[0], -7, args.environment_size[2], args.environment_size[3], 1, 30]), #(x1, x2, y1, y2, certainty, spread)
         "right": np.array([7, args.environment_size[1], args.environment_size[2], args.environment_size[3], 1, 30])}
@@ -116,6 +140,12 @@ def create_street(args):
     return objs
 
 def create_turnR(args):
+    """
+    create stationary obstacles to form a right turn
+
+    :param args:  settings
+    :return: obstacles
+    """
     static_obstacles = {
         "left": np.array([args.environment_size[0], -30, args.environment_size[2], args.environment_size[3], 1, 1]), #(x1, x2, y1, y2, certainty, spread)
         "bottom_right": np.array([-10, args.environment_size[1], args.environment_size[2], 10, 1, 1]),
@@ -126,6 +156,12 @@ def create_turnR(args):
     return objs
 
 def create_crossing4w(args):
+    """
+    create stationary obstacles to form a four-way crossing
+
+    :param args:  settings
+    :return: obstacles
+    """
     static_obstacles = {
         "bottom_left": np.array([args.environment_size[0], -10, args.environment_size[2], -10, 1, 1]), #(x1, x2, y1, y2, certainty, spread)
         "top_left": np.array([args.environment_size[0], -10, 10, args.environment_size[3], 1, 1]),
@@ -136,6 +172,10 @@ def create_crossing4w(args):
         objs.append(StaticObstacle(args, coord=value, name="crossing4w " + key, timestep=0))
     return objs
 
+
+"""
+functions to create single obstacles:
+"""
 def create_obstacleBottom(args):
     obs = np.array([0, 3, -22, -17, 1, 20])
     obj = StaticObstacle(args, name="obstacleBottom", coord=obs)

@@ -1,10 +1,8 @@
-import torch
 import hyperparams
-from torch.utils.data import DataLoader,Dataset
+from torch.utils.data import Dataset
 import os
 import pickle
 from datetime import datetime
-from systems.sytem_CAR import Car
 from data_generation.utils import raw2nnData
 
 class densityDataset(Dataset):
@@ -28,12 +26,12 @@ class densityDataset(Dataset):
             return u_params, xref0, t, density_map, xref_traj, uref_traj
 
     def load_data(self, args, mode):
-
         if mode is not None:
             if mode == "Val":
                 filename_data = args.nameend_ValDataset
             elif mode == "Train":
                 filename_data = args.nameend_TrainDataset
+
             # load dataset from specified path args.path_dataset
             for file in os.listdir(args.path_dataset):
                 if file.endswith(filename_data): # just consider the first file with specified filename
@@ -45,7 +43,6 @@ class densityDataset(Dataset):
             return
 
         # create new dataset from raw density data
-
         data_allFiles = []
         i = 0
         for file in os.listdir(args.path_rawdata):

@@ -1,11 +1,14 @@
 import torch
 from torch import nn
 from data_generation.create_dataset import densityDataset
-from data_generation.utils import get_output_variables, get_input_variables, get_input_tensors, get_output_tensors, load_outputmap, load_inputmap
+from data_generation.utils import get_output_variables, get_input_tensors, load_outputmap
 from torch.utils.data import DataLoader
 
 
 class NeuralNetwork(nn.Module):
+    """
+    class for neural density predictor
+    """
     def __init__(self, num_inputs, num_outputs, args):
         super(NeuralNetwork, self).__init__()
 
@@ -42,9 +45,12 @@ class NeuralNetwork(nn.Module):
         return x
 
 
-
-
 def load_dataloader(args):
+    """
+    load the data loader
+    :param args:    settings
+    :return: train and validation dataloader
+    """
     train_data = densityDataset(args, mode="Train")
     # if args.equation == "FPE":
     #     args.batch_size = 1
@@ -63,6 +69,18 @@ def load_dataloader(args):
 
 
 def create_configs(learning_rate=None, num_hidden=None, size_hidden=None, weight_decay=None, optimizer=None, rho_loss_weight=None, args=None):
+    """
+    create different hyperparameter configurations
+
+    :param learning_rate:   list with learning rates which should be tested
+    :param num_hidden:      list with number of layers which should be tested
+    :param size_hidden:     list with number of units per layer which should be tested
+    :param weight_decay:    list with weight decays which should be tested
+    :param optimizer:       list with optimizers which should be tested
+    :param rho_loss_weight: list with weights for density which should be tested
+    :param args:            settings
+    :return: configurations
+    """
     if learning_rate is None:
         learning_rate = [args.learning_rate]
     if num_hidden is None:
@@ -93,6 +111,12 @@ def create_configs(learning_rate=None, num_hidden=None, size_hidden=None, weight
 
 
 def load_args(config, args):
+    """
+    adapt settings according to the given config
+    :param config:
+    :param args:
+    :return: new settings
+    """
     args.learning_rate = config["learning_rate"]
     args.size_hidden = [config["size_hidden"]] * config["num_hidden"]
     args.weight_decay = config["weight_decay"]
@@ -102,6 +126,16 @@ def load_args(config, args):
 
 
 def load_nn(num_inputs, num_outputs, args, load_pretrained=None, nn2=False):
+    """
+    create a new NN or load a pretrained NN
+
+    :param num_inputs:      number of NN inputs
+    :param num_outputs:     number of NN outputs
+    :param args:            settings
+    :param load_pretrained: True, if a pretrained NN should be loaded
+    :param nn2:             True, if the pretrained NN should be loaded from args.name_pretrained_nn2
+    :return: model and optimizer of the NN
+    """
     if load_pretrained is None:
         load_pretrained = args.load_pretrained_nn
 
@@ -125,14 +159,21 @@ def load_nn(num_inputs, num_outputs, args, load_pretrained=None, nn2=False):
 
 
 def get_nn_prediction(model, xe0, xref0, t, u_params, args):
-
-    # if args.input_type == "discr10" and u_params.shape[1] < 10:
-    #     u_params = torch.cat((u_params[:, :], torch.zeros(u_params.shape[0], 10 - u_params.shape[1])), 1)
+    """
+    function to get the density predictions with the NN
+    :param model:   NN model
+    :param xe0:     initial deviation of reference trajectory
+    :param xref0:   initial state of reference trajectory
+    :param t:       prediction time points
+    :param u_params:input parameters
+    :param args:    settings
+    :return:    xe:     predicted deviation of reference trajectory
+                rholog: predicted logarithmic density
+    """
 
     input_tensor, _ = get_input_tensors(u_params.flatten(), xref0, xe0, t, args)
     output_map, num_outputs = load_outputmap(dim_x=xe0.shape[1], args=args)
 
-    #with torch.no_grad():
     input = input_tensor.to(args.device)
     output = model(input)
     xe, rholog = get_output_variables(output, output_map)

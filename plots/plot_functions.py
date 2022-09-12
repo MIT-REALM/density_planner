@@ -1,26 +1,18 @@
-import os.path
 from datetime import datetime
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from systems.utils import get_density_map
-import scipy
 import matplotlib
 import matplotlib.colors as pltcol
 from motion_planning.utils import pos2gridpos, traj2grid, pred2grid, convert_color
-from matplotlib import cm
-from matplotlib.colors import ListedColormap, LinearSegmentedColormap
+
+### settings
 plt.style.use('seaborn-paper')
-# matplotlib.rcParams['mathtext.fontset'] = 'custom'
-# matplotlib.rcParams['mathtext.rm'] = 'Bitstream Vera Sans'
-# matplotlib.rcParams['mathtext.it'] = 'Bitstream Vera Sans:italic'
-# matplotlib.rcParams['mathtext.bf'] = 'Bitstream Vera Sans:bold'
-# matplotlib.rcParams['mathtext.fontset'] = 'cm' #'stix'
-# matplotlib.rcParams['font.family'] = 'cmu serif'
+matplotlib.rcParams['text.latex.preamble'] = r'\usepackage{{amsmath}}'
 plt.rcParams['text.usetex'] = True
 plt.rcParams['text.latex.preamble'] = r'\usepackage{{amsmath}}'
 plt.rcParams['text.latex.preamble'] = r'\usepackage{{mathrsfs}}'
-# plt.rcParams['font.family'] = "serif"
 plt.rc('font',**{'family':'serif','serif':['Palatino']})
 plt.rcParams['legend.fontsize'] = 18
 plt.rc('axes', titlesize=18)
@@ -28,7 +20,7 @@ plt.rc('axes', labelsize=18)
 plt.rc('xtick', labelsize=14)
 plt.rc('ytick', labelsize=14)
 
-###colours
+###colors
 MITRed = (163/256, 31/256, 52/256)
 TUMBlue = "#0065BD"
 TUMBlue_med = (153/256, 193/256, 229/256)
@@ -38,30 +30,23 @@ TUMGray_light = "#CCCCC6"
 TUMOrange_acc = "#E37222"
 TUMGreen_acc = "#A2AD00"
 
-def plot_density_heatmap_fpe(name, rho, args, save=True, show=True, filename=None,
-                         include_date=False, folder=None):
-    plt.imshow(rho)
-    plt.title(name)
-    plt.ylabel("y-yref")
-    plt.xlabel("x-xref")
-    if save:
-        if folder is None:
-            folder = args.path_plot_densityheat
-        if filename is None:
-            if include_date:
-                filename_new = datetime.now().strftime(
-                    "%Y-%m-%d-%H-%M-%S") + "_heatmapFPE_" + 'randomSeed%d_' % args.random_seed + name + ".jpg"
-            else:
-                filename_new = "heatmapFPE_" + 'randomSeed%d_' % args.random_seed + name + ".jpg"
-            plt.savefig(folder + filename_new)
-        else:
-            plt.savefig(args.path_plot_densityheat + filename)
-    if show:
-        plt.show()
-    plt.clf()
+
+"""
+functions to generate plots and figures
+"""
 
 def plot_density_heatmap(name, args, xe_dict, rho_dict, system=None, save=True, show=True, filename=None,
                          include_date=False, folder=None, log_density=False):
+    """
+    function for plotting the density and state predictions in a heatmap
+    """
+
+    plt.rcParams['legend.fontsize'] = 20
+    plt.rc('axes', titlesize=20)
+    plt.rc('axes', labelsize=20)
+    plt.rc('xtick', labelsize=18)
+    plt.rc('ytick', labelsize=18)
+
     density_mean = {}
     num_plots = len(xe_dict)
     min_rho = np.inf
@@ -77,7 +62,7 @@ def plot_density_heatmap(name, args, xe_dict, rho_dict, system=None, save=True, 
             max_rho = density_mean[key].max()
 
     fig, ax = plt.subplots(num_plots + 1, 1, gridspec_kw={'height_ratios': [1] * num_plots + [0.1]})
-    fig.set_figheight(10)
+    fig.set_figheight(9.5)
     fig.set_figwidth(4)
     for i, key in enumerate(xe_dict):
         axis = ax[i]
@@ -94,16 +79,7 @@ def plot_density_heatmap(name, args, xe_dict, rho_dict, system=None, save=True, 
     fig.colorbar(im, ax=ax[num_plots], orientation='horizontal', fraction=0.8, pad=0.2, format="%.0e")
     ax[num_plots].set_title("\\textbf{Density Scale}")
     ax[num_plots].axis('off')
-    # if num_plots == 2:
-    #     fig.suptitle("Density Heatmap at %s                \n max density error: %.3f, mean density error: %.4f            "
-    #              % (name, error.max(), error.mean()))
-    #fig.suptitle("Density Heatmap %s" % name)
     fig.tight_layout()
-    #
-    # if num_plots == 2:
-    #     plt.subplots_adjust(bottom=0.0, right=0.85, top=0.95)
-    #cax = plt.axes([0.87, 0.05, 0.02, 0.85])
-    #fig.colorbar(im, fraction=0.046, pad=0.04, format="%.0e", cax=cax, shrink=0.6)
 
     if save:
         if folder is None:
@@ -111,9 +87,9 @@ def plot_density_heatmap(name, args, xe_dict, rho_dict, system=None, save=True, 
         if filename is None:
             if include_date:
                 filename_new = datetime.now().strftime(
-                    "%Y-%m-%d-%H-%M-%S") + "_heatmap_" + 'randomSeed%d_' % args.random_seed + name + ".jpg"
+                    "%Y-%m-%d-%H-%M-%S") + "_heatmap_" + 'randomSeed%d_' % args.random_seed + name + ".pdf"
             else:
-                filename_new = "heatmap_" + 'randomSeed%d_' % args.random_seed + name + ".jpg"
+                filename_new = "heatmap_" + 'randomSeed%d_' % args.random_seed + name + ".pdf"
             plt.savefig(folder + filename_new)
         else:
             plt.savefig(args.path_plot_densityheat + filename)
@@ -124,6 +100,10 @@ def plot_density_heatmap(name, args, xe_dict, rho_dict, system=None, save=True, 
 
 def plot_scatter(x_nn, x_le, rho_nn, rho_le, name, args, weighted=False,
                  save=True, show=True, filename=None, include_date=False):
+    """
+    function for plotting the predicted and the true states in a scatter plot
+    """
+
     step = int(80 / x_nn.shape[0])
     colors = np.arange(0, step * x_nn.shape[0], step)
     num_plots = 1
@@ -177,6 +157,10 @@ def plot_scatter(x_nn, x_le, rho_nn, rho_le, name, args, weighted=False,
 
 def plot_losscurves(result, name, args, type="Loss",
                     save=True, show=True, filename=None, include_date=False):
+    """
+    function for plotting the loss of the density NN
+    """
+
     colors = [MITRed, TUMBlue, TUMGray] #['g', 'r', 'c', 'b', 'm', 'y']
     plt.figure(figsize=(8, 4.5))
     if type == "Loss":
@@ -206,7 +190,6 @@ def plot_losscurves(result, name, args, type="Loss",
                     plt.plot(val, color=colors[i], linestyle=':', label=label + " (test)")
         # plt.title("Loss Curves for Config \n %s" % (name))
         plt.ylabel("Loss")
-        #plt.ylim(0, 0.02)
         plt.yscale('log')
 
     elif type == "maxError":
@@ -236,7 +219,6 @@ def plot_losscurves(result, name, args, type="Loss",
                         i += 1
         plt.title("Maximum Error for Config \n %s" % (name))
         plt.ylabel("Maximum Error")
-        #plt.ylim(0, 10)
         plt.yscale('log')
     plt.legend(ncol=2, loc='upper right')
     plt.grid()
@@ -253,13 +235,15 @@ def plot_losscurves(result, name, args, type="Loss",
         plt.show()
     plt.clf()
 
+
 def plot_cost(costs_dict, args, plot_log=True, name="", save=True, show=True, filename=None, include_date=True, folder=None):
+    """
+    function for plotting the cost curves of the gradient-based trajectory optimization method
+    """
     num_plots = len(costs_dict["cost_sum"][0])
     for i in range(num_plots):
         plt.figure(figsize=(8, 5))
-        #plt.figure(figsize=(6.4, 4.8))
         #plt.title("Cost Curve %d for Motion Planning \n %s" % (i, name))
-        #for key, val in costs_dict.items():
         for key in ["cost_goal", "cost_uref", "cost_bounds", "cost_coll", "cost_sum"]:
             val = costs_dict[key]
             if (val[0]).dim() == 0:
@@ -307,13 +291,14 @@ def plot_cost(costs_dict, args, plot_log=True, name="", save=True, show=True, fi
 
 def plot_ref(xref_traj, uref_traj, name, args, system, t=None, x_traj=None,
              save=True, show=True, filename=None, include_date=False, folder=None):
-    # xref_traj[0, 2, :] = (xref_traj[0, 2, :] + np.pi) % (2 * np.pi) - np.pi
-    # x_traj[:, 2, :] = (x_traj[:, 2, :] + np.pi) % (2 * np.pi) - np.pi
-    #xref_traj = system.project_angle(xref_traj)
+    """
+    function for plotting the reference trajectory and the resulting state trajectories
+    """
     if t is None:
         t = args.dt_sim * torch.arange(0, xref_traj.shape[2])
     fig, ax = plt.subplots(2, 1, gridspec_kw={'height_ratios': [4, 1]})
     fig.set_figheight(8) # for 5 plots: 13
+    matplotlib.rcParams['text.latex.preamble'] = r'\usepackage{{amsmath}}'
 
     if x_traj is not None:
         #x_traj = system.project_angle(x_traj)
@@ -325,8 +310,6 @@ def plot_ref(xref_traj, uref_traj, name, args, system, t=None, x_traj=None,
                 ax[0].plot(x_traj[i, 0, :], x_traj[i, 1, :], color=TUMGray_light)
             tracking_error = torch.sqrt((x_traj[i, 0, :]-xref_traj[0,0,:]) ** 2 + (x_traj[i, 1, :]-xref_traj[0,1,:]) ** 2)
             ax[1].plot(t, tracking_error, color=TUMGray_light)
-            # ax[2].plot(t, x_traj[i, 2, :], 'slategrey')
-            # ax[3].plot(t, x_traj[0, 3, :], 'slategrey')
 
     ax[0].plot(xref_traj[0,0,:], xref_traj[0,1,:],  color=TUMBlue,
                label='Reference Trajectory $\mathbf{x}_*(\cdot)$')
@@ -337,8 +320,7 @@ def plot_ref(xref_traj, uref_traj, name, args, system, t=None, x_traj=None,
     ax[0].set_ylim(system.X_MIN[0, 1, 0] - 1, system.X_MAX[0, 1, 0] + 1)
     ax[0].set_xticks(np.arange(system.X_MIN[0, 0, 0], system.X_MAX[0, 0, 0]+1, 5))
     ax[0].set_yticks(np.arange(system.X_MIN[0, 1, 0], system.X_MAX[0, 1, 0]+1, 5))
-    ax[0].legend() #loc='lower left')
-    # ax[0].set_title("Reference Trajectories of type " + args.input_type + "\n" + name)
+    ax[0].legend()
 
     ax[1].plot(t, torch.zeros_like(t), color=TUMBlue)
     ax[1].grid()
@@ -347,28 +329,7 @@ def plot_ref(xref_traj, uref_traj, name, args, system, t=None, x_traj=None,
     ax[1].set_ylim(0, torch.sqrt(system.XE0_MAX[0, 0, 0] ** 2 + system.XE0_MAX[0, 1, 0] ** 2) + 1)
     ax[1].set_title("$\quad$ ")
 
-    # ax[2].plot(t, xref_traj[0, 2, :], 'firebrick')
-    # ax[2].grid()
-    # ax[2].set_xlabel("Time [s]")
-    # ax[2].set_ylabel("Heading angle $\phi$ [rad]")
-    # ax[2].set_ylim(system.X_MIN[0, 2, 0] - 0.1, system.X_MAX[0, 2, 0] + 0.1)
-    #
-    # ax[3].plot(t, xref_traj[0, 3, :], 'firebrick')
-    # ax[3].grid()
-    # ax[3].set_xlabel("Time [s]")
-    # ax[3].set_ylabel("Velocity [m/s]")
-    # ax[3].set_ylim(system.X_MIN[0, 3, 0] - 0.1, system.X_MAX[0, 3, 0] + 0.1)
-    #
-    # ax[4].plot(t[:uref_traj.shape[2]], uref_traj[0, 0, :], label='Angular velocity')
-    # ax[4].plot(t[:uref_traj.shape[2]], uref_traj[0, 1, :], label='Longitudinal acceleration')
-    # ax[4].grid()
-    # ax[4].set_xlabel("Time [s]")
-    # ax[4].set_ylabel("Reference Inputs")
-    # ax[4].set_ylim(system.UREF_MIN[0, :, 0].min() - 0.1, system.UREF_MAX[0, :, 0].max() + 0.1)
-    # ax[4].legend()
-
     fig.tight_layout()
-    #fig.align_ylabels(ax[:])
     if save:
         if folder is None:
             folder = args.path_plot_references
@@ -385,6 +346,10 @@ def plot_ref(xref_traj, uref_traj, name, args, system, t=None, x_traj=None,
 
 def plot_grid(object, args, timestep=None, cmap='binary', name=None,
               save=True, show=True, filename=None, include_date=False, folder=None):
+    """
+    function for occupation map of the environment
+    """
+
     if save:
         plt.close("all")
     if torch.is_tensor(object):
@@ -436,6 +401,10 @@ def plot_grid(object, args, timestep=None, cmap='binary', name=None,
 
 
 def plot_motion(i, cmap, x_traj, rho_traj, xref_traj, args, grid_env_sc):
+    """
+    function for plotting the position of the sample trajectories weighted by their density at a certain time point in
+    the occupation map
+    """
 
     with torch.no_grad():
         # 3. compute marginalized density grid
@@ -463,6 +432,10 @@ def plot_motion(i, cmap, x_traj, rho_traj, xref_traj, args, grid_env_sc):
     plt.tight_layout()
 
 def plot_traj(ego, mp_results, mp_methods, args, folder=None, traj_idx=None):
+    """
+    function for plotting the reference trajectories planned by different motion planners in the occupation grid
+    """
+
     if traj_idx is None:
         traj_idx = len(mp_results[mp_methods[0]]["x_traj"]) - 1
     grid = ego.env.grid[:, :, [1]]
@@ -524,14 +497,12 @@ def plot_traj(ego, mp_results, mp_methods, args, folder=None, traj_idx=None):
         grid_idx = grid_all[idx]
         grid_idx[:, :] = torch.from_numpy(colorarray[[i], :]) #.unsqueeze(0)
         grid_all[idx] = grid_idx
-    #plot_grid(grid_all, self.args, name="Trajectories" % i, cmap=cmap, show=False, save=True, folder=folder)
 
     plt.imshow(torch.transpose(grid_all, 0, 1), origin="lower")
     gridpos_x, gridpos_y = pos2gridpos(args, pos_x=[x0[0, 0, 0], ego.xrefN[0, 0, 0]],
                                        pos_y=[x0[0, 1, 0], ego.xrefN[0, 1, 0]])
     plt.scatter(gridpos_x[0], gridpos_y[0], c=col_start, marker='o', s=80, label="Start")
     plt.scatter(gridpos_x[1], gridpos_y[1], c=col_start, marker='x', s=100, label="Goal")
-    #plt.pcolormesh(grid_all.T, cmap=cmap, norm=norm)
     plt.axis('scaled')
     if args.mp_use_realEnv == False:
         plt.legend(bbox_to_anchor=(0.5, -0.11), loc="upper center")
@@ -555,86 +526,3 @@ def plot_traj(ego, mp_results, mp_methods, args, folder=None, traj_idx=None):
     filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_GridTraj%d" % traj_idx + ".jpg"
     plt.savefig(folder + filename, dpi=200)
     plt.clf()
-
-# def plot_density_heatmap2(x, rho, name, args, plot_limits=None, combine="mean", save=True, show=True, filename=None, include_date=False):
-#     """
-#     Plot a heat map
-#
-#     Parameters
-#     ----------
-#     x: torch.Tensor
-#         batch_size x self.DIM_X: tensor of states at certain time point
-#     rho: torch.Tensor
-#         batch_size: tensor of corresponding densities
-#     """
-#
-#     if plot_limits is None:
-#         plot_limits = [-np.inf, np.inf]
-#     ny = 22
-#     nx = 22
-#     sample_size = 1000
-#     xmin, xmax, ymin, ymax = -2.1, 2.1, -2.1, 2.1
-#
-#     density_log = np.ones((ny, nx))
-#     density = np.zeros((ny, nx))
-#     x = x.detach().cpu().numpy()
-#     rho = rho.detach().cpu().numpy()
-#
-#     # get the number of the bin in x and y direction for each state sample
-#     bin_x = ((x[:,0] - xmin) / ((xmax - xmin) / nx)).astype(np.int32)
-#     bin_y = ((x[:,1] - ymin) / ((ymax - ymin) / ny)).astype(np.int32)
-#     bin_x = np.clip(bin_x, 0, nx - 1)
-#     bin_y = np.clip(bin_y, 0, ny - 1)
-#
-#     # save density and state 3+4 in list of the corresponding bin
-#     bins_rho = [[[] for _ in range(nx)] for _ in range(ny)]
-#     bins_x = [[[] for _ in range(nx)] for _ in range(ny)]
-#     for i in range(bin_x.shape[0]):
-#         bins_rho[bin_y[i]][bin_x[i]].append(rho[i])
-#         bins_x[bin_y[i]][bin_x[i]].append(x[i, 2:])
-#
-#     for i in range(ny):
-#         for j in range(nx):
-#             if len(bins_rho[i][j]) > 0:
-#                 if combine == "mean":
-#                     density_log[i, j] = np.mean(bins_rho[i][j])
-#                     density[i, j] = np.mean(bins_rho[i][j])
-#                 elif combine == "max":
-#                     density_log[i, j] = np.max(bins_rho[i][j])
-#                     density[i, j] = np.max(bins_rho[i][j])
-#                 elif combine == "sum":
-#                     density_log[i, j] = np.sum(bins_rho[i][j])  # / xpos.shape[0]
-#                     density[i, j] = np.sum(bins_rho[i][j])  # / xpos.shape[0]
-#                 elif combine == "sampling" and len(bins_rho[i][j]) > 3:
-#                     samp_x = np.stack(bins_x[i][j], axis=0).astype(np.double)
-#                     samp_rho = np.stack(bins_rho[i][j], axis=0).astype(np.double)
-#                     estimator = LinearNDInterpolator(samp_x, samp_rho, fill_value=0.0)
-#                     samp_xs, hull1 = sample_from(samp_x, sample_size, sel_indices=[0, 1],
-#                                                  hull_sampling=True, gain=1, faster_hull=True)
-#                     dens2 = estimator(*(samp_xs.T))
-#                     cvh_vol = scipy.spatial.ConvexHull(bins_x[i][j]).volume
-#                     prob = np.mean(dens2) * cvh_vol
-#                     density_log[i, j] = prob
-#                     density[i, j] = prob
-#
-#     extent = [xmin, xmax, ymin, ymax]
-#     for i, heatmap in enumerate([np.log(density_log), density]):
-#         if i == 0:
-#             continue
-#         im = plt.imshow(heatmap, extent=extent, origin='lower', vmin=plot_limits[0], vmax=plot_limits[1])
-#         name_new = ("logRho_" if i == 0 else "Rho_") + name
-#         plt.title("Heatmap for Simulation \n %s \n Density estimation by %s" % (name_new, combine))
-#         plt.xlabel("x-xref")
-#         plt.ylabel("y-yref")
-#         plt.colorbar(im, fraction=0.046, pad=0.04, format="%.2f")
-#         plt.tight_layout()
-#         if save:
-#             if filename is None:
-#                 if include_date:
-#                     filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_heatmap_" + 'randomSeed%d_' % args.random_seed + name_new + ".jpg"
-#                 else:
-#                     filename = "heatmap_" + 'randomSeed%d_' % args.random_seed + name_new + ".jpg"
-#             plt.savefig(args.path_plot_densityheat + filename)
-#         if show:
-#             plt.show()
-#         plt.clf()

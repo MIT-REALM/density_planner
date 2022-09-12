@@ -10,15 +10,32 @@ import shutil
 
 
 class MultivariateGaussians():
+    """
+    class for the pdf
+    """
     def __init__(self, means, cov_diags, weights, x_min, x_max):
+        """
+        initialize parameters
+
+        :param means:       mean vectors of the Gaussians
+        :param cov_diags:   diagonal values of the covariance matrices
+        :param weights:     weights for the Gaussians
+        :param x_min:       lower bound for the states
+        :param x_max:       upper bound
+        """
         self.means = means
         self.cov_diags = cov_diags
         self.weights = weights
         self.min = x_min
         self.max = x_max
-        ##to-do: normalize pdfs (values outside of limits are zero)
 
     def __call__(self, x):
+        """
+        compute the probability for sample x
+
+        :param x: sample state x
+        :return: probability of x
+        """
         prob = torch.zeros(x.shape[0])
         for i, w in enumerate(self.weights):
             prob += w * multivariate_normal.pdf(x[:,:, 0], self.means[i, :], torch.diag(self.cov_diags[i, :]))
@@ -27,6 +44,7 @@ class MultivariateGaussians():
                                 torch.any(x[:, :, 0] > self.max[[0], :, 0], 1))
         prob[mask] = 0
         return prob
+
 
 def initialize_logging(args, name):
     """
@@ -49,8 +67,15 @@ def initialize_logging(args, name):
     return path_log
 
 
-
 def pos2gridpos(args, pos_x=None, pos_y=None):
+    """
+    transform position in real-world coordinates to position in grid coordinates
+
+    :param args:    settings
+    :param pos_x:   x coordinates which should be converted
+    :param pos_y:   y coordinates which should be converted
+    :return: x and y position in grid coordinates
+    """
     if pos_x is not None:
         if isinstance(pos_x, list):
             pos_x = torch.from_numpy(np.array(pos_x))
@@ -73,6 +98,15 @@ def pos2gridpos(args, pos_x=None, pos_y=None):
 
 
 def gridpos2pos(args, pos_x=None, pos_y=None):
+    """
+    transform position in grid coordinates to position in real-world coordinates
+
+    :param args:    settings
+    :param pos_x:   x coordinates which should be converted
+    :param pos_y:   y coordinates which should be converted
+    :return: x and y position in real-world coordinates
+    """
+
     if pos_x is not None:
         pos_x = (pos_x / (args.grid_size[0]-1)) * (args.environment_size[1] - args.environment_size[0]) + \
             args.environment_size[0]
@@ -83,6 +117,13 @@ def gridpos2pos(args, pos_x=None, pos_y=None):
 
 
 def bounds2array(env, args):
+    """
+    get bounds of environment obstacles in real-world coordinates
+
+    :param env:  environment
+    :param args: settings
+    :return: arrays with the bounds
+    """
     bounds_array = np.zeros((len(env.objects), 4, env.grid.shape[2]))
     for t in range(env.grid.shape[2]):
         for k in range(len(env.objects)):
@@ -93,6 +134,16 @@ def bounds2array(env, args):
 
 
 def shift_array(grid, step_x=0, step_y=0, fill=0):
+    """
+    shift array or tensor
+
+    :param grid:    array/ tensor which should be shifted
+    :param step_x:  shift in x direction
+    :param step_y:  shift in y direction
+    :param fill:    value which should be used to fill the new cells
+    :return: shifted array / tensor
+    """
+
     result = torch.zeros_like(grid)
 
     if step_x > 0:
@@ -116,23 +167,46 @@ def shift_array(grid, step_x=0, step_y=0, fill=0):
     return result_new
 
 
-def enlarge_grid(grid, wide):
-    grid_enlarged = grid #.clone().detach()
-    for i in range(wide):
+def enlarge_grid(grid, width):
+    """
+    compute the occupation map with padded obstacles
+    :param grid:  occupation map
+    :param width: size of the padding
+    :return: padded occupation map
+    """
+    grid_enlarged = grid
+    for i in range(width):
         grid_enlarged += shift_array(grid, step_x=1)
         grid_enlarged += shift_array(grid, step_x=-1)
-    grid = grid_enlarged #.clone().detach()
-    for i in range(wide):
+    grid = grid_enlarged
+    for i in range(width):
         grid_enlarged += shift_array(grid, step_y=1)
         grid_enlarged += shift_array(grid, step_y=-1)
     return torch.clamp(grid_enlarged, 0, 1)
 
+
 def compute_gradient(grid, step=1):
+    """
+    compute the gradient in x and y direction of a given tensor
+    :param grid: tensor
+    :param step: step size for the gradient computation
+    :return: gradient in x direction, gradient y direction
+    """
+
     grid_gradientX = (shift_array(grid, step_x=step, fill=1) - shift_array(grid, step_x=-step, fill=1)) / (2 * step)
     grid_gradientY = (shift_array(grid, step_y=step, fill=1) - shift_array(grid, step_y=-step, fill=1)) / (2 * step)
     return grid_gradientX, grid_gradientY
 
+
 def sample_pdf(system, num, spread=0.3):
+    """
+    create random pdf
+
+    :param system:  system
+    :param num:     number of gaussians
+    :param spread:  spread of the mean vecors of the Gaussians
+    :return: pdf
+    """
     weights = torch.rand(num)
     means = spread * torch.randn(num, system.DIM_X)
     cov_diags = 5 * torch.rand(num, system.DIM_X)
@@ -140,25 +214,30 @@ def sample_pdf(system, num, spread=0.3):
     return pdf
 
 
-# def pdf2grid(pdf, xref0, system, args):
-#     N, positions = get_mesh_sample_points(system, args)
-#     probs = pdf(positions)
-#     grid_pos_x, grid_pos_y = pos2gridpos(args, positions[:, 0]+xref0[0, 0, 0], positions[:, 1]+xref0[0, 1, 0], format='np')
-#     grid = torch.zeros((args.grid_size[0], args.grid_size[1], 1))
-#     step = int(N[2] * N[3])
-#     for i in range(int(N[0] * N[1])):
-#         grid[(grid_pos_x[i * step]), (grid_pos_y[i * step])] += probs[i*step:(i+1)*step].sum()
-#     grid /= grid.sum() #N[3] * N[4]
-#     return grid
-#--> pred2grid is 3times faster
-
 def traj2grid(x_traj, args):
+    """
+    convert trajectory to an occupation grid
+
+    :param x_traj:  state trajectory
+    :param args:    settings
+    :return: occupation grid
+    """
     gridpos_x, gridpos_y = pos2gridpos(args, pos_x=x_traj[:, 0, :], pos_y=x_traj[:, 1, :])
     grid = torch.zeros((args.grid_size[0], args.grid_size[1]))
     grid[gridpos_x.clamp(0, args.grid_size[0]-1), gridpos_y.clamp(0, args.grid_size[1]-1)] = 1
     return grid
 
+
 def check_collision(grid_ego, grid_env, max_coll_sum, return_coll_pos=False):
+    """
+    test if ego vehicle collides with obstacles
+
+    :param grid_ego:        occupation map of the ego vehicle
+    :param grid_env:        occupation map of the environment
+    :param max_coll_sum:    threshold for the admissible collision probability
+    :param return_coll_pos: True if also the position of the collision should be computed
+    :return:
+    """
     collision = False
     coll_grid = grid_ego * grid_env
     coll_sum = coll_grid.sum()
@@ -172,8 +251,12 @@ def check_collision(grid_ego, grid_env, max_coll_sum, return_coll_pos=False):
             coll_pos_prob = torch.stack((coll_pos[:][0], coll_pos[:][1], coll_prob[:]))
     return collision, coll_sum, coll_pos_prob
 
+
 def pred2grid(x, rho, args, return_gridpos=False):
-    """average the density of points landing in the same bin and return normalized grid"""
+    """
+    average the density of points landing in the same bin and return normalized grid
+    """
+
     gridpos_x, gridpos_y = pos2gridpos(args, pos_x=x[:, 0, 0], pos_y=x[:, 1, 0])
     gridpos_x = torch.clamp(gridpos_x, 0, args.grid_size[0])
     gridpos_y = torch.clamp(gridpos_y, 0, args.grid_size[1])
@@ -196,7 +279,17 @@ def pred2grid(x, rho, args, return_gridpos=False):
         return grid, gridpos
     return grid
 
+
 def get_closest_free_cell(gridpos, grid_env, args):
+    """
+    compute the closest cell where occupation probability is zero
+
+    :param gridpos: current grid position
+    :param grid_env:occupation map of the environment
+    :param args:    settings
+    :return: grid position of the closest free cell
+    """
+
     gridpos = gridpos.long()
     for i in range(1, min(args.grid_size)):
         min_x = max(gridpos[0] - i, 0)
@@ -213,7 +306,17 @@ def get_closest_free_cell(gridpos, grid_env, args):
             return torch.tensor([min_x+free_cell[0][0], min_y+free_cell[1][0]])
     return None
 
+
 def get_closest_obs_cell(gridpos, grid_env, args):
+    """
+    compute the closest cell where occupation probability is nonzero
+
+    :param gridpos: current grid position
+    :param grid_env:occupation map of the environment
+    :param args:    settings
+    :return: grid position of the closest obstacle cell
+    """
+
     gridpos = gridpos.long()
     for i in range(1, args.max_obsDist):
         min_x = max(gridpos[0] - i, 0)
@@ -230,7 +333,16 @@ def get_closest_obs_cell(gridpos, grid_env, args):
             return torch.tensor([min_x+obs_cell[0][0], min_y+obs_cell[1][0]])
     return None
 
+
 def time2idx(t, args, short=True):
+    """
+    convert continuous time point to the number of time steps
+
+    :param t:       point in time
+    :param args:    settings
+    :param short:   True if we consider short time step
+    :return: number of time steps
+    """
     if isinstance(t, list):
         t = torch.from_numpy(np.array(t))
     if short:
@@ -238,7 +350,17 @@ def time2idx(t, args, short=True):
     else:
         return int((t / args.dt_sim).round())
 
+
 def idx2time(idx, args, short=True):
+    """
+    convert number of time steps to continuous time
+
+    :param t:       point in time
+    :param args:    settings
+    :param short:   True if we consider short time step
+    :return: point in time
+    """
+
     if isinstance(idx, list):
         idx = torch.from_numpy(np.array(idx))
     if short:
@@ -246,19 +368,47 @@ def idx2time(idx, args, short=True):
     else:
         return idx * args.dt_sim
 
+
 def get_mesh_sample_points(system, args):
+    """
+    sample initial states in a regular mesh
+
+    :param system:  system
+    :param args:    settings
+    :return: dimension of the mesh and sampled states
+    """
     x_min = system.XE0_MIN.flatten()
     x_max = system.XE0_MAX.flatten()
     N = (x_max - x_min) / args.grid_wide + 1
     positions = get_mesh_pos(N, x_min=x_min, x_max=x_max)
     return N, positions
 
+
 def make_path(path0, name):
+    """
+    create folder
+
+    :param path0:   path to the folder
+    :param name:    folder name
+    :return:
+    """
     path = path0 + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_" + name + "/"
     os.makedirs(path)
     return path
 
+
 def get_cost_increase(methods, results, thr_coll=10, thr_goal=20, max_iter=None):
+    """
+    compute and print the evaluation criteria collision risk increase, goal cost increase, input cost increase and
+    failure rate
+
+    :param methods:     list with all methods which should be evaluated
+    :param results:     motion planning data
+    :param thr_coll:    threshold for accepted collision cost
+    :param thr_goal:    threshold for accepted goal cost
+    :param max_iter:    last environment index which should be considered for the computations
+    :return: motion planning data extended with the evaluation criteria
+    """
     with torch.no_grad():
         # look for failures (cost_coll > failure_thr)
         for method in methods:
@@ -292,13 +442,29 @@ def get_cost_increase(methods, results, thr_coll=10, thr_goal=20, max_iter=None)
     print_cost_increase(methods, results)
     return results
 
+
 def print_cost_increase(methods, results):
+    """
+    print the evaluation criteria
+
+    :param methods:     list with all methods which should be evaluated
+    :param results:     motion planning data
+    """
     for method in methods:
         print("%s: number valid: %d" % (method, results[method]["num_valid"]))
         for s in ["cost_coll", "cost_goal", "cost_bounds", "cost_uref", "sum_time"]:
             print("%s: %s: %.2f" % (method, s, results[method][s] / results[method]["num_valid"]))
 
+
 def get_cost_table(methods, results, max_iter=None):
+    """
+    print the motion planning results in latex-format
+
+
+    :param methods:     list with all methods which should be evaluated
+    :param results:     motion planning data
+    :param max_iter:    last environment index which should be printed
+    """
     print("#### TABLE:")
     for s in ["cost_coll", "cost_goal", "cost_bounds", "cost_uref", "time"]:
         print("#### %s:" % s)
@@ -320,7 +486,16 @@ def get_cost_table(methods, results, max_iter=None):
                     print(" - ", end=" & ")
             print(" \\ ")
 
+
 def find_start_goal(env, args):
+    """
+    find random start and goal state in the free space of the environment
+
+    :param env:  environment
+    :param args: settings
+    :return: start state, goal state
+    """
+
     iter = 0
     valid = False
 
@@ -349,7 +524,19 @@ def find_start_goal(env, args):
 
     return torch.tensor([pos_0[0], pos_0[1], theta_0[0], v_0[0], 0]).reshape(1, -1, 1).type(torch.FloatTensor), torch.tensor([pos_N[0], pos_N[1], 0, 0, 0]).reshape(1, -1, 1)
 
+
 def check_start_goal(grid, pos_0, pos_N, theta_0, v_0, args):
+    """
+    check if suggested start and goal state is valid
+
+    :param grid:    environment occupation map
+    :param pos_0:   position of the start state
+    :param pos_N:   position of the goal state
+    :param theta_0: initial heading
+    :param v_0:     initial velocity
+    :param args:    settings
+    :return: True if start and goal is valid
+    """
     dist_start_goal = np.sqrt((pos_0[0] - pos_N[0]) ** 2 + (pos_0[1] - pos_N[1]) ** 2)
     pos_1s = pos_0 + np.array([v_0[0] * np.cos(theta_0[0]), v_0[0] * np.sin(theta_0[0])])
     gridpos_x, gridpos_y = pos2gridpos(args, pos_x=[pos_0[0], pos_0[0] - 0.5, pos_0[0] + 0.5, pos_1s[0], pos_N[0],
@@ -375,21 +562,14 @@ def check_start_goal(grid, pos_0, pos_N, theta_0, v_0, args):
     return not (dist_start_goal < 10 or dist_start_goal > 70 or density_0 > 0.1 or density_1s > 0.3 or density_N > 0.1)
 
 
-
-    # density_0 = grid[np.clip(gridpos_x[0], 0, grid.shape[0]-1), np.clip(gridpos_y[0], 0, grid.shape[1]-1), 0]
-    # density_01 = grid[np.clip(gridpos_x[1], 0, grid.shape[0]-1), np.clip(gridpos_y[1], 0, grid.shape[1]-1), 10]
-    # density_02 = grid[np.clip(gridpos_x[2], 0, grid.shape[0]-1), np.clip(gridpos_y[1], 0, grid.shape[1]-1), 10]
-    # density_03 = grid[np.clip(gridpos_x[1], 0, grid.shape[0]-1), np.clip(gridpos_y[2], 0, grid.shape[1]-1), 10]
-    # density_04 = grid[np.clip(gridpos_x[2], 0, grid.shape[0]-1), np.clip(gridpos_y[2], 0, grid.shape[1]-1), 10]
-    # density_0 = max(density_0, density_01, density_02, density_03, density_04)
-    # density_1s = grid[np.clip(gridpos_x[3], 0, grid.shape[0]-1), np.clip(gridpos_y[3], 0, grid.shape[1]-1), 10]
-    # density_N = grid[np.clip(gridpos_x[4], 0, grid.shape[0]-1), np.clip(gridpos_y[4], 0, grid.shape[1]-1), 100]
-    # density_N1 = grid[np.clip(gridpos_x[5], 0, grid.shape[0]-1), np.clip(gridpos_y[5], 0, grid.shape[1]-1), 10]
-    # density_N2 = grid[np.clip(gridpos_x[6], 0, grid.shape[0]-1), np.clip(gridpos_y[5], 0, grid.shape[1]-1), 10]
-    # density_N3 = grid[np.clip(gridpos_x[5], 0, grid.shape[0]-1), np.clip(gridpos_y[6], 0, grid.shape[1]-1), 10]
-    # density_N4 = grid[np.clip(gridpos_x[6], 0, grid.shape[0]-1), np.clip(gridpos_y[6], 0, grid.shape[1]-1), 10]
-
 def convert_color(s):
+    """
+    convert color to rgba
+
+    :param s: old color format (string with hexadecimal code or rgb values)
+    :return: rgba values
+    """
+
     if type(s) == str:
         return np.array([[float(int(s[1:3], 16)) / 255, float(int(s[3:5], 16)) / 255, float(int(s[5:], 16)) / 255, 1]])
     return np.array([[s[0], s[1], s[2], 1]])

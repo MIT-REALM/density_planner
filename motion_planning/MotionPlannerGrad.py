@@ -54,6 +54,9 @@ class MotionPlannerGrad(MotionPlanner):
         return up, cost, t_plan
 
     def find_initial_traj(self):
+        """
+        initialization procedure: find good guess for the reference trajectory without density predicitons
+        """
         if self.plot:
             self.path_log_opt = make_path(self.path_log, self.name + "_initialTraj")
 
@@ -76,6 +79,13 @@ class MotionPlannerGrad(MotionPlanner):
         return up_best, cost_min
 
     def find_best(self, criterium="cost_sum"):
+        """
+        return best trajectory from the initialization procedure
+
+        :param criterium: criterium for comparison
+        :return: up_best: best input parameters
+        :return: cost_min: corresponding cost
+        """
         costs = self.initial_traj[1][criterium][-1]
         cost_min, idx = costs.min(dim=0)
         up_best = self.initial_traj[0][[idx], :, :]
@@ -86,6 +96,12 @@ class MotionPlannerGrad(MotionPlanner):
         return up_best, cost_min
 
     def optimize_traj(self, up):
+        """
+        optimize best trajectory from initialization procedure with the density predictions
+
+        :param up: input parameters
+        :return: optimized input parameters and the corresponding cost
+        """
         if self.plot:
             self.path_log_opt = make_path(self.path_log, self.name + "_improvedTraj")
         up, costs_dict = self.optimize(up, self.ego.args.mp_epochs_density, initializing=False)
@@ -97,6 +113,13 @@ class MotionPlannerGrad(MotionPlanner):
         return up, cost_min
 
     def optimize(self, up, epochs, initializing=False):
+        """
+        gradient-based optimization loop
+        :param up:          input parameters
+        :param epochs:       number of epochs
+        :param initializing: True when in initialization procedure (no density values are considered)
+        :return: optimized input parameters and the corresponding cost
+        """
         if self.plot:
             folder = self.path_log_opt
         else:
@@ -139,22 +162,18 @@ class MotionPlannerGrad(MotionPlanner):
         """
         compute reference trajectory from input parameters for initialization process
 
-        Parameters
-        ----------
-        up: torch.Tensor
+        :param up: torch.Tensor
             parameters specifying the reference input trajectory
-        name: string
+        :param name: string
             name of parameter set for plotting
-        plot: bool
+        :param plot: bool
             True if reference trajectory is plotted
-        folder: string
+        :param folder: string
             name of folder to save plot
 
-        Returns
-        -------
-        uref_traj: torch.Tensor
+        :return: uref_traj: torch.Tensor
             1 x 2 x N_sim_short -1
-        xref_traj: torch.Tensor
+        :return: xref_traj: torch.Tensor
             1 x 4 x N_sim_short
         """
         uref_traj, xref_traj = self.ego.system.up2ref_traj(self.ego.xref0.repeat(up.shape[0], 1, 1),
@@ -169,22 +188,18 @@ class MotionPlannerGrad(MotionPlanner):
         """
         compute cost of a given trajectory
 
-        Parameters
-        ----------
-        uref_traj: torch.Tensor
+        :param uref_traj: torch.Tensor
             1 x 2 x N_sim -1
-        xref_traj: torch.Tensor
+        :param xref_traj: torch.Tensor
             1 x 5 x N_sim
-        x_traj: torch.Tensor
+        :param x_traj: torch.Tensor
             1 x 4 x N_sim
-        rho_traj: torch.Tensor
+        :param rho_traj: torch.Tensor
             1 x 1 x N_sim
 
-        Returns
-        -------
-        cost: torch.Tensor
+        :return: cost: torch.Tensor
             overall cost for given trajectory
-        cost_dict: dictionary
+        :return: cost_dict: dictionary
             contains the weighted costs of all types
         """
         cost_uref = self.get_cost_uref(uref_traj)
@@ -233,18 +248,14 @@ class MotionPlannerGrad(MotionPlanner):
         """
         compute cost for reaching the goal in inilialization process
 
-        Parameters
-        ----------
-        x_traj: torch.Tensor
+        :param x_traj: torch.Tensor
             1 x 4 x N_sim
-        rho_traj: torch.Tensor
+        :param rho_traj: torch.Tensor
             1 x 1 x N_sim
 
-        Returns
-        -------
-        cost: torch.Tensor
+        :return: cost: torch.Tensor
             cost for distance to the goal in the last iteration
-        close: bool
+        :return: close: bool
             True if distance smaller than args.close2goal_thr
         """
 
@@ -263,18 +274,14 @@ class MotionPlannerGrad(MotionPlanner):
         """
         compute the cost for traying in the valid state space in inilialization process
 
-        Parameters
-        ----------
-        x_traj: torch.Tensor
+        :param x_traj: torch.Tensor
             1 x 4 x N_sim
-        rho_traj: torch.Tensor
+        :param rho_traj: torch.Tensor
             1 x 1 x N_sim
 
-        Returns
-        -------
-        cost: torch.Tensor
+        :return: cost: torch.Tensor
             cost for staying in the admissible state space
-        in_bounds: bool
+        :return: in_bounds: bool
             True if inside of valid state space for all time steps
         """
 
@@ -303,14 +310,10 @@ class MotionPlannerGrad(MotionPlanner):
         """
         compute cost for high collision probabilities in inilialization process
 
-        Parameters
-        ----------
-        x_traj: torch.Tensor
+        :param x_traj: torch.Tensor
             1 x 4 x N_sim
 
-        Returns
-        -------
-        cost: torch.Tensor
+        :return: cost: torch.Tensor
             cost for collisions
         """
 
@@ -336,14 +339,10 @@ class MotionPlannerGrad(MotionPlanner):
         """
         compute step of optimizer
 
-        Parameters
-        ----------
-        grad: torch.Tensor
+        :param grad: torch.Tensor
             gradient of cost
 
-        Returns
-        -------
-        step: torch.Tensor
+        :return: step: torch.Tensor
             step for optimizing
         """
 
@@ -368,14 +367,10 @@ class MotionPlannerGrad(MotionPlanner):
         """
         evaluate input parameters (plot and compute final cost), assume that reference trajectory starts at ego.xref0
 
-        Parameters
-        ----------
-        up: torch.Tensor
+        :param up: torch.Tensor
             parameters specifying the reference input trajectory
 
-        Returns
-        -------
-        cost_dict: dictionary
+        :return: cost_dict: dictionary
             contains the unweighted cost tensors
         """
 
@@ -403,16 +398,12 @@ class MotionPlannerGrad(MotionPlanner):
         """
         evaluate input parameters (plot and compute final cost), assume that reference trajectory starts at ego.xref0
 
-        Parameters
-        ----------
-        up: torch.Tensor
+        :param up: torch.Tensor
             parameters specifying the reference input trajectory
-        xe0: torch.Tensor
+        :param xe0: torch.Tensor
             batch_size x 4 x 1: tensor of initial deviation of reference trajectory
 
-        Returns
-        -------
-        cost_dict: dictionary
+        :return: cost_dict: dictionary
             contains the unweighted cost tensors
         """
 
@@ -453,8 +444,10 @@ class MotionPlannerGrad(MotionPlanner):
         return cost_dict
 
 
-
 class MotionPlannerSearch(MotionPlanner):
+    """
+    density planner using a search-based optimization method
+    """
     def __init__(self, ego, name="search", path_log=None):
         super().__init__(ego, name=name, path_log=path_log)
         self.incl_cost_goal = True
@@ -501,14 +494,10 @@ class MotionPlannerSearch(MotionPlanner):
         """
         evaluate input parameters (plot and compute final cost), assume that reference trajectory starts at ego.xref0
 
-        Parameters
-        ----------
-        up: torch.Tensor
+        :param up: torch.Tensor
             parameters specifying the reference input trajectory
 
-        Returns
-        -------
-        cost_dict: dictionary
+        :return: cost_dict: dictionary
             contains the unweighted cost tensors
         """
 
@@ -532,6 +521,11 @@ class MotionPlannerSearch(MotionPlanner):
         return cost_dict
 
     def plan_traj(self):
+        """
+        start the search
+
+        :return: found input parameters and the corresponding cost
+        """
         t0 = time.time()
         self.u0 = torch.arange(self.ego.system.UREF_MIN[0, 0, 0] + 1, self.ego.system.UREF_MAX[0, 0, 0] - 1 + 1e-5,
                                self.ego.args.du_search[0])
@@ -568,6 +562,13 @@ class MotionPlannerSearch(MotionPlanner):
         return up_min, cost_min
 
     def check_up(self, up, cost_goal_old=np.inf):
+        """
+        check if input parameters are valid
+
+        :param up:              input parameters
+        :param cost_goal_old:   old goal cost
+        :return: True if valid
+        """
         with torch.no_grad():
             uref_traj, _, x_traj, rho_traj = self.get_traj(up, name="length%d" % up.shape[2], folder=self.path_log_opt, compute_density=True, plot=self.plot)
             cost, cost_dict = self.get_cost(uref_traj, x_traj, rho_traj)
@@ -603,6 +604,13 @@ class MotionPlannerSearch(MotionPlanner):
         return False
 
     def extend_traj(self, up_old, cost_goal_old):
+        """
+        extend input parameters and check the resulting trajectories
+
+        :param up_old:          unextended input parameters
+        :param cost_goal_old:   old goal cost of the unextended input parameters
+        :return: True if maximum length of input parameters is reached
+        """
         if up_old.shape[2] == self.num_discr:
             return True
         for u0 in self.u0:
@@ -614,6 +622,9 @@ class MotionPlannerSearch(MotionPlanner):
 
 
 class MotionPlannerSampling(MotionPlannerSearch):
+    """
+    density planner using a sampling-based optimization method
+    """
     def __init__(self, ego, name="sampling", path_log=None):
         super().__init__(ego, name=name, path_log=path_log)
         self.cost_path = np.array([])
@@ -625,6 +636,11 @@ class MotionPlannerSampling(MotionPlannerSearch):
         self.weight_coll = 14
 
     def plan_traj(self):
+        """
+        start sampling procedure
+
+        :return: final input parameters and the corresponding cost
+        """
         if self.plot:
             self.path_log_opt = make_path(self.path_log, self.name + "_foundTraj")
         else:
@@ -666,6 +682,14 @@ class MotionPlannerSampling(MotionPlannerSearch):
         return up_ext, cost_min
 
     def extend_traj(self, up_old, cost_goal_old):
+        """
+        extend input parameters and check the resulting trajectories
+
+        :param up_old:          unextended input parameters
+        :param cost_goal_old:   old goal cost of the unextended input parameters
+        :return: True if maximum length of input parameters is reached
+        :return: extended input parameters
+        """
         up_add = 0.5 * torch.randn((1, 2, 1))
         up_add = up_add.clamp(self.ego.system.UREF_MIN, self.ego.system.UREF_MAX)
         up = torch.cat((up_old, up_add), dim=2)

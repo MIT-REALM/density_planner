@@ -1,89 +1,99 @@
 from systems.sytem_CAR import Car
 import torch
 import hyperparams
-from plots.plot_functions import plot_scatter, plot_density_heatmap, plot_ref
+from plots.plot_functions import plot_density_heatmap, plot_ref
+from motion_planning.utils import make_path
 from density_training.utils import load_nn, get_nn_prediction
 from data_generation.utils import load_inputmap, load_outputmap
-import numpy as np
-import os
-from data_generation.utils import load_outputmap, get_input_tensors, get_output_variables
-from datetime import datetime
-from motion_planning.utils import make_path
 
 
+"""
+script to compare density predictions of LE, Monte Carlo simulation and neural density predictor
+"""
 if __name__ == "__main__":
-    sample_size = 1000
+
+    use_le = True # compute density with Liouville equation
+    use_mc = False  # compute density with Monte Carlo
+    use_nn = True  # compute density with NN
+    use_nn2 = False  # compute density with second NN
+
+    sample_size = 1000  # number of samples
+    sample_size_mc = 0  # number of additional samples for Monte Carlo simulation
     args = hyperparams.parse_args()
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus
-    args.device = "cpu" # "cuda" if torch.cuda.is_available() else "cpu"
-    run_name = args.run_name
-    results = []
 
-    #short_name = run_name
-    #nn_name = args.path_nn + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_NN_" + short_name + '.pt'
-
-    # data preparation
+    # preparation
     torch.manual_seed(args.random_seed)
-    bs = args.batch_size
     system = Car(args)
-    name = 'NN_randomSeed%d' % (args.random_seed)
+    system.X_MIN[0, 0, 0] = -20
+    system.X_MIN[0, 1, 0] = -20
+    system.X_MAX[0, 0, 0] = 20
+    system.X_MAX[0, 1, 0] = 20
+    name = "figures_paper"
     path = make_path(args.path_plot_densityheat, name)
 
-    xref_traj, rho_traj, uref_traj, u_params, xe_traj, t_vec = system.get_valid_trajectories(sample_size, args)
-    #x_traj = xe_traj + xref_traj
-    xref0 = xref_traj[0, :, 0]
+    if use_nn:
+        _, num_inputs = load_inputmap(system.DIM_X, args)
+        _, num_outputs = load_outputmap(system.DIM_X, args)
+        model, _ = load_nn(num_inputs, num_outputs, args, load_pretrained=True)
+        model.eval()
+    if use_nn2:
+        _, num_inputs = load_inputmap(system.DIM_X, args)
+        _, num_outputs = load_outputmap(system.DIM_X, args)
+        model2, _ = load_nn(num_inputs, num_outputs, args, load_pretrained=True, nn2=True)
+        model2.eval()
 
-    # NN prediction
-    _, num_inputs = load_inputmap(xref_traj.shape[1], args)
-    _, num_outputs = load_outputmap(xref_traj.shape[1], args)
-    model, _ = load_nn(num_inputs, num_outputs, args, load_pretrained=True)
-    model.eval()
-    #step = 5
-    #t_vec = np.arange(0, args.N_sim * args.dt_sim, step * args.dt_sim)
-    xe_nn = system.sample_xe(args)
-    #xe_nn = torch.zeros_like(xe_traj)
-    #rho_nn = torch.zeros_like(rho_traj)
+    log_density = True
+    time_steps = [30, 50, 70, 100, 200, 300, 400, 500, 800, 900, 1000]
+    for k in range(12):
+        xe0 = system.sample_xe0(sample_size)
+        Up, uref_traj, xref_traj = system.get_valid_ref(args)
 
-    # args.path_plot_densityheat = os.path.join(args.path_plot_densityheat, datetime.now().strftime("%Y-%m-%d") + "_" + args.run_name + "/")
-    # if not os.path.exists(args.path_plot_densityheat):
-    #     os.makedirs(args.path_plot_densityheat)
-    # args.path_plot_scatter = os.path.join(args.path_plot_scatter, datetime.now().strftime("%Y-%m-%d") + "_" + args.run_name + "/")
-    # if not os.path.exists(args.path_plot_scatter):
-    #     os.makedirs(args.path_plot_scatter)
+        # LE:
+        if use_le:  # get random initial states
+            xe_le, rho_le = system.compute_density(xe0, xref_traj, uref_traj, args.dt_sim,
+                                                  cutting=False, log_density=log_density)
+            plot_ref(xref_traj, uref_traj, "traj%d" % k, args, system, x_traj=xe_le[:50, :, :]+xref_traj,
+                 include_date=True, folder=path)
 
+        #MC
+            if sample_size_mc != 0:
+                xe0 = system.sample_xe0(sample_size_mc)
+                xe_mc, _ = system.compute_density(xe0, xref_traj, uref_traj, args.dt_sim,
+                                                 cutting=False, compute_density=False)
+                if use_le:
+                    xe_mc = torch.cat((xe_le, xe_mc), 0)
+            else:
+                xe_mc = xe_le
 
-    for i, t in enumerate(t_vec):
-        _, rho_nn = get_nn_prediction(model, xe_nn[:, :, 0], xref0, t, u_params, args)
-        # error = torch.sqrt((xe_nn[:, 0, i] - xe_traj[:, 0, i]) ** 2 + (xe_nn[:, 1, i] - xe_traj[:, 1, i]) ** 2)
-        # print("Max position error: %.3f, Mean position error: %.4f" %
-        #       (torch.max(torch.abs(error)), torch.mean(torch.abs(error))))
-        # min_rho = torch.minimum(rho_nn.min(), rho_traj[:, 0, i].min())
-        # max_rho = torch.maximum(rho_nn.max(), rho_traj[:, 0, i].max())
-        # plot_limits = [min_rho, max_rho]
-        # plot_density_heatmap2(xe_nn[:, :, i], rho_nn[:, 0, i], "time=%.2fs_NN" % t, args, plot_limits=plot_limits,
-        #                      save=True, show=True, filename=None)
-        # plot_density_heatmap2(xe_traj[:, :, i], rho_traj[:, 0, i], "time=%.2fs_LE" % t, args, plot_limits=plot_limits,
-        #                      save=True, show=False, filename=None)
-        with torch.no_grad():
-            #for iter_plot in [3, 5, 7, 10, 20, 30, 50, 80]:  # 50, 70, xe_traj.shape[2]-1]:
+        if use_nn:
+            t_vec = args.dt_sim * torch.arange(0, xref_traj.shape[2])
+            xe_nn = torch.zeros(xe0.shape[0], system.DIM_X, xref_traj.shape[2])
+            rho_nn = torch.zeros(xe0.shape[0], 1, xref_traj.shape[2])
+            for i, t in enumerate(t_vec):
+                xe_nn[:, :, [i]], rho_nn[:, :, [i]] = get_nn_prediction(model, xe0, xref_traj[0, :, 0], t, Up, args)
+
+        if use_nn2:
+            t_vec = args.dt_sim * torch.arange(0, xref_traj.shape[2])
+            xe_nn2 = torch.zeros(xe0.shape[0], system.DIM_X, xref_traj.shape[2])
+            rho_nn2 = torch.zeros(xe0.shape[0], 1, xref_traj.shape[2])
+            for i, t in enumerate(t_vec):
+                xe_nn2[:, :, [i]], rho_nn2[:, :, [i]] = get_nn_prediction(model2, xe0, xref_traj[0, :, 0], t, Up, args)
+
+        for i, iter_plot in enumerate(time_steps): #50, 70, xe_traj.shape[2]-1]:
             xe_dict = {}
             rho_dict = {}
-            xe_dict["LE"] = xe_traj[:, :, [i]]
-            rho_dict["LE"] = rho_traj[:, :, [i]]
-            xe_dict["NN"] = xe_nn
-            rho_dict["NN"] = rho_nn
-            plot_density_heatmap("iter%d" % (i), args, xe_dict, rho_dict,
-                                 include_date=True, folder=path, log_density=False)
+            if use_le:
+                xe_dict["LE"] = xe_le[:, :, [iter_plot]]
+                rho_dict["LE"] = rho_le[:, :, [iter_plot]]
+            if use_mc:
+                xe_dict["MC"] = xe_mc[:, :, [iter_plot]]
+                rho_dict["MC"] = torch.ones(xe_mc.shape[0], 1, 1) / xe_mc.shape[0]
+            if use_nn:
+                xe_dict["NN"] = xe_nn[:, :, [iter_plot]]
+                rho_dict["NN"] = rho_nn[:, :, [iter_plot]]
+            if use_nn2:
+                xe_dict["NN2"] = xe_nn2[:, :, [iter_plot]]
+                rho_dict["NN2"] = rho_nn2[:, :, [iter_plot]]
 
-            # plot_density_heatmap("Time=%.2fs" % t, args, xe_le=xe_traj[:, :, [i]], rho_le=rho_traj[:, :, [i]],
-            #                   xe_nn=xe_nn[:, :, [i]], rho_nn=rho_nn[:, :, [i]],
-            #                   save=True, show=False, filename=None)
-            #plot_scatter(xe_nn[:50,:,i], xe_traj[:50, :, i], rho_nn[:50,0,i], rho_traj[:50, 0, i],
-            #                "Time=%.2fs" % t, args, save=True, show=False, filename=None, weighted=False)
-
-
-
-
-
-
-
+            plot_density_heatmap("traj%d_iter%d" % (k, iter_plot), args, xe_dict, rho_dict, system=system,
+                             include_date=True, folder=path, log_density=log_density)

@@ -5,6 +5,7 @@ from systems.utils import jacobian
 from plots.plot_functions import plot_ref
 import numpy as np
 
+
 class ControlAffineSystem(ABC):
     """
     Represents an abstract control-affine dynamical system.
@@ -22,23 +23,18 @@ class ControlAffineSystem(ABC):
         self.controller = self.controller_wrapper(system=systemname)
         self.systemname = systemname
 
-
     def u_func(self, x: torch.Tensor, xref: torch.Tensor, uref: torch.Tensor) -> torch.Tensor:
         """
         Return the contracting control input
 
-        Parameters
-        ----------
-        x: torch.Tensor
+        :param x: torch.Tensor
             batch_size x self.DIM_X x 1 tensor of state
-        xref: torch.Tensor
+        :param xref: torch.Tensor
             batch_size (or 1) x self.DIM_X x 1 tensor of reference states
-        uref: torch.Tensor
+        :param uref: torch.Tensor
             batch_size (or 1) x self.DIM_U x 1 tensor of reference controls
 
-        Returns
-        -------
-        u: torch.Tensor
+        :return: u: torch.Tensor
             batch_size x self.DIM_U x 1 tensor of contracting control inputs
         """
         u = self.controller(x, xref, uref)
@@ -49,18 +45,14 @@ class ControlAffineSystem(ABC):
         Return the dynamics at the states x
             \dot{x} = f(x) = a(x) + b(x) * u(x, xref, uref)
 
-        Parameters
-        ----------
-        x: torch.Tensor
+        :param x: torch.Tensor
             batch_size x self.DIM_X x 1 tensor of state
-        xref: torch.Tensor
+        :param xref: torch.Tensor
             batch_size (or 1) x self.DIM_X x 1 tensor of reference states
-        uref: torch.Tensor
+        :param uref: torch.Tensor
             batch_size (or 1) x self.DIM_U x 1 tensor of reference controls
 
-        Returns
-        -------
-        f: torch.Tensor
+        :return: f: torch.Tensor
             batch_size x self.DIM_U x 1 tensor of dynamics at x
         """
 
@@ -79,18 +71,14 @@ class ControlAffineSystem(ABC):
         Return the Jacobian of the input at the states x
             du(x, xref, uref) / dx
 
-        Parameters
-        ----------
-        x: torch.Tensor
+        :param x: torch.Tensor
             batch_size x self.DIM_X x 1 tensor of state
-        xref: torch.Tensor
+        :param xref: torch.Tensor
             batch_size (or 1) x self.DIM_X x 1 tensor of reference states
-        uref: torch.Tensor
+        :param uref: torch.Tensor
             batch_size (or 1) x self.DIM_U x 1 tensor of reference controls
 
-        Returns
-        -------
-        f: torch.Tensor
+        :return: f: torch.Tensor
             batch_size x self.DIM_U x self.DIM_X tensor of the Jacobian of u at x
         """
 
@@ -107,16 +95,12 @@ class ControlAffineSystem(ABC):
         Return the Jacobian of the dynamics f at states x
             df/dx = da(x)/dx + db(x)/dx u(x) + b(x) du(x)/dx
 
-        Parameters
-        ----------
-        x: torch.Tensor
+        :param x: torch.Tensor
             batch_size x self.DIM_X x 1 tensor of state
-        u: torch.Tensor
+        :param u: torch.Tensor
             batch_size x self.DIM_U x 1 tensor of controls
 
-        Returns
-        -------
-        dfdx: torch.Tensor
+        :return: dfdx: torch.Tensor
             batch_size x self.DIM_X x self.DIM_X tensor of Jacobians at x
         """
 
@@ -130,18 +114,30 @@ class ControlAffineSystem(ABC):
         return dfdx.type(torch.FloatTensor)
 
     def divf_func(self, x: torch.Tensor, xref: torch.Tensor, uref: torch.Tensor) -> torch.Tensor:
+        """
+        compute the divergence
+        """
         dfdx = self.dfdx_func(x, xref, uref)
         div_f = dfdx.diagonal(offset=0, dim1=-1, dim2=-2).sum(-1)
         return div_f
 
     def get_next_x(self, x: torch.Tensor, xref: torch.Tensor, uref: torch.Tensor, dt) -> torch.Tensor:
+        """
+        compute the next state
+        """
         return x + self.f_func(x, xref, uref) * dt
 
     def get_next_xref(self, xref: torch.Tensor, uref: torch.Tensor, dt) -> torch.Tensor:
+        """
+        compute the next reference stat
+        """
         return xref + self.fref_func(xref, uref) * dt
 
     def get_next_rho(self, x: torch.Tensor, xref: torch.Tensor, uref: torch.Tensor, rho: torch.Tensor,
                      dt: int) -> torch.Tensor:
+        """
+        compute the next density value with LE
+        """
         divf = self.divf_func(x, xref, uref)
         drhodt = -divf * rho
         with torch.no_grad():
@@ -150,6 +146,9 @@ class ControlAffineSystem(ABC):
 
     def get_next_rholog(self, x: torch.Tensor, xref: torch.Tensor, uref: torch.Tensor, rholog: torch.Tensor,
                      dt: int) -> torch.Tensor:
+        """
+        compute the next log-density value with LE
+        """
         divf = self.divf_func(x, xref, uref)
         drholog = torch.log(1 - divf * dt)
         #old update: drholog = - divf * dt (less accurate)
@@ -161,18 +160,14 @@ class ControlAffineSystem(ABC):
         """
         Cut xref and uref trajectories at the first time step when xref leaves the admissible state space
 
-        Parameters
-        ----------
-        xref: torch.Tensor
+        :param xref: torch.Tensor
             batch_size (or 1) x self.DIM_X x args.N_sim tensor of reference state trajectories (assumed constant along first dimension)
-        uref: torch.Tensor
+        :param uref: torch.Tensor
             batch_size (or 1) x self.DIM_U x args.N_sim tensor of reference control trajectories (assumed constant along first dimension)
 
-        Returns
-        -------
-        xref: torch.Tensor
+        :return:    xref: torch.Tensor
             batch_size (or 1) x self.DIM_X x N_sim_cut tensor of shortened reference state trajectories
-        uref: torch.Tensor
+                    uref: torch.Tensor
             batch_size (or 1) x self.DIM_U x N_sim_cut tensor of shortened reference control trajectories
         """
 
@@ -199,20 +194,16 @@ class ControlAffineSystem(ABC):
         """
         Remove state trajectories which leave the admissible state space at specified time point
 
-        Parameters
-        ----------
-        x: torch.Tensor
+        :param x: torch.Tensor
             batch_size x self.DIM_X x args.N_sim tensor of state trajectories
-        rho: torch.Tensor
+        :param rho: torch.Tensor
             batch_size x 1 x args.N_sim tensor of density trajectories
-        pos: integer
+        :param pos: integer
             index / timestep of trajectories which is tested
 
-        Returns
-        -------
-        x: torch.Tensor
+        :return:    x: torch.Tensor
             cut_batch_size x self.DIM_X x args.N_sim tensor of remaining state trajectories
-        rho: torch.Tensor
+                    rho: torch.Tensor
             cut_batch_size x 1 x args.N_sim tensor of remaining density trajectories
         """
 
@@ -228,6 +219,10 @@ class ControlAffineSystem(ABC):
         return x, rho
 
     def sample_uref_traj(self, args, up=None):
+        """
+        sample random input parameters
+        """
+
         N_sim = args.N_sim
 
         # parametrization by discretized input signals
@@ -338,9 +333,15 @@ class ControlAffineSystem(ABC):
         return uref_traj[:, :, :N_sim-1], up
 
     def sample_xref0(self):
+        """
+        sample initial reference state
+        """
         return (self.XREF0_MAX - self.XREF0_MIN) * torch.rand(1, self.DIM_X, 1) + self.XREF0_MIN
 
     def compute_xref_traj(self, xref0: torch.Tensor, uref_traj: torch.Tensor, args, short=False) -> torch.Tensor:
+        """
+        compute the reference trajectory
+        """
         N_sim = min(args.N_sim, uref_traj.shape[2]+1)
         dt = args.dt_sim
         xref_traj = xref0.repeat(1, 1, N_sim)
@@ -353,6 +354,9 @@ class ControlAffineSystem(ABC):
         return xref_traj
 
     def extend_xref_traj(self, xref_traj: torch.Tensor, uref_traj: torch.Tensor, dt) -> torch.Tensor:
+        """
+        extend reference trajectory
+        """
         N_sim = uref_traj.shape[2]
         N_start = xref_traj.shape[2] - 1
         xref_traj = torch.cat((xref_traj, torch.zeros(1, xref_traj.shape[1], N_sim-N_start)), dim=2)
@@ -364,6 +368,9 @@ class ControlAffineSystem(ABC):
         return xref_traj
 
     def up2ref_traj(self, xref0, up, args, short=True):
+        """
+        compute the reference trajectory from the input parameters
+        """
         uref_traj, _ = self.sample_uref_traj(args, up=up)
         xref_traj = self.compute_xref_traj(xref0, uref_traj, args)
         if short:
@@ -372,26 +379,25 @@ class ControlAffineSystem(ABC):
             return uref_traj, xref_traj
 
     def sample_xe(self, param):
+        """
+        sample the deviations of the reference trajectory
+        """
         if isinstance(param, int):
             xe = torch.rand(param, self.DIM_X, 1) * (self.XE_MAX - self.XE_MIN) + self.XE_MIN
-        # else:
-        #     args = param
-        #     xe_min = self.XE_MIN + 0.5 * args.bin_width
-        #     xe_max = self.XE_MAX - 0.5 * args.bin_width
-        #     xe = get_mesh_pos(args.bin_number).unsqueeze(-1) * (xe_max - xe_min) + xe_min
         return xe
 
     def sample_xe0(self, param):
+        """
+        sample the initial deviations of the reference trajectory
+        """
         if isinstance(param, int):
             xe = torch.rand(param, self.DIM_X, 1) * (self.XE0_MAX - self.XE0_MIN) + self.XE0_MIN
-        # else:
-        #     args = param
-        #     xe_min = self.XE0_MIN + 0.5 * args.bin_width
-        #     xe_max = self.XE0_MAX - 0.5 * args.bin_width
-        #     xe = get_mesh_pos(args.bin_number).unsqueeze(-1) * (xe_max - xe_min) + xe_min
         return xe
 
     def sample_x0(self, xref0, sample_size):
+        """
+        sample the initial states
+        """
         xe0_max = torch.minimum(self.X_MAX - xref0, self.XE0_MAX)
         xe0_min = torch.maximum(self.X_MIN - xref0, self.XE0_MIN)
         if isinstance(sample_size, int):
@@ -404,24 +410,20 @@ class ControlAffineSystem(ABC):
         """
         Get the density rho(x) starting at x0 with rho(x0)
 
-        Parameters
-        ----------
-        xe0: torch.Tensor
+        :param xe0: torch.Tensor
             batch_size x self.DIM_X x 1: tensor of initial error states
-        xref_traj: torch.Tensor
+        :param xref_traj: torch.Tensor
             batch_size x self.DIM_U x N: tensor of reference states over N time steps
-        uref_traj: torch.Tensor
+        :param uref_traj: torch.Tensor
             batch_size x self.DIM_U x N: tensor of controls
-        rho0: torch.Tensor
+        :param rho0: torch.Tensor
             batch_size x 1 x 1: tensor of the density at the initial states
-        dt:
+        :param dt:
             time step for integration
 
-        Returns
-        -------
-        xe_traj: torch.Tensor
+        :return:    xe_traj: torch.Tensor
             batch_size x self.DIM_X x N_sim: tensor of error state trajectories
-        rho_traj: torch.Tensor
+                    rho_traj: torch.Tensor
             batch_size x 1 x N_sim: tensor of the densities at the corresponding states
         """
 
@@ -461,6 +463,9 @@ class ControlAffineSystem(ABC):
         return x_traj-xref_traj, rho_traj
 
     def get_valid_ref(self, args):
+        """
+        compute valid reference trajectory
+        """
         while True:
             uref_traj, up = self.sample_uref_traj(args)  # get random input trajectory
             xref0 = self.sample_xref0()  # sample random xref
@@ -470,6 +475,9 @@ class ControlAffineSystem(ABC):
                 return up, uref_traj, xref_traj
 
     def get_valid_trajectories(self, sample_size, args, plot=False, log_density=True, compute_density=True):
+        """
+        compute valid trajectories
+        """
         # get random input trajectory and compute corresponding state trajectory
         up, uref_traj, xref_traj = self.get_valid_ref(args)
 
@@ -485,8 +493,6 @@ class ControlAffineSystem(ABC):
             plot_ref(xref_traj, uref_traj, 'test', args, self, x_traj=xe_traj + xref_traj, t=t, include_date=True)
         return xref_traj[:, :, ::args.factor_pred], rho_traj[:, :, ::args.factor_pred], uref_traj[:, :, ::args.factor_pred], \
                up, xe_traj[:, :, ::args.factor_pred], t[::args.factor_pred]
-
-
 
     @abstractmethod
     def a_func(self, x: torch.Tensor) -> torch.Tensor:
