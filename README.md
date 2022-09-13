@@ -1,6 +1,6 @@
 # density_MP
 
-Official Code for "Minimizing Collision Risk in Motion Planning with Dynamic Obstacles using Density-based Reachability"
+Official Code for "Density Planner: Minimizing Collision Risk in Motion Planning with Dynamic Obstacles using Density-based Reachability"
 
 ## Installation
 1. clone the project
