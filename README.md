@@ -1,4 +1,4 @@
-# density_MP
+# density_planner
 
 Official Code for "Density Planner: Minimizing Collision Risk in Motion Planning with Dynamic Obstacles using Density-based Reachability"
 
