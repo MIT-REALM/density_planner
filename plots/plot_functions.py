@@ -5,7 +5,7 @@ import torch
 from systems.utils import get_density_map
 import matplotlib
 import matplotlib.colors as pltcol
-from motion_planning.utils import pos2gridpos, traj2grid, pred2grid, convert_color
+from motion_planning.utils import make_path, pos2gridpos, traj2grid, pred2grid, convert_color
 
 ### settings
 plt.style.use('seaborn-paper')
@@ -13,7 +13,7 @@ matplotlib.rcParams['text.latex.preamble'] = r'\usepackage{{amsmath}}'
 plt.rcParams['text.usetex'] = True
 plt.rcParams['text.latex.preamble'] = r'\usepackage{{amsmath}}'
 plt.rcParams['text.latex.preamble'] = r'\usepackage{{mathrsfs}}'
-plt.rc('font',**{'family':'serif','serif':['Palatino']})
+#plt.rc('font',**{'family':'serif','serif':['Palatino']})
 plt.rcParams['legend.fontsize'] = 18
 plt.rc('axes', titlesize=18)
 plt.rc('axes', labelsize=18)
@@ -36,10 +36,11 @@ functions to generate plots and figures
 """
 
 def plot_density_heatmap(name, args, xe_dict, rho_dict, system=None, save=True, show=True, filename=None,
-                         include_date=False, folder=None, log_density=False):
+                         include_date=False, folder=None, log_density=False, title=None):
     """
     function for plotting the density and state predictions in a heatmap
     """
+    next_to = True
 
     plt.rcParams['legend.fontsize'] = 20
     plt.rc('axes', titlesize=20)
@@ -61,9 +62,14 @@ def plot_density_heatmap(name, args, xe_dict, rho_dict, system=None, save=True, 
         if density_mean[key].max() > max_rho:
             max_rho = density_mean[key].max()
 
-    fig, ax = plt.subplots(num_plots + 1, 1, gridspec_kw={'height_ratios': [1] * num_plots + [0.1]})
-    fig.set_figheight(9.5)
-    fig.set_figwidth(4)
+    if next_to:
+        fig, ax = plt.subplots(1, num_plots + 1, gridspec_kw={'width_ratios': [1] * num_plots + [0.05]})
+        fig.set_figheight(5)
+        fig.set_figwidth(4 * num_plots + 1)
+    else:
+        fig, ax = plt.subplots(num_plots + 1, 1, gridspec_kw={'height_ratios': [1] * num_plots + [0.1]})
+        fig.set_figheight(9.5)
+        fig.set_figwidth(4)
     for i, key in enumerate(xe_dict):
         axis = ax[i]
         cmap = plt.cm.get_cmap('magma').reversed()
@@ -74,12 +80,18 @@ def plot_density_heatmap(name, args, xe_dict, rho_dict, system=None, save=True, 
                          norm=pltcol.LogNorm(vmin=min_rho, vmax=max_rho))#vmin=plot_limits[0], vmax=plot_limits[1])
         axis.set_title("\\textbf{%s Prediction}" % (key))
         axis.set_xlabel("$p_x-p_{x*}$ [m]")
-        axis.set_ylabel("$p_y-p_{y*}$ [m]")
+        if not next_to or (next_to and i == 0):
+            axis.set_ylabel("$p_y-p_{y*}$ [m]")
 
-    fig.colorbar(im, ax=ax[num_plots], orientation='horizontal', fraction=0.8, pad=0.2, format="%.0e")
-    ax[num_plots].set_title("\\textbf{Density Scale}")
-    ax[num_plots].axis('off')
+
+    axis = ax[num_plots]
+    fig.colorbar(im, ax=axis, orientation='vertical', fraction=1, pad=0.2, format="%.0e")
+    if title is None:
+        axis.set_title("\\textbf{Density Scale}")
+    axis.axis('off')
     fig.tight_layout()
+    if title is not None:
+        fig.suptitle(title, fontsize=24)
 
     if save:
         if folder is None:
@@ -87,9 +99,9 @@ def plot_density_heatmap(name, args, xe_dict, rho_dict, system=None, save=True, 
         if filename is None:
             if include_date:
                 filename_new = datetime.now().strftime(
-                    "%Y-%m-%d-%H-%M-%S") + "_heatmap_" + 'randomSeed%d_' % args.random_seed + name + ".pdf"
+                    "%Y-%m-%d-%H-%M-%S") + "_heatmap_" + 'randomSeed%d_' % args.random_seed + name + ".jpg"
             else:
-                filename_new = "heatmap_" + 'randomSeed%d_' % args.random_seed + name + ".pdf"
+                filename_new = "heatmap_" + 'randomSeed%d_' % args.random_seed + name + ".jpg"
             plt.savefig(folder + filename_new)
         else:
             plt.savefig(args.path_plot_densityheat + filename)
@@ -431,27 +443,10 @@ def plot_motion(i, cmap, x_traj, rho_traj, xref_traj, args, grid_env_sc):
     plt.title("Predicted States at Time %.1f s" % (i / 10.))
     plt.tight_layout()
 
-def plot_traj(ego, mp_results, mp_methods, args, folder=None, traj_idx=None):
+def plot_traj(ego_dict, mp_results, mp_methods, args, folder=None, traj_idx=None, animate=False, include_density=False, name=None):
     """
     function for plotting the reference trajectories planned by different motion planners in the occupation grid
     """
-
-    if traj_idx is None:
-        traj_idx = len(mp_results[mp_methods[0]]["x_traj"]) - 1
-    grid = ego.env.grid[:, :, [1]]
-    x_traj_list = []
-    for method in mp_methods:
-        if mp_results[method]["x_traj"][traj_idx] is None:
-            x_traj_list.append(None)
-            continue
-        x_traj = np.array(mp_results[method]["x_traj"][traj_idx].detach())
-        x0 = x_traj[:, :, [0]]
-        idx_old = np.linspace(0, x_traj.shape[2]-1, x_traj.shape[2])
-        idx_new = np.linspace(0, x_traj.shape[2]-1, (x_traj.shape[2] -1) * 10 + 1)
-        x_traj_long = np.zeros((1, x_traj.shape[1], (x_traj.shape[2] -1) * 10 + 1))
-        for j in range(x_traj.shape[1]):
-            x_traj_long[0, j, :] = np.interp(idx_new, idx_old, x_traj[0, j, :])
-        x_traj_list.append(torch.from_numpy(x_traj_long))
 
     colorarray = np.concatenate((convert_color(TUMBlue),
                                  convert_color(TUMGray),
@@ -460,9 +455,21 @@ def plot_traj(ego, mp_results, mp_methods, args, folder=None, traj_idx=None):
                                  convert_color(TUMBlue_light),
                                  convert_color(TUMGray_light),
                                  convert_color(TUMBlue_med)))
+    if mp_methods[0] == "sys":
+        colorarray = np.concatenate((convert_color(TUMGray),
+                                     convert_color(TUMBlue),
+                                     convert_color(TUMGreen_acc),
+                                     convert_color(TUMOrange_acc),
+                                     convert_color(TUMBlue_light),
+                                     convert_color(TUMGray_light),
+                                     convert_color(TUMBlue_med)))
     col_start = convert_color(MITRed)
-    grid_all = 1 - np.repeat(grid, 4, axis=2)
-    grid_all[:, :, 3] = 1
+    plt.rcParams['legend.fontsize'] = 22
+    plt.rc('axes', titlesize=20)
+    plt.rc('axes', labelsize=20)
+    plt.rc('xtick', labelsize=18)
+    plt.rc('ytick', labelsize=18)
+    legend = True
 
     plt.close("all")
     if args.mp_use_realEnv:
@@ -471,58 +478,149 @@ def plot_traj(ego, mp_results, mp_methods, args, folder=None, traj_idx=None):
         div = 4
     x_wide = np.abs((args.environment_size[1] - args.environment_size[0])) / div
     y_wide = np.abs((args.environment_size[3] - args.environment_size[2])) / div
-    plt.figure(figsize=(x_wide, y_wide), dpi=300)
-    for i, x_traj in enumerate(x_traj_list):
-        if mp_methods[i] == "grad" and "search" in mp_methods:
-            label = "Gradient-based Method" #"Density planner"
-        elif mp_methods[i] == "search":
-            label = "Search-based Method"
-        elif mp_methods[i] == "sampl":
-            label = "Sampling-based Method"
-        elif mp_methods[i] == "grad":
-            label = "Density planner"
-        elif mp_methods[i] == "oracle":
-            label = "Oracle"
-        elif mp_methods[i] == "tube2MPC":
-            label = "MPC with $r_\\textrm{tube}=0.5m$"
-        elif mp_methods[i] == "tube3MPC":
-            label = "MPC with $r_\\textrm{tube}=1m$"
-        else:
-            label = mp_methods[i]
-        plt.plot(0, 0, "-", color=colorarray[i, :], label=label)
-        if x_traj is None:
+
+    if animate:
+        folder = make_path(folder, "GridTraj%d" % traj_idx)
+
+    if traj_idx is None:
+        traj_idx = len(mp_results[mp_methods[0]]["x_traj"]) - 1
+    x_traj_list = []
+    rho_traj_list = []
+    x_trajs_list = []
+    for method in mp_methods:
+        if mp_results[method]["x_traj"][traj_idx] is None:
+            x_traj_list.append(None)
+            rho_traj_list.append(None)
+            x_trajs_list.append(None)
             continue
-        grid_traj = traj2grid(x_traj, args)
-        idx = grid_traj != 0
-        grid_idx = grid_all[idx]
-        grid_idx[:, :] = torch.from_numpy(colorarray[[i], :]) #.unsqueeze(0)
-        grid_all[idx] = grid_idx
+        x_traj = np.array(mp_results[method]["x_traj"][traj_idx].detach())
+        x0 = ego_dict["start"]
+        idx_old = np.linspace(0, x_traj.shape[2]-1, x_traj.shape[2])
+        idx_new = np.linspace(0, x_traj.shape[2]-1, (x_traj.shape[2] -1) * 10 + 1)
+        x_traj_long = np.zeros((x_traj.shape[0], x_traj.shape[1], (x_traj.shape[2] -1) * 10 + 1))
+        for j in range(x_traj.shape[1]):
+            for traj_i in range(x_traj.shape[0]):
+                x_traj_long[traj_i, j, :] = np.interp(idx_new, idx_old, x_traj[traj_i, j, :])
+        x_traj_list.append(torch.from_numpy(x_traj_long))
+        if include_density:
+            rho_traj_list.append(np.array(mp_results[method]["rho_traj"][traj_idx].detach()))
+            x_trajs_list.append(np.array(mp_results[method]["x_trajs"][traj_idx].detach()))
 
-    plt.imshow(torch.transpose(grid_all, 0, 1), origin="lower")
-    gridpos_x, gridpos_y = pos2gridpos(args, pos_x=[x0[0, 0, 0], ego.xrefN[0, 0, 0]],
-                                       pos_y=[x0[0, 1, 0], ego.xrefN[0, 1, 0]])
-    plt.scatter(gridpos_x[0], gridpos_y[0], c=col_start, marker='o', s=80, label="Start")
-    plt.scatter(gridpos_x[1], gridpos_y[1], c=col_start, marker='x', s=100, label="Goal")
-    plt.axis('scaled')
-    if args.mp_use_realEnv == False:
-        plt.legend(bbox_to_anchor=(0.5, -0.11), loc="upper center")
-    elif args.mp_recording == 26:
-        plt.legend(loc="upper right")
+    if animate:
+        start_idx = 0
     else:
-        plt.legend(loc="upper left")
+        start_idx = x_traj.shape[2] - 1
 
-    ticks_x = np.concatenate((np.arange(0, args.environment_size[1]+1, 10), np.arange(-10, args.environment_size[0]-1, -10)), 0)
-    ticks_y = np.concatenate((np.arange(0, args.environment_size[3]+1, 10), np.arange(-10, args.environment_size[2]-1, -10)), 0)
-    ticks_x_grid, ticks_y_grid = pos2gridpos(args, ticks_x, ticks_y)
-    plt.xticks(ticks_x_grid, ticks_x)
-    plt.yticks(ticks_y_grid, ticks_y)
-    plt.xlabel("$p_x$")
-    plt.ylabel("$p_y$")
+    for t_idx in range(start_idx, x_traj.shape[2]):
+        grid = ego_dict["grid"][:, :, [t_idx]]
+        grid_all = 1 - np.repeat(grid, 4, axis=2)
+        grid_all[:, :, 3] = 1
+        if mp_methods[0] == "sys":
+            plt.figure(figsize=(x_wide, y_wide + 1.5), dpi=100)
+        elif args.mp_use_realEnv or name is not None:
+            plt.figure(figsize=(x_wide, y_wide + 1), dpi=100)
+        elif name is not None:
+            plt.figure(figsize=(x_wide, y_wide + 1.5), dpi=100)
+        elif not legend:
+            plt.figure(figsize=(x_wide+1, y_wide), dpi=100)
+        else:
+            plt.figure(figsize=(1.85 * x_wide, y_wide), dpi=100) #plt.figure(figsize=(x_wide, y_wide + 2.5), dpi=100)
 
-    #plt.title(f"{name}" + str_timestep)
-    plt.tight_layout()
-    if folder is None:
-        folder = args.path_plot_grid
-    filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "_GridTraj%d" % traj_idx + ".jpg"
-    plt.savefig(folder + filename, dpi=200)
-    plt.clf()
+        for i, x_traj in enumerate(x_traj_list):
+            if mp_methods[i] == "grad" and "search" in mp_methods:
+                label = "Gradient-based \n Method" #"Density planner"
+            elif mp_methods[i] == "ref":
+                label = "Reference trajectory"
+            elif mp_methods[i] == "sys":
+                label = "System trajectories"
+            elif mp_methods[i] == "search":
+                label = "Search-based \n Method"
+            elif mp_methods[i] == "sampl":
+                label = "Sampling-based \n Method"
+            elif mp_methods[i] == "grad":
+                label = "Density planner"
+            elif mp_methods[i] == "oracle":
+                label = "Oracle"
+            elif mp_methods[i] == "tube2MPC":
+                if args.mp_use_realEnv == False:
+                    label = "MPC with \n $r_\\textrm{tube}=0.5m$"
+                else:
+                    label = "MPC with $r_\\textrm{tube}=0.5m$"
+            elif mp_methods[i] == "tube3MPC":
+                label = "MPC with \n $r_\\textrm{tube}=1m$"
+            else:
+                label = mp_methods[i]
+            plt.plot(0, 0, "-", color=colorarray[i, :], label=label)
+            if x_traj is None:
+                continue
+            for num_traj in range(x_traj.shape[0]):
+                grid_traj = traj2grid(x_traj[[num_traj], :, :t_idx * 10 + 1], args)
+                idx = grid_traj != 0
+                grid_idx = grid_all[idx]
+                grid_idx[:, :] = torch.from_numpy(colorarray[[i], :]) #.unsqueeze(0)
+                grid_all[idx] = grid_idx
+            if include_density:
+                rho_traj = rho_traj_list[i]
+                x_trajs = x_trajs_list[i]
+                gridpos_x, gridpos_y = pos2gridpos(args, pos_x=x_trajs[:, 0, t_idx],
+                                           pos_y=x_trajs[:, 1, t_idx])
+                plt.scatter(gridpos_x[:], gridpos_y[:], c=colorarray[[i], :], marker='.', s=500 * rho_traj[:, 0, t_idx])
+            if x_traj is None or x_traj.shape[2] < t_idx * 10:
+                continue
+            gridpos_x, gridpos_y = pos2gridpos(args, pos_x=[x_traj[0, 0, t_idx * 10]],
+                                               pos_y=[x_traj[0, 1, t_idx * 10]])
+            plt.scatter(gridpos_x[0], gridpos_y[0], c=colorarray[i, :], marker='o', s=10)
+
+        plt.imshow(torch.transpose(grid_all, 0, 1), origin="lower")
+        gridpos_x, gridpos_y = pos2gridpos(args, pos_x=[x0[0, 0, 0], ego_dict["goal"][0, 0, 0]],
+                                           pos_y=[x0[0, 1, 0], ego_dict["goal"][0, 1, 0]])
+        if mp_methods[0] == "ref":
+            plt.scatter(gridpos_x[0], gridpos_y[0], c=col_start, marker='o', s=80, label="Start $\mathbf{x}_0$")
+        elif mp_methods[0] == "sys":
+            col_start2 = col_start.copy()
+            col_start2[0, 3] = 0.2
+            plt.scatter(gridpos_x[0], gridpos_y[0], c=col_start2, marker='s', s=800,
+                            label="Initial density distribution")
+        else:
+            plt.scatter(gridpos_x[0], gridpos_y[0], c=col_start, marker='o', s=80, label="Start")
+        plt.scatter(gridpos_x[1], gridpos_y[1], c=col_start, marker='x', s=100, label="Goal $\mathbf{x}_{goal}$")
+        plt.axis('scaled')
+        if legend:
+            if args.mp_use_realEnv == False:
+                if name is not None:
+                    plt.legend(bbox_to_anchor=(0.5, -0.09), loc="upper center")
+                else:
+                    plt.legend(bbox_to_anchor=(1.4, 0.5), loc="center", labelspacing=1.1)
+            elif args.mp_recording == 26:
+                plt.legend(loc="upper right")
+            else:
+                plt.legend(loc="upper left")
+        if name is not None:
+            if isinstance(name, str):
+                plt.title(name, fontsize=24)
+            else:
+                plt.title("Iteration %d" % name, fontsize=24)
+        else:
+            plt.title("$t_k=%.2fs$" % (t_idx / 10.), fontsize=24)
+        ticks_x = np.concatenate((np.arange(0, args.environment_size[1]+1, 10), np.arange(-10, args.environment_size[0]-1, -10)), 0)
+        ticks_y = np.concatenate((np.arange(0, args.environment_size[3]+1, 10), np.arange(-10, args.environment_size[2]-1, -10)), 0)
+        ticks_x_grid, ticks_y_grid = pos2gridpos(args, ticks_x, ticks_y)
+        plt.xticks(ticks_x_grid, ticks_x)
+        plt.yticks(ticks_y_grid, ticks_y)
+        plt.xlabel("$p_x$ [m]")
+        plt.ylabel("$p_y$ [m]")
+
+        #plt.title(f"{name}" + str_timestep)
+        plt.tight_layout()
+        if folder is None:
+            folder = args.path_plot_grid
+        if name is None:
+            filename = "GridTraj%d" % traj_idx + "_%d" % t_idx + ".jpg"
+        else:
+            if isinstance(name, str):
+                filename = name
+            else:
+                filename = "iter%d" % name
+        plt.savefig(folder + filename, dpi=100)
+        plt.clf()
+
