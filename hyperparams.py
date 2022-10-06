@@ -15,7 +15,7 @@ def parse_args():
     parser.add_argument('--dt_sim', type=int, default=0.01)
     parser.add_argument('--N_sim_max', type=int, default=1001)
     parser.add_argument('--factor_pred', type=int, default=10)
-    parser.add_argument('--random_seed', type=int, default=1)
+    parser.add_argument('--random_seed', type=int, default=0)
 
     ### DATA GENERATION
     # data generation
@@ -91,7 +91,7 @@ def parse_args():
     ### MOTION PLANNING
     # general motion planning options
     parser.add_argument('--mp_name', type=str, default="test")
-    parser.add_argument('--mp_setting', type=str, default="default")
+    parser.add_argument('--mp_setting', type=str, default="ablation")
     parser.add_argument('--mp_use_realEnv', type=bool, default=False)
     parser.add_argument('--mp_stationary', type=bool, default=False)
     parser.add_argument('--mp_num_envs', type=int, default=10)
