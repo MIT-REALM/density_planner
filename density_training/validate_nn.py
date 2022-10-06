@@ -1,3 +1,5 @@
+import numpy as np
+
 from systems.sytem_CAR import Car
 import torch
 import hyperparams
@@ -28,7 +30,7 @@ if __name__ == "__main__":
     system.X_MIN[0, 1, 0] = -20
     system.X_MAX[0, 0, 0] = 20
     system.X_MAX[0, 1, 0] = 20
-    name = "figures_paper"
+    name = "figures_presentation"
     path = make_path(args.path_plot_densityheat, name)
 
     if use_nn:
@@ -43,8 +45,8 @@ if __name__ == "__main__":
         model2.eval()
 
     log_density = True
-    time_steps = [30, 50, 70, 100, 200, 300, 400, 500, 800, 900, 1000]
-    for k in range(12):
+    time_steps = np.arange(0, 1001, 10) #[30, 50, 70, 100, 200, 300, 400, 500, 800, 900, 1000]
+    for k in range(2):
         xe0 = system.sample_xe0(sample_size)
         Up, uref_traj, xref_traj = system.get_valid_ref(args)
 
@@ -79,6 +81,9 @@ if __name__ == "__main__":
             for i, t in enumerate(t_vec):
                 xe_nn2[:, :, [i]], rho_nn2[:, :, [i]] = get_nn_prediction(model2, xe0, xref_traj[0, :, 0], t, Up, args)
 
+        if k == 0:
+            continue
+
         for i, iter_plot in enumerate(time_steps): #50, 70, xe_traj.shape[2]-1]:
             xe_dict = {}
             rho_dict = {}
@@ -95,5 +100,5 @@ if __name__ == "__main__":
                 xe_dict["NN2"] = xe_nn2[:, :, [iter_plot]]
                 rho_dict["NN2"] = rho_nn2[:, :, [iter_plot]]
 
-            plot_density_heatmap("traj%d_iter%d" % (k, iter_plot), args, xe_dict, rho_dict, system=system,
-                             include_date=True, folder=path, log_density=log_density)
+            plot_density_heatmap("traj%d_iter_%d" % (k, iter_plot // 10), args, xe_dict, rho_dict, system=system,
+                             include_date=False, folder=path, log_density=log_density, title="$t_k=%.2fs$" % (iter_plot / 100))
