@@ -61,12 +61,12 @@ class MotionPlanner(ABC):
             1 x 1 x N_sim_short
         """
         uref_traj, xref_traj = self.ego.system.up2ref_traj(self.ego.xref0, up, self.ego.args, short=True)
+
+        x_traj, rho_traj = self.ego.predict_density(up, xref_traj, xe0=xe0, rho0=rho0, use_nn=use_nn, compute_density=compute_density)
         if plot:
             if folder is None:
                 folder = self.path_log
-            self.ego.visualize_xref(xref_traj, name=name, save=True, show=False, folder=folder)
-
-        x_traj, rho_traj = self.ego.predict_density(up, xref_traj, xe0=xe0, rho0=rho0, use_nn=use_nn, compute_density=compute_density)
+            self.ego.visualize_xref(xref_traj, x_traj=x_traj[:20, :, :], save=True, show=False, folder=folder, name=name)
 
         return uref_traj, xref_traj, x_traj, rho_traj
 

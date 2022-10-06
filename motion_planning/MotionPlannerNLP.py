@@ -65,7 +65,7 @@ class MotionPlannerNLP(MotionPlanner):
             cost_dict_min = self.validate_traj(u_min)
             if self.plot and x_min is not None:
                 self.ego.visualize_xref(x_min, name=self.name + " trajectory", save=True, show=False, folder=self.path_log)
-        self.x_traj = x_traj
+        self.x_traj = x_min
         return u_min, cost_dict_min, t_plan
 
     def solve_nlp(self):

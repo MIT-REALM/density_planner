@@ -33,8 +33,9 @@ if __name__ == '__main__':
         opt_methods = ["grad"]
         # choose motion planning methods from  ["grad", "grad_biased", "MPC", "MPC_biased", "tubeMPC", "tubeMPC_biased",
         #                                       "tube2MPC", "tube2MPC_biased", "tube3MPC","tube3MPC_biased", "oracle"]
-        mp_methods = ["grad", "grad_biased", "MPC", "MPC_biased", "tubeMPC", "tubeMPC_biased", "tube2MPC",
-                      "tube2MPC_biased", "tube3MPC", "tube3MPC_biased", "oracle"]
+        mp_methods = ["grad"] #, "MPC", "tube2MPC", "oracle"]
+        # mp_methods = ["grad", "grad_biased", "MPC", "MPC_biased", "tubeMPC", "tubeMPC_biased", "tube2MPC",
+        #               "tube2MPC_biased", "tube3MPC", "tube3MPC_biased", "oracle"]
 
     ### settings
     # specify tube radius of tube-based MPC
@@ -54,8 +55,9 @@ if __name__ == '__main__':
         else:
             opt_results = {}
             for opt_method in opt_methods:
-                opt_results[opt_method] = {"time": [], "cost": [], "u": [], "x_traj": [], "cost_coll": 0, "cost_goal": 0, "cost_bounds": 0,
-                                       "cost_uref": 0, "sum_time": 0, "num_valid": 0}
+                opt_results[opt_method] = {"time": [], "cost": [], "u": [], "x_trajs": [], "x_traj": [],
+                                           "rho_traj": [], "cost_coll": 0, "cost_goal": 0, "cost_bounds": 0,
+                                           "cost_uref": 0, "sum_time": 0, "num_valid": 0}
 
         # motion planning results:
         if args.mp_load_old_mp:
@@ -93,12 +95,15 @@ if __name__ == '__main__':
                 opt_results[opt_method]["cost"].append(cost)
                 opt_results[opt_method]["time"].append(time)
                 opt_results[opt_method]["x_traj"].append(planner.xref_traj)
+                opt_results[opt_method]["x_trajs"].append(planner.x_traj)
+                opt_results[opt_method]["rho_traj"].append(planner.rho_traj)
                 if cost is not None:
                     opt_results[opt_method]["num_valid"] += 1
                     opt_results[opt_method]["sum_time"] += time
             if opt_method == "grad":
                 planner_grad = planner
                 up_grad = up
+
 
         if len(mp_methods) != 0:
             ### compare with other motion planners starting from different initial states
@@ -148,14 +153,22 @@ if __name__ == '__main__':
                             mp_results[mp_method]["num_valid"] += 1
                             mp_results[mp_method]["sum_time"] += time
 
+        ego_dict = {"grid": ego.env.grid,
+                    "start": ego.xref0,
+                    "goal": ego.xrefN,
+                    "args": args}
         if args.mp_save_results:
             with open(path_log + "opt_results", "wb") as f:
                 pickle.dump(opt_results, f)
             with open(path_log + "mp_results", "wb") as f:
                 pickle.dump(mp_results, f)
+            with open(path_log + "ego%d" % seed, "wb") as f:
+                pickle.dump(ego_dict, f)
         if args.mp_plot_traj:
-            plot_traj(ego, mp_results, mp_methods, args, folder=path_log)
-            plot_traj(ego, opt_results, opt_methods, args, folder=path_log)
+            if len(mp_methods) != 0:
+                plot_traj(ego_dict, mp_results, mp_methods, args, folder=path_log)
+            if len(opt_methods) != 0:
+                plot_traj(ego_dict, opt_results, opt_methods, args, traj_idx=k, folder=path_log, animate=True)
 
     if args.mp_save_results:
         if len(opt_methods) != 0:

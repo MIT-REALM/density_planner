@@ -4,7 +4,7 @@ from motion_planning.utils import pos2gridpos, traj2grid, shift_array, \
     pred2grid, get_mesh_sample_points, sample_pdf, enlarge_grid, compute_gradient
 from density_training.utils import load_nn, get_nn_prediction
 from data_generation.utils import load_inputmap, load_outputmap
-from plots.plot_functions import plot_ref, plot_grid
+from plots.plot_functions import plot_ref, plot_grid, plot_traj
 from matplotlib import cm
 from matplotlib.colors import ListedColormap
 from systems.sytem_CAR import Car
@@ -304,7 +304,7 @@ class EgoVehicle:
         return x_traj, rho_traj
 
     def visualize_xref(self, xref_traj, uref_traj=None, show=True, save=False, include_date=True,
-                       name='Reference Trajectory', folder=None):
+                       name='Reference Trajectory', folder=None, x_traj=None):
         """
         plot the reference trajectory in the occupation map of the environment
 
@@ -320,12 +320,64 @@ class EgoVehicle:
         if uref_traj is not None:
             plot_ref(xref_traj, uref_traj, 'Reference Trajectory', self.args, self.system, t=self.t_vec,
                      include_date=True)
-        grid = traj2grid(xref_traj, self.args)
-        grid_env_max, _ = self.env.grid.max(dim=2)
-        plot_grid(torch.clamp(grid + grid_env_max, 0, 1), self.args, name=name,
-                  show=show, save=save, include_date=include_date, folder=folder)
+        # grid = traj2grid(xref_traj, self.args)
+        # grid_env_max, _ = self.env.grid.max(dim=2)
+        # plot_grid(torch.clamp(grid + grid_env_max, 0, 1), self.args, name=name,
+        #           show=show, save=save, include_date=include_date, folder=folder)
+        ego_dict = {"grid": self.env.grid,
+                    "start": self.xref0,
+                    "goal": self.xrefN,
+                    "args": self.args}
+        if x_traj is not None:
+            mp_methods = ["sys", "ref"]
+            mp_results = {"sys": {"x_traj": [x_traj]}, "ref": {"x_traj": [xref_traj]}}
+        else:
+            mp_methods = ["ref"]
+            mp_results = {"ref": {"x_traj": [xref_traj]}}
+        plot_traj(ego_dict, mp_results, mp_methods, self.args, folder=folder, traj_idx=0, animate=False,
+                  include_density=False, name=name)
 
     def animate_traj(self, folder, xref_traj, x_traj=None, rho_traj=None):
+        """
+        plot the density and the states in the occupation map for each point in time
+
+        :param folder:      name of the folder for saving the plots
+        :param xref_traj:   reference state trajectory
+        :param x_traj:      state trajectories
+        :param rho_traj:    density trajectories
+        """
+
+        if x_traj is None:
+            x_traj = xref_traj
+        if rho_traj is None:
+            rho_traj = torch.ones(x_traj.shape[0], 1, x_traj.shape[2]) / x_traj.shape[0]  # assume equal density
+
+        # create colormap
+        greys = cm.get_cmap('Greys')
+        grey_col = greys(range(0, 256))
+        greens = cm.get_cmap('Greens')
+        green_col = greens(range(0, 256))
+        blue = np.array([[0.212395, 0.359683, 0.55171, 1.]])
+        # yellow = np.array([[0.993248, 0.906157, 0.143936, 1.      ]])
+        colorarray = np.concatenate((grey_col[::2, :], green_col[::2, :], blue))
+        cmap = ListedColormap(colorarray)
+
+        grid_env_sc = 127 * self.env.grid
+
+
+        for i in range(xref_traj.shape[2]):
+            with torch.no_grad():
+                # 3. compute marginalized density grid
+                grid_pred = pred2grid(x_traj[:, :, [i]], rho_traj[:, :, [i]], self.args, return_gridpos=False)
+
+            grid_pred_sc = 127 * torch.clamp(grid_pred/grid_pred.max(), 0, 1)
+            grid_pred_sc[grid_pred_sc != 0] += 128
+            grid_traj = traj2grid(xref_traj[:, :, :i + 1], self.args)
+            grid_traj[grid_traj != 0] = 256
+            grid_all = torch.clamp(grid_env_sc[:, :, i] + grid_traj + grid_pred_sc[:, :, 0], 0, 256)
+            plot_grid(grid_all, self.args, name="iter%d" % i, cmap=cmap, show=False, save=True, folder=folder)
+
+    def animate_trajs(self, folder, xref_traj, x_traj=None, rho_traj=None):
         """
         plot the density and the states in the occupation map for each point in time
 
