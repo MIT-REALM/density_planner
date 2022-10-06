@@ -27,6 +27,7 @@ from skimage.filters import threshold_isodata, threshold_li
 from motion_planning.utils import enlarge_grid, compute_gradient
 from env.utils import Configurable
 from scipy.stats import multivariate_normal
+from motion_planning.utils import pos2gridpos
 
 # adding submodules to the system path
 sys.path.insert(0, './env/external/drone-dataset-tools/src/')
@@ -43,7 +44,6 @@ class Environment(Configurable):
         Configurable.__init__(self, config)
         self.config["dataset"]["recording"] = args.mp_recording
         self.config["grid"]["spread"] = args.mp_realData_spread
-        self.args = args
         self.map_anim = None
         self.name = name
         self.current_timestep = init_time
@@ -90,7 +90,7 @@ class Environment(Configurable):
             self.point_index = 0
             # Dictionaries for the style of the different objects that are visualized
             self.bbox_style = dict(fill=True, edgecolor="r", alpha=0.9, zorder=19)
-            self.bbox_style_goal = dict(fill=False, edgecolor="b", alpha=1, zorder=20)
+            self.bbox_style_goal = dict(fill=True, edgecolor="b", alpha=0.6, zorder=20)
             self.bbox_style_ego = dict(fill=True, edgecolor="white", alpha=0.9, zorder=21)
             self.ellipsoid_style = dict(fill=True, edgecolor="k", alpha=0.4, zorder=23)
             self.orientation_style = dict(facecolor="k", fill=True, edgecolor="k", lw=0.1, alpha=0.6, zorder=20)
@@ -101,13 +101,16 @@ class Environment(Configurable):
             self.centroid_style = dict(fill=True, edgecolor="black", lw=0.1, alpha=1, radius=0.5, zorder=30)
             self.class_colors = dict(car="red", van="purple", truck_bus="orange", bus="orange", truck="orange",
                                      pedestrian="black", bicycle="yellow", motorcycle="yellow", default="green")
-            self.method_colors = dict(grad="purple",oracle="orange",tube2MPC="green",tube3MPC="lightgreen",default="blue")
+            self.method_colors = dict(grad="purple", oracle="orange", tube2MPC="green", tube3MPC="lightgreen",
+                                      default="blue")
         # Compute center of grid in meters
         self.env_center = [(self.grid_size[1] - self.grid_size[0]) / 2, -(self.grid_size[3] - self.grid_size[2]) / 2]
         # Shift limits based on center of grid in meters
         args.environment_size = np.hstack(
             (self.grid_size[0:2] - self.env_center[0], self.grid_size[2:4] - self.env_center[1]))
         args.grid_size = [self.grid.shape[0], self.grid.shape[1]]
+        # Store arguments
+        self.args = args
 
     def generate_random_waypoint(self, time: float):
         """Generate random waypoints in the environment for the given number of waypoints. It checks if the waypoints
@@ -122,7 +125,7 @@ class Environment(Configurable):
             if self.is_free(wpt_x / self.scale_down_factor, wpt_y / self.scale_down_factor, time_step):
                 break
         # Return waypoints
-        return wpt_x - self.env_center[0], (wpt_y - self.env_center[1])
+        return wpt_x - self.env_center[0], (-wpt_y - self.env_center[1])
 
     def is_free(self, x, y, frame_idx):
         """Check if the given position is free"""
@@ -184,10 +187,24 @@ class Environment(Configurable):
         logging.debug("Creating animation!")
         # Show background image
         self.ax.imshow(self.background_image_color)
-        # Define axes for the widgets
-        self.ax_textbox = self.fig.add_axes([0.27, 0.035, 0.04, 0.04])
-        # Define the widgets
-        self.textbox_frame = TextBox(self.ax_textbox, 'Set Frame ', initial=str(self.minimum_frame))
+        # Define axes
+        # Extract cropped dimensions
+        (left, upper, right, lower) = self.cropped_dims
+        self.ax.set_xlim(left, right)
+        self.ax.set_ylim(upper, lower)
+        # Set up the figure
+        ticks_x = np.concatenate(
+            (np.arange(0, self.args.environment_size[1] + 1, 10),
+             np.arange(-10, self.args.environment_size[0] - 1, -10)), 0)
+        # ticks_y = np.concatenate(
+        #     (np.arange(0, -self.args.environment_size[3] + 1, 10),
+        #      -np.arange(-10, self.args.environment_size[2] - 1, -10)), 0)
+        ticks_y = np.concatenate((np.arange(-self.args.environment_size[2]-1, 0, -10, dtype=int),
+                                  np.arange(0, -self.args.environment_size[3], -10, dtype=int)), 0)
+        self.ax.set_xticks(((ticks_x+self.env_center[0])/self.scale_down_factor)/self.scaling_factor, ticks_x)
+        self.ax.set_yticks((-(-ticks_y + self.env_center[1]) / self.scale_down_factor) / self.scaling_factor, ticks_y)
+        self.ax.set_xlabel('x [m]')
+        self.ax.set_ylabel('y [m]')
         # Create animation
 
         self.map_anim = anim.FuncAnimation(self.fig, self.__update_animation_overlay,
@@ -554,14 +571,17 @@ class Environment(Configurable):
         if init_waypoint is not None:
             x_init, y_init, theta_init = self._pos2px(init_waypoint[0], init_waypoint[1], init_waypoint[2])
             init_polygon = self.define_ego_rectangle(x_init, y_init, theta_init, length=40, width=20)
-            bbox_init = patches.Polygon(init_polygon, True, facecolor='black', label='Start', **self.bbox_style_goal)
+            bbox_init = patches.Circle((x_init, y_init), radius=20, facecolor='black',
+                                       label='Start', **self.bbox_style_goal)
             bbox_init.set_animated(True)
             self.ax.add_patch(bbox_init)
             plot_handles.append(bbox_init)
         if goal_waypoint is not None:
             x_goal, y_goal, theta_goal = self._pos2px(goal_waypoint[0], goal_waypoint[1], goal_waypoint[2])
             goal_polygon = self.define_ego_triangle(x_goal, y_goal, theta_goal, length=40, width=20)
-            bbox_goal = patches.Polygon(goal_polygon, True, facecolor='red', label='Goal', **self.bbox_style_goal)
+            # bbox_goal = patches.Polygon(goal_polygon, True, facecolor='red', label='Goal', **self.bbox_style_goal)
+            bbox_goal = patches.Circle((x_goal, y_goal), radius=20, facecolor='red',
+                                       label='Start', **self.bbox_style_goal)
             bbox_goal.set_animated(True)
             self.ax.add_patch(bbox_goal)
             plot_handles.append(bbox_goal)
@@ -598,15 +618,14 @@ class Environment(Configurable):
             self.ax.legend(loc='upper right', bbox_to_anchor=(1.2, 1.0))
 
         # Draw current frame number
-        x = self.ax.get_xlim()[0] + 5
-        y = self.ax.get_ylim()[1] + int((self.ax.get_ylim()[0] - self.ax.get_ylim()[1]) * 0.05)
-        label_current_frame = self.ax.text(x, y, "Frame: {}/{}".format(frame_idx, self.maximum_frame),
-                                           fontsize=12, color="white", animated=True)
+        # x = self.ax.get_xlim()[0] + 5
+        # y = self.ax.get_ylim()[1] + int((self.ax.get_ylim()[0] - self.ax.get_ylim()[1]) * 0.05)
+        # label_current_frame = self.ax.text(x, y, "Frame: {}/{}".format(frame_idx, self.maximum_frame),
+        #                                    fontsize=12, color="white", animated=True)
         # Update the textbox to new current frame
-        self.textbox_frame.set_val(frame_idx)
+        # self.textbox_frame.set_val(frame_idx)
         # Append to plot handles
-        plot_handles.append(label_current_frame)
-
+        # plot_handles.append(label_current_frame)
 
         self.plot_handles = plot_handles
 
@@ -823,18 +842,20 @@ class Environment(Configurable):
         # Traslate reference center to left top corner
         x = self.env_center[0] + x
         # y = -self.env_center[1] -y
-        y = -y -self.env_center[1]
+        y = -(y + self.env_center[1])
         # Change orientation to match image
-        theta = -theta #* 180 / np.pi
+        theta = (theta + np.pi) % (2 * np.pi) - np.pi
+        # theta = theta
+        # theta = -theta #* 180 / np.pi
         if not theta.shape:
             if theta < 0:
-                theta += 360
+                theta += 2*np.pi
         else:
-            theta[theta < 0] += 360
+            theta[theta < 0] += 2*np.pi
 
         # Scale down
         return (x / self.scaling_factor) / self.scale_down_factor, (
-                    y / self.scaling_factor) / self.scale_down_factor, theta
+                y / self.scaling_factor) / self.scale_down_factor, theta
 
     @staticmethod
     def define_ego_rectangle(x, y, theta, length=1 / 12, width=1 / 12):
