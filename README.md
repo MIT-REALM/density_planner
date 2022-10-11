@@ -5,7 +5,7 @@ Official Code for "Density Planner: Minimizing Collision Risk in Motion Planning
 ## Installation
 1. clone the project
 ```bash
-git clone https://github.com/LauraLue/density_MP.git
+git clone https://github.com/MIT-REALM/density_planner.git
 ```
 
 2. Create and activate new environment
