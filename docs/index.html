@@ -143,20 +143,19 @@ Obstacles using Density-based Reachability</h1>
         <h2 class="title is-3">Abstract</h2>
         <div class="content has-text-justified">
           <p>
-            Autonomous systems with uncertainties are prevalent in robotics. However, ensuring 
-            the safety of those systems is challenging due to sophisticated dynamics and the 
-            hardness to predict future states. Usually, a classical motion planning method 
-            considering all possible states will not find a feasible path in crowded 
-            environments. To overcome this conservativeness, we propose a density-based method. 
-            The proposed method uses a neural network and the Liouville equation to learn the 
-            density evolution, and by applying a gradient-based optimization procedure, we can 
+            Uncertainty is prevalent in robotics. Due to measurement noise and complex dynamics, 
+            we cannot estimate the exact system and environment state. Since conservative motion 
+            planners are not guaranteed to find a safe control strategy in a crowded, uncertain 
+            environment, we propose a density-based method. Our approach uses a neural network 
+            and the Liouville equation to learn the density evolution for a system with an 
+            uncertain initial state. By applying a gradient-based optimization procedure, we can 
             plan for feasible and probably safe trajectories to minimize the collision risk. 
           </p>
           <p>
-            We conduct experiments on simulated environments and environments generated from 
-            real-world data and outperform baseline methods such as model predictive control (MPC) 
-            and Non-linear programming (NLP). While our method requires planning time in advance, 
-            the online computational complexity is very low when compared to other methods.
+            We conduct motion planning experiments on simulated environments and environments 
+            generated from real-world data and outperform baseline methods such as model 
+            predictive control and nonlinear programming. While our method requires offline 
+            planning, the online run time is 100times smaller compared to model predictive control.
           </p>
         </div>
       </div>
@@ -186,24 +185,30 @@ Obstacles using Density-based Reachability</h1>
         <h2 class="title is-3">Problem Formulation</h2>
         <div class="content has-text-justified">
           <p>
-            This work solves the problem of defining an optimal control policy for a given autonomous system and environment setup.
-            The system shall be steered to the goal state while minimizing the collision probability with possible dynamic obstacles. 
-            Furthermore, the state and input constraints must be satisfied, and the system dynamics can be nonlinear in the states. 
+            This work solves the problem of defining an optimal control policy for a given autonomous 
+            system and environment setup. The system shall be steered to the goal state while 
+            minimizing the collision probability with dynamic obstacles. Furthermore, the state and 
+            input constraints must be satisfied, and the system dynamics can be nonlinear in the states. 
           </p>
           <p>
-            In contrast to classical motion planning problems, we consider an uncertain initial state following an arbitrary but known probability density function. 
-            During the execution of the control policy, the state can be measured and used for closed-loop control. 
-            However, because of limited computational power and the time constraints for real-time executability, the online computations of the controller have to be simple. 
-            Furthermore, we consider imperfect measurements due to sensor bias.
+            In contrast to classical motion planning problems, we consider an uncertain initial state 
+            following an arbitrary but known probability density function. During the execution of the 
+            control policy, the state can be measured and used for closed-loop control. However, because 
+            of limited computational power and the time constraints for real-time executability, the online 
+            computations of the controller have to be simple. Furthermore, we consider imperfect 
+            measurements due to sensor bias.
           </p>
           <p>
-            Additionally, probabilistic predictions for the evolution of the environment are given. Namely, we know for each position in the environment the probability of it being occupied by an obstacle at a certain point in time.
-            The position of the vehicle at this time depends on the initial state and hence also follows a certain probability distribution.
-            The overlap of this state distribution with the predicted obstacle positions yields the collision probability.
+            Additionally, probabilistic predictions for the evolution of the environment are given. Namely, 
+            we know for each position in the environment the probability of it being occupied by an obstacle 
+            at a certain point in time. The position of the vehicle at this time depends on the initial state 
+            and hence also follows a certain probability distribution. The overlap of this state distribution 
+            with the predicted obstacle positions yields the collision probability.
           </p>
           <p>
-            Thus, the algorithm should find a general control strategy which minimizes the cost function and satisfies the constraints for the uncertain initial states despite sensor errors.
-            The motion planning problems are visualized in the figures below.
+            Thus, the algorithm should find a general control strategy which minimizes the cost function and 
+            satisfies the constraints for the uncertain initial states despite sensor errors. The motion 
+            planning problems are visualized in the figures below.
           </p>
         </div>        
         <div class="columns is-centered">
@@ -216,7 +221,9 @@ Obstacles using Density-based Reachability</h1>
           <div class="column">            
             <img src="./static/images/problem_formulation.jpg" alt="motion planning problem">
             <p> 
-              Motion planning problem considered in this work: The initial state is uncertain and given by an arbitrary probability distribution. The environment is uncertain and described by occupancy probabilities.</p>
+              Motion planning problem considered in this work: The initial state is uncertain and given by an 
+              arbitrary probability distribution. The environment is uncertain and described by occupancy 
+              probabilities.
             </p>
           </div>
         </div>
@@ -235,38 +242,48 @@ Obstacles using Density-based Reachability</h1>
         <h2 class="title is-3">Proposed Solution</h2>
         <div class="content has-text-justified">
           <p>
-            First, we design a tracking controller which will use real-time state measurements to track a reference trajectory. 
-            To guarantee that the considered system stays in the neighborhood of the reference trajectory despite the initial state uncertainties and disturbances, we will use contraction theory for the controller synthesis. 
-            The synthesis has to be done only once since the controller can be used for all reference trajectories and hence for all environment setups, as long as the dynamic system stays the same. 
+            First, we design a tracking controller which uses real-time state measurements to track a reference 
+            trajectory. To guarantee that the considered system stays in the neighborhood of the reference 
+            trajectory despite the initial state uncertainties and disturbances, we will use contraction theory 
+            for the controller synthesis. The synthesis has to be done only once since the controller can be 
+            used for all reference trajectories and hence for all environment setups, as long as the system 
+            dynamics stay the same. 
           </p>
           <p>  
-            By assuming the online execution of the tracking controller, the motion planning problem is simplified to finding the optimal reference trajectory for the closed-loop dynamics. 
-            As we want to minimize the collision probability and have short computation times, we need an efficient way to compute the state density distribution along different reference trajectories. 
-            On this account, we train a neural network which predicts the evolution of the state density distribution dependent on the reference trajectory and the initial state distribution. 
-            With the neural density predictions, a differentiable collision risk can be computed efficiently. 
-            Now, the reference trajectory can be optimized by minimizing the collision risk with a gradient-based algorithm.
+            By applying the tracking controller, the motion planning problem is simplified to finding the optimal 
+            reference trajectory for the closed-loop dynamics. As we want to minimize the collision probability 
+            and have short computation times, we need an efficient way to compute the state density distribution 
+            along different reference trajectories. On this account, we train a neural network which predicts the 
+            evolution of the state density distribution dependent on the reference trajectory and the initial 
+            state distribution. With the neural density predictions, a differentiable collision risk can be 
+            computed efficiently. Now, the reference trajectory can be optimized by minimizing the collision risk 
+            with a gradient-based algorithm.
           </p>
           <p>  
-            An example environment and the solution strategy is visualized in the figures below. For better visualizability, only stationary obstacles are considered.
+            An example environment and the solution strategy is visualized in the figures below. For better 
+            visualizability, only stationary obstacles are considered.
           </p>
         </div>        
         <div class="columns is-centered">
           <div class="column">
             <img src="./static/images/solution1.jpg" alt="solution part 1">
             <p> 
-              Step 1: The control policy is defined. We will use a tracking controller such that all possible system trajectories stay close to a given reference trajectory.
+              Step 1: The control policy is defined. We will use a tracking controller such that all possible 
+              system trajectories stay close to a given reference trajectory.
             </p>
           </div>
           <div class="column">
             <img src="./static/images/solution2.jpg" alt="solution part 2">
             <p> 
-              Step 2: Dependent on the reference trajectory, the density distribution for the controlled system can be predicted at each time step.
+              Step 2: Dependent on the reference trajectory, the density distribution for the controlled system 
+              can be predicted at each time step.
             </p>
           </div>        
           <div class="column">
             <img src="./static/images/solution3.jpg" alt="solution part 3">
             <p> 
-              Step 3: The reference trajectory is optimized on the basis of the density predictions in order to minimize the collision risk.
+              Step 3: The reference trajectory is optimized on the basis of the density predictions in order to 
+              minimize the collision risk.
             </p>
           </div>          
         </div>
@@ -285,18 +302,25 @@ Obstacles using Density-based Reachability</h1>
         <h2 class="title is-3">Contributions</h2>
         <div class="content has-text-justified">
           <p>
-            Our motion planning approach has several advantages over prior work: The approach is valid for arbitrary initial probability distributions and nonlinear system dynamics. 
-            By predicting the probability distribution at each point in time, the approach is not over-cautious and can provide good estimates for the collision probabilities.
-            Because of the neural network approximation of the closed-loop dynamics and the density function, and an efficient optimization framework, small planning times can be achieved. The resulting control strategy can be executed in real-time with low computational complexity.
-            Additionally, the resulting trajectory is optimal in a given cost criteria and the gradient-based optimization method can easily overcome bad local minima by comparing the results of different start conditions. 
+            Our motion planning approach has several advantages over prior work: The approach is valid for 
+            arbitrary initial probability distributions and nonlinear system dynamics. By predicting the 
+            probability distribution at each point in time, the approach is not over-cautious and can 
+            provide good estimates for the collision probabilities. Because of the neural network 
+            approximation of the closed-loop dynamics and the density function, and an efficient optimization 
+            framework, small planning times can be achieved. The resulting control strategy can be executed 
+            in real-time with low computational complexity. Additionally, the resulting trajectory is optimal 
+            in a given cost criteria and the gradient-based optimization method can easily overcome bad local 
+            minima by comparing the results of different start conditions. 
           </p>
           <p>
             Other main contributions of this work are: 
           <ol>
-              <li>We are the first to connect contraction theory with density control for nonlinear systems.</li>
-              <li>We provide an efficient method to compute the collision probability for closed-loop dynamics and an effective gradient-based algorithm for its optimization.</li>
-              <li>We apply the approach to a simulated autonomous vehicle and compare its performance with state-of-the-art motion planning methods in a large number of time-variant environments.</li>
-              <li>We validate the approach with real-world data.</li>
+              <li>To the best of our knowledge, we are the first to propose a density-based, differentiable 
+                motion planning procedure for nonlinear systems with state and environment uncertainties.</li>
+              <li>We provide an efficient method to compute the collision probability for closed-loop dynamics 
+                and an effective gradient-based algorithm for probabilistic safe trajectory planning.</li>
+              <li>We test our approach on simulated and real-world testing cases where we outperform state-of-
+                the-art motion planning methods.</li>
           </ol>
           </p>
         </div>
