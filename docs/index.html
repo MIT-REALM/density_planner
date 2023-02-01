@@ -193,7 +193,7 @@ Obstacles using Density-based Reachability</h1>
             Furthermore, the state and input constraints must be satisfied, and the system dynamics can be nonlinear in the states. 
           </p>
           <p>
-            In contrast to standard motion planning problems, we consider an uncertain initial state following an arbitrary but known probability density function. 
+            In contrast to classical motion planning problems, we consider an uncertain initial state following an arbitrary but known probability density function. 
             During the execution of the control policy, the state can be measured and used for closed-loop control. 
             However, because of limited computational power and the time constraints for real-time executability, the online computations of the controller have to be simple. 
             Furthermore, we consider imperfect measurements due to sensor bias.
@@ -205,11 +205,22 @@ Obstacles using Density-based Reachability</h1>
           </p>
           <p>
             Thus, the algorithm should find a general control strategy which minimizes the cost function and satisfies the constraints for the uncertain initial states despite sensor errors.
-            The motion planning problem is visualized in the figure below.
+            The motion planning problems are visualized in the figures below.
           </p>
-        </div>
-        <div class="content has-text-centered">
-        <img src="./static/images/problem_formulation.jpg" alt="motion planning problem">
+        </div>        
+        <div class="columns is-centered">
+          <div class="column">
+            <img src="./static/images/problem_classical.jpg" alt="motion planning problem">
+            <p> 
+              Classical motion planning problem: The initial state and the environment is considered as known.
+            </p>
+        </div>        
+        <div class="columns is-centered">
+          <div class="column">            
+            <img src="./static/images/problem_formulation.jpg" alt="motion planning problem">
+            <p> 
+              Motion planning problem considered in this work: The initial state is uncertain and given by an arbitrary probability distribution. The environment is uncertain and described by occupancy probabilities.</p>
+          </div>
         </div>
       </div>
     </div>
@@ -239,7 +250,7 @@ Obstacles using Density-based Reachability</h1>
             Now, the reference trajectory can be optimized by minimizing the collision risk with a gradient-based algorithm.
           </p>
           <p>  
-            An example environment and the solution strategy is visualized in the figure below. For better visualizability, only stationary obstacles are considered.
+            An example environment and the solution strategy is visualized in the figures below. For better visualizability, only stationary obstacles are considered.
           </p>
         </div>        
         <div class="columns is-centered">
