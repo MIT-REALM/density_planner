@@ -215,11 +215,29 @@ Obstacles using Density-based Reachability</h1>
         <h2 class="title is-3">Proposed Solution</h2>
         <div class="content has-text-justified">
           <p>
-            
+            First, we design a tracking controller which will use real-time state measurements to track a reference trajectory. 
+            To guarantee that the considered system stays in the neighborhood of the reference trajectory despite the initial state uncertainties and disturbances, we will use contraction theory for the controller synthesis. 
+            The synthesis has to be done only once since the controller can be used for all reference trajectories and hence for all environment setups, as long as the dynamic system stays the same. 
           </p>
-          <p>
-            
+          <p>  
+            By assuming the online execution of the tracking controller, the motion planning problem is simplified to finding the optimal reference trajectory for the closed-loop dynamics. 
+            As we want to minimize the collision probability and have short computation times, we need an efficient way to compute the state density distribution along different reference trajectories. 
+            On this account, we train a neural network which predicts the evolution of the state density distribution dependent on the reference trajectory and the initial state distribution. 
+            With the neural density predictions, a differentiable collision risk can be computed efficiently. 
+            Now, the reference trajectory can be optimized by minimizing the collision risk with a gradient-based algorithm.
           </p>
+          <p>  
+            An example environment and the solution strategy is visualized in the figure below. For better visualizability, only stationary obstacles are considered.
+          </p>
+        </div>
+        <div class="column">
+        <img src="./static/images/solution1.jpg" alt="motion planning problem">
+        </div>
+        <div class="column">
+        <img src="./static/images/solution2.jpg" alt="motion planning problem">
+        </div>        
+        <div class="column">
+        <img src="./static/images/solution3.jpg" alt="motion planning problem">
         </div>
       </div>
     </div>
