@@ -175,6 +175,77 @@ Obstacles using Density-based Reachability</h1>
       </div>
     </div>
     <!--/ Paper video. -->
+    
+    <!-- Motivation. -->
+    <div class="columns is-centered has-text-centered">
+      <div class="column is-four-fifths">
+        <h2 class="title is-3">Motivation</h2>
+        <div class="content has-text-justified">
+          <p>
+            
+          </p>
+          <p>
+            
+          </p>
+        </div>
+      </div>
+    </div>
+    <!--/ Motivation. -->
+    
+    <!-- Problem Formulation. -->
+    <div class="columns is-centered has-text-centered">
+      <div class="column is-four-fifths">
+        <h2 class="title is-3">Problem Formulation</h2>
+        <div class="content has-text-justified">
+          <p>
+            This work solves the problem of defining an optimal control policy for a given autonomous system and environment setup.
+            The system shall be steered to the goal state while minimizing the collision probability with possible dynamic obstacles. 
+            Furthermore, the state and input constraints must be satisfied, and the system dynamics can be nonlinear in the states. 
+          </p>
+          <p>
+            In contrast to standard motion planning problems, we consider an uncertain initial state following an arbitrary but known probability density function. 
+            During the execution of the control policy, the state can be measured and used for closed-loop control. 
+            However, because of limited computational power and the time constraints for real-time executability, the online computations of the controller have to be simple. 
+            Furthermore, we consider imperfect measurements due to sensor bias.
+          </p>
+          <p>
+            Additionally, probabilistic predictions for the evolution of the environment are given. Namely, we know for each position in the environment the probability of it being occupied by an obstacle at a certain point in time.
+            The position of the vehicle at this time depends on the initial state and hence also follows a certain probability distribution.
+            The overlap of this state distribution with the predicted obstacle positions yields the collision probability.
+          </p>
+          <p>
+            Thus, the algorithm should find a general control strategy which minimizes the cost function and satisfies the constraints for the uncertain initial states despite sensor errors.
+            The motion planning problem is visualized in the figure below.
+          </p>
+        </div>
+      </div>
+    </div>
+    <!--/ Problem Formulation. -->
+    
+    <!-- Contributions. -->
+    <div class="columns is-centered has-text-centered">
+      <div class="column is-four-fifths">
+        <h2 class="title is-3">Contributions</h2>
+        <div class="content has-text-justified">
+          <p>
+            Our motion planning approach has several advantages over prior work: The approach is valid for arbitrary initial probability distributions and nonlinear system dynamics. 
+            By predicting the probability distribution at each point in time, the approach is not over-cautious and can provide good estimates for the collision probabilities.
+            Because of the neural network approximation of the closed-loop dynamics and the density function, and an efficient optimization framework, small planning times can be achieved. The resulting control strategy can be executed in real-time with low computational complexity.
+            Additionally, the resulting trajectory is optimal in a given cost criteria and the gradient-based optimization method can easily overcome bad local minima by comparing the results of different start conditions. 
+          </p>
+          <p>
+            Other main contributions of this thesis are: 
+          <ol>
+              <li>We are the first to connect contraction theory with density control for nonlinear systems.</li>
+              <li>We provide an efficient method to compute the collision probability for closed-loop dynamics and an effective gradient-based algorithm for its optimization.</li>
+              <li>We apply the approach to a simulated autonomous vehicle and compare its performance with state-of-the-art motion planning methods in a large number of time-variant environments.</li>
+              <li>We validate the approach with real-world data.</li>
+          </ol>
+          </p>
+        </div>
+      </div>
+    </div>
+    <!--/ Contributions. -->
   </div>
 </section>
 
