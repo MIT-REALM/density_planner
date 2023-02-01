@@ -229,21 +229,26 @@ Obstacles using Density-based Reachability</h1>
           <p>  
             An example environment and the solution strategy is visualized in the figure below. For better visualizability, only stationary obstacles are considered.
           </p>
-        </div>
-        <div class="column">
-          <div class="content">
-            <img src="./static/images/solution1.jpg" alt="solution part 1">
-          </div>
-        </div>
-        <div class="column">
-          <div class="content">
-            <img src="./static/images/solution2.jpg" alt="solution part 2">
-          </div>
         </div>        
-        <div class="column">
-          <div class="content">
-            <img src="./static/images/solution3.jpg" alt="solution part 3">
+        <div class="container">
+          <div class="image">
+            <img src="./static/images/solution1.jpg" alt="solution part 1">
+            <p> 
+              Step 1: The control policy is defined. We will use a tracking controller such that all possible system trajectories stay close to a given reference trajectory.
+            </p>
           </div>
+          <div class="image">
+            <img src="./static/images/solution2.jpg" alt="solution part 2">
+            <p> 
+              Step 2: Dependent on the reference trajectory, the density distribution for the controlled system can be predicted at each time step.
+            </p>
+          </div>        
+          <div class="image">
+            <img src="./static/images/solution3.jpg" alt="solution part 3">
+            <p> 
+              Step 3: The reference trajectory is optimized on the basis of the density predictions in order to minimize the collision risk.
+            </p>
+          </div>          
         </div>
       </div>
     </div>
